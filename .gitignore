@@ -1,0 +1,15 @@
+# original source, extracted from jcore-source-latest.tar.gz by make
+/reference/
+# repository-local toolchain (built by tools/third_party/build-tools.sh)
+/tools/local/
+/tools/third_party/downloads/
+/tools/third_party/build/
+# build outputs
+/build/
+/ref/gen/
+*.o
+*.vcd
+*.fst
+obj_dir/
+__pycache__/
+/tools/third_party/build.log
