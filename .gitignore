@@ -13,3 +13,7 @@
 obj_dir/
 __pycache__/
 /tools/third_party/build.log
+# editor files
+*.swp
+*.swo
+*~
