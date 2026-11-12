@@ -18,6 +18,7 @@
 // first sees 'en'. Both CPUs must then behave identically cycle for cycle.
 #include "Vtb_lockstep.h"
 #include "sysmodel.h"
+#include "wbslave.h"
 #include <cstring>
 #if VM_TRACE
 #include "verilated_fst_c.h"
@@ -37,52 +38,6 @@ static bool opcode_defined(uint16_t code) {
     if (o.plane == 0 && (code & o.mask) == o.value) return true;
   return false;
 }
-
-struct TxnTiming {
-  std::mt19937 rng;
-  unsigned smax = 0, kmin = 1, kmax = 1;
-  void seed(unsigned s) { rng.seed(s); }
-  void next(unsigned &s, unsigned &k) {
-    s = smax ? rng() % (smax + 1) : 0;
-    k = kmin + (kmax > kmin ? rng() % (kmax - kmin + 1) : 0);
-  }
-};
-
-// Wishbone B4 pipelined slave model (one outstanding access).
-struct WbSlave {
-  TxnTiming t;
-  bool active = false, accepted = false;
-  unsigned stall_left = 0, lat_left = 0;
-  uint32_t adr = 0, dat = 0;
-  unsigned sel = 0;
-  bool we = false;
-  uint64_t txns = 0;
-  // returns ack; sets stall and read data
-  template <class F>
-  bool step(bool cyc, bool stb, uint32_t a, bool w, unsigned s, uint32_t d, bool &stall,
-            uint32_t &rdata, F access) {
-    stall = false;
-    rdata = 0;
-    if (!active && cyc && stb) {
-      unsigned ss, kk;
-      t.next(ss, kk);
-      active = true; accepted = false; stall_left = ss; lat_left = kk;
-    }
-    if (!active) return false;
-    if (!accepted) {
-      if (stall_left) { stall_left--; stall = true; return false; }
-      accepted = true; adr = a; we = w; sel = s; dat = d;
-      return false;
-    }
-    if (--lat_left == 0) {
-      rdata = access(adr, we, sel, dat);
-      active = false;
-      txns++;
-      return true;
-    }
-    return false;
-  }
-};
 
 // Native slave with per-transaction latency s + k from the same generator.
 struct NatSlave {

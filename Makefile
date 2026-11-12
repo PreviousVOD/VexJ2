@@ -9,6 +9,8 @@
 #   make test-ref     baseline: original CPU runs the test programs
 #   make test-lockstep new CPU vs original CPU, cycle-exact, random bus timing,
 #                     random events and debug commands
+#   make test-isa     test programs on the new CPU, checked by the j2iss ISS
+#   make test-random  constrained-random programs (RANDOM_N seeds) checked by the ISS
 #   make check        everything above
 #
 # Tools: system tools on PATH are used when available; the repository-local
@@ -43,7 +45,8 @@ REFSRC := reference/soc_top/README
 $(REFSRC): jcore-source-latest.tar.gz
 	mkdir -p reference && tar -xzf $< -C reference && chmod -R a-w reference/soc_top && touch $@
 
-.PHONY: all gen ref lint check test-decode test-unit sw test-ref test-lockstep clean
+.PHONY: all gen ref lint check test-decode test-unit sw test-ref test-lockstep test-isa \
+        test-random clean
 all: check
 
 # --------------------------------------------------------------- generation
@@ -175,7 +178,43 @@ test-lockstep: sw $(BUILD)/tests/lockstep/Vtb_lockstep $(BUILD)/tests/lockstep_i
 	  $$V $(STRESS) --quiet --max-cycles $(STRESS_CYCLES) $(LOCK_TIMING) --irq-rand 200 --dbg-rand 2000 --dbg-safe --no-undef --seed $$s | tail -1; \
 	done; done
 
-check: lint test-decode test-unit test-ref test-lockstep
+# ------------------------------------------------------------------ j2sim
+# Simulator for the new CPU with the j2iss golden model (TRACE=1: FST support).
+J2SIM      := $(BUILD)/j2sim/j2sim
+J2SIM_SRC  := $(RTL_ALL) sim/j2sim/tb_cpu.sv sim/j2sim/main.cpp sim/iss/j2iss.cpp
+J2SIM_DEPS := $(J2SIM_SRC) sim/iss/j2iss.h sim/common/sysmodel.h sim/common/wbslave.h \
+              sim/gen/j2_isa_table.inc
+J2SIM_FLAGS = $(VFLAGS_SIM) $(if $(TRACE),--trace-fst --trace-structs,) \
+              -CFLAGS "-I$(abspath sim/common) -I$(abspath sim/iss) -I$(abspath sim/gen)" \
+              --top-module tb_cpu
+$(J2SIM): $(J2SIM_DEPS)
+	@mkdir -p $(@D)
+	$(VERILATOR) $(J2SIM_FLAGS) -Mdir $(@D)/obj -o ../j2sim $(abspath $(J2SIM_SRC)) \
+	  > $(@D)/build.log 2>&1 || { tail -30 $(@D)/build.log; exit 1; }
+j2sim: $(J2SIM)
+.PHONY: j2sim
+
+J2SIM_T = --quiet --iss --stall 2 --kmin 1 --kmax 3
+test-isa: sw $(J2SIM)
+	@set -e; \
+	printf "%-36s" "testrom";      $(J2SIM) $(TESTROM) $(J2SIM_T) --expect "CPU tests passed" --expect "GDB Stub" | tail -1; \
+	printf "%-36s" "interrupts.S"; $(J2SIM) $(BUILD)/sw/simtests/interrupts.bin $(J2SIM_T) | tail -1; \
+	printf "%-36s" "rte.S";        $(J2SIM) $(BUILD)/sw/simtests/rte.bin $(J2SIM_T) | tail -1; \
+	printf "%-36s" "stress 2M + random events"; \
+	$(J2SIM) $(STRESS) $(J2SIM_T) --max-cycles 2000000 --irq-rand 200 | tail -1
+
+RANDOM_N   ?= 16
+RANDOM_DIR := $(BUILD)/sw/random
+test-random: $(J2SIM) tools/gen_random.py $(SPEC)
+	@mkdir -p $(RANDOM_DIR); set -e; for s in $$(seq 1 $(RANDOM_N)); do \
+	  $(PYTHON) tools/gen_random.py --seed $$s -o $(RANDOM_DIR)/r$$s.bin > /dev/null; \
+	  printf "random seed %-4s                    " $$s; \
+	  $(J2SIM) $(RANDOM_DIR)/r$$s.bin $(J2SIM_T) --seed $$s --max-cycles 1000000 | tail -1; \
+	  printf "random seed %-4s + random events    " $$s; \
+	  $(J2SIM) $(RANDOM_DIR)/r$$s.bin $(J2SIM_T) --seed $$s --max-cycles 300000 --irq-rand 150 | tail -1; \
+	done
+
+check: lint test-decode test-unit test-ref test-lockstep test-isa test-random
 
 clean:
 	rm -rf $(BUILD)

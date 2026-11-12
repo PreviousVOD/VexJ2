@@ -130,6 +130,11 @@ struct SysBus {
     if (a < Memory::SIZE) return mem.read16(a);
     return 0;
   }
+  // 32-bit instruction fetch (Wishbone instruction bus): same map as fetch()
+  uint32_t fetch32(uint32_t a) {
+    if (a < Memory::SIZE) return mem.read32(a);
+    return 0;
+  }
 };
 
 // ------------------------------------------------- native bus slave model

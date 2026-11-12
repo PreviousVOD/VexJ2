@@ -10,7 +10,7 @@ A modular SystemVerilog rewrite of the J-Core J2 CPU, which is SH-2 compatible, 
 | 1 | Decoder generator (`spec/j2_isa.csv` → SV) | Exhaustive equivalence with the original decode tables (8.4 M vectors) |
 | 2 | ALU, register file, multiplier | Differential tests against the original units |
 | 3 | Pipeline + Wishbone bus units (`j2_cpu`) | **Cycle-exact lockstep with the original CPU** |
-| 4 | Instruction-set simulator, `j2sim` | — |
+| 4 | `j2iss` instruction-set simulator, `j2sim`, constrained-random programs | Every instruction, memory access and register write checked against the ISS |
 | 5 | Wishbone fabric, Wishbone→native bridge, peripherals | — |
 | 6 | FPGA readiness | — |
 
@@ -25,8 +25,10 @@ rtl/pkg/     packages (j2_isa_pkg.sv is generated)
 rtl/core/    CPU: j2_cpu, j2_decode*, j2_datapath, j2_regfile, j2_mult, j2_sr,
              j2_dbus_wbm, j2_ibus_wbm, j2_debug (j2_decode_table.sv is generated)
 ref/         VHDL wrappers for the reference; ref/gen = GHDL-converted Verilog
-tools/       gen_decode.py, ods2csv.py, ref_synth.sh, env.sh, third_party/build-tools.sh
-sim/         shared C++ simulation models (sim/common), generated tables (sim/gen)
+tools/       gen_decode.py, gen_random.py, ods2csv.py, ref_synth.sh, env.sh,
+             third_party/build-tools.sh
+sim/         j2sim (Verilator simulator of the new CPU), j2iss (golden instruction-set
+             simulator), shared C++ models (sim/common), generated tables (sim/gen)
 tests/       decode/, unit/, ref/ (baseline and lockstep testbenches)
 sw/          test programs: original test ROM, original simulator tests, stress program
 ```
@@ -56,7 +58,32 @@ make test-unit      # ALU / regfile / multiplier vs original
 make test-ref       # baseline: original CPU runs the test programs
 make test-lockstep  # new CPU vs original CPU, cycle-exact: test ROM, rte.S, interrupts.S,
                     # random bus stall/latency, random interrupts/errors/resets/debug commands
+make test-isa       # test programs on the new CPU, checked by the j2iss ISS
+make test-random    # constrained-random programs (RANDOM_N=16), checked by the ISS
 ```
+
+### j2sim
+
+```
+make j2sim [TRACE=1]
+build/j2sim/j2sim image.bin [--iss] [--log-ops] [--stall S --kmin K --kmax K --seed N]
+                            [--irq-rand N] [--expect STR] [--max-cycles N] [--trace f.fst A B]
+```
+
+With `--iss`, the ISS checks:
+- each instruction the CPU starts (opcode, and so control flow);
+- every data access, in order;
+- every value written to each register.
+
+Interrupts, errors and resets are applied to the ISS at the same instruction boundaries where the RTL accepts them.
+
+`j2iss` models J2 where it differs from the SH-2 manual:
+- SLEEP doesn't halt;
+- a slot-illegal exception stacks the branch target;
+- interrupt entry pushes to the word-aligned stack;
+- CAS.L with Rm = Rn always succeeds.
+
+These are documented in `sim/iss/j2iss.h`.
 
 ## CPU parameters (`j2_cpu`)
 
