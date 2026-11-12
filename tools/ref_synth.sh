@@ -45,8 +45,11 @@ synth() {  # synth <top>
   # initialised, so they fire spuriously at time 0. They are debug checks
   # only; drop them (the SV side has its own checks).
   perl -pi -e 's/\$fatal\(1, "assertion failure (\w+)"\);/; \/\/ assert $1 stripped/g' "$OUT/$1.v.tmp"
-  # VHDL instance names that are Verilog keywords (e.g. 'table')
-  perl -pi -e 's/^(\s+\w+\s+)(table|config|cell|design|library|use)(\s+\()/$1$2_i$3/' "$OUT/$1.v.tmp"
+  # VHDL identifiers that are (System)Verilog keywords, e.g. instance 'table'
+  # or uartlite's port 'int'. GHDL's Verilog output never uses these words
+  # itself, so rename them everywhere.
+  perl -pi -e 's/\b(table|config|cell|design|library|use|int|bit|byte|shortint|longint|string|class|do|final|type|const|var|logic)\b/$1_i/g' "$OUT/$1.v.tmp"
+  python3 "$ROOT/tools/fix_ghdl_verilog.py" "$OUT/$1.v.tmp"
   mv "$OUT/$1.v.tmp" "$OUT/$1.v"
 }
 
@@ -126,5 +129,38 @@ cpu_variant() {
 
 t_cpu() { cpu_variant ""; cpu_variant _ill; }
 
-ALL=(decode_table core_units cpu)
+# Original Mimas v2 peripheral subsystem (devices.vhd) for the reference SoC.
+# pio.vhd uses a group template 'bus_signals' that the released attr_pkg
+# lacks (attributes for the soc_gen tool only); a derived copy adds it.
+t_devices() {
+  sed -e 's/^\( *\)group peripheral_bus is (signal <>);/&\n\1group bus_signals is (signal <>);/' \
+      "$SRC/lib/hwutils/attr_pkg.vhd" > "$PRE/attr_pkg.vhd"
+  grep -q 'group bus_signals' "$PRE/attr_pkg.vhd"
+  local saved=$WORK
+  WORK=$ROOT/build/ref/work_dev; mkdir -p "$WORK"
+  GFLAGS=(--std=93c --ieee=synopsys -fexplicit --workdir="$WORK")
+  analyze \
+    "$SRC/components/cpu/cpu2j0_pkg.vhd" \
+    "$ROOT/ref/ref_config.vhd" \
+    "$SRC/targets/clk_config.vhd" \
+    "$SRC/targets/data_bus_pkg.vhd" \
+    "$PRE/attr_pkg.vhd" \
+    "$SRC/components/misc/misc_pkg.vhd" \
+    "$SRC/components/misc/aic2_pkg.vhd" \
+    "$SRC/components/uartlite/uart_pkg.vhd" \
+    "$SRC/components/icache/cache_pkg.vhd" \
+    "$(v2p components/uartlite/uart.vhm)" \
+    "$SRC/components/uartlite/uartlitedb.vhd" \
+    "$SRC/components/misc/pio.vhd" \
+    "$(v2p components/misc/spi2.vhm)" \
+    "$SRC/components/misc/aic_edgedet.vhd" \
+    "$SRC/components/misc/aic.vhd" \
+    "$(v2p components/icache/icache_modereg.vhm)" \
+    "$SRC/targets/boards/mimas_v2/devices.vhd" \
+    "$ROOT/ref/ref_devices.vhd"
+  synth ref_devices
+  WORK=$saved; GFLAGS=(--std=93c --ieee=synopsys -fexplicit --workdir="$WORK")
+}
+
+ALL=(decode_table core_units cpu devices)
 for t in "${@:-${ALL[@]}}"; do "t_$t"; done

@@ -123,6 +123,7 @@ struct Checker {
 
   void mem_access(bool wr, uint32_t a, unsigned sel, uint32_t d) {
     if (!enabled) return;
+    a &= ~3u;  // the ISS records word addresses
     checked_mem++;
     if (memq.empty()) {
       err(wr ? "RTL write %08llx with no ISS access pending" : "RTL read %08llx with no ISS access pending", a);

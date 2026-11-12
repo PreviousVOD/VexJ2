@@ -126,7 +126,7 @@ module j2_dbus_wbm
     wb_o.cyc  = q.pending | q.lock;
     wb_o.stb  = q.pending & ~q.accepted;
     wb_o.we   = q.wr;
-    wb_o.adr  = {q.a[31:2], 2'b00};
+    wb_o.adr  = q.a;  // full byte address (slaves use adr[31:2] + sel)
     wb_o.sel  = q.sel;
     wb_o.dat  = q.dat;
     wb_o.lock = q.lock;

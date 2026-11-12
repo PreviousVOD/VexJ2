@@ -1,8 +1,10 @@
 // Wishbone B4 (pipelined) types used across the J2 SoC.
 //
 // Conventions:
-//   - 32-bit data, byte-addressed 'adr' (adr[1:0] are 0 for masters in this
-//     design; kept full width so slaves can decode without shifting).
+//   - 32-bit data, byte address in 'adr'. Slaves use adr[31:2] and 'sel';
+//     the CPU data master also drives adr[1:0] (the access's byte address,
+//     as on the native J-Core bus) so bus monitors and native-bus bridges
+//     see the original address.
 //   - Big-endian byte lanes: sel[3] = byte offset 0 = dat[31:24], matching
 //     the native J-Core bus 'we' encoding.
 //   - Reads also carry a size-accurate 'sel' (one-hot byte, 1100/0011 word,
