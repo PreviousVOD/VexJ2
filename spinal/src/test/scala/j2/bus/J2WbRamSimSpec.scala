@@ -5,6 +5,10 @@ import spinal.core.sim._
 import scala.language.reflectiveCalls
 
 class J2WbRamSimSpec extends munit.FunSuite {
+  test("Wishbone configuration uses classic cycles") {
+    assert(!J2Wishbone.config.isPipelined)
+  }
+
   test("Wishbone data and instruction ports share one dual-port memory") {
     SimConfig.withVerilator.compile(new J2WbRam(words = 16)).doSim { dut =>
       dut.clockDomain.forkStimulus(10)

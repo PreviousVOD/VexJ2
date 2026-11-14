@@ -38,7 +38,6 @@ class J2SocSimSpec extends munit.FunSuite {
         dut.clockDomain.forkStimulus(10)
         dut.io.external.ACK #= false
         dut.io.external.ERR #= false
-        dut.io.external.STALL #= false
         dut.io.external.DAT_MISO #= 0
         dut.io.uartRx #= true
         dut.io.pioIn #= 0

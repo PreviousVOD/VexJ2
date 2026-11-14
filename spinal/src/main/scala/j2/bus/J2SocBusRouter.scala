@@ -57,9 +57,4 @@ final class J2SocBusRouter(val ramBytes: BigInt) extends Component {
   )
   io.input.ERR :=
     Mux(toRam, io.ram.ERR, Mux(toPio, io.pio.ERR, Mux(toUart, io.uart.ERR, io.external.ERR)))
-  io.input.STALL := Mux(
-    toRam,
-    io.ram.STALL,
-    Mux(toPio, io.pio.STALL, Mux(toUart, io.uart.STALL, io.external.STALL))
-  )
 }

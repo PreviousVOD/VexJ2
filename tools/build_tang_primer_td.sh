@@ -5,22 +5,42 @@ repo_root=$(cd "$(dirname "$0")/.." && pwd)
 td_log_dir="$repo_root/build/logs/td"
 fpga_out_dir="$repo_root/build/fpga/j2_tang_primer"
 rom=${J2_ROM:-"$repo_root/build/sw/testrom/main.bin"}
+implementation=${J2_CPU:-microcode}
 
 mkdir -p "$td_log_dir" "$fpga_out_dir"
 
-(
-  cd "$repo_root"
-  J2_ROM="$rom" make spinal-generate
-)
-
-cp "$repo_root"/build/spinal/verilog/J2TangPrimer.v \
-   "$repo_root"/build/spinal/verilog/J2TangPrimer.v_*.bin \
-   "$repo_root"/fpga/j2_tang_primer.al \
-   "$repo_root"/fpga/j2_tang_primer.adc \
-   "$repo_root"/fpga/j2_tang_primer.sdc \
-   "$repo_root"/fpga/j2_tang_primer_spinal.v \
-   "$fpga_out_dir/"
-mv "$fpga_out_dir/j2_tang_primer_spinal.v" "$fpga_out_dir/j2_tang_primer.v"
+case "$implementation" in
+  microcode)
+    python3 "$repo_root/tools/gen_td_vhdl.py" --decode microcode --program "$rom"
+    cp "$repo_root/fpga/j2_tang_primer_microcode.al" \
+       "$fpga_out_dir/j2_tang_primer.al"
+    cp "$repo_root"/fpga/j2_tang_primer.adc \
+       "$repo_root"/fpga/j2_tang_primer.sdc \
+       "$repo_root"/fpga/j2_tang_primer.vhd \
+       "$repo_root"/fpga/j2_cpu_flat.vhd \
+       "$repo_root"/fpga/j2_eg4_bram32.v \
+       "$fpga_out_dir/"
+    ;;
+  spinal)
+    (
+      cd "$repo_root"
+      J2_ROM="$rom" make spinal-generate
+    )
+    cp "$repo_root"/build/spinal/verilog/J2TangPrimer.v \
+       "$repo_root"/build/spinal/verilog/J2TangPrimer.v_*.bin \
+       "$repo_root"/fpga/j2_tang_primer.adc \
+       "$repo_root"/fpga/j2_tang_primer.sdc \
+       "$repo_root"/fpga/j2_tang_primer_spinal.v \
+       "$fpga_out_dir/"
+    cp "$repo_root/fpga/j2_tang_primer_spinal.al" \
+       "$fpga_out_dir/j2_tang_primer.al"
+    mv "$fpga_out_dir/j2_tang_primer_spinal.v" "$fpga_out_dir/j2_tang_primer.v"
+    ;;
+  *)
+    printf 'Unknown J2_CPU implementation: %s\n' "$implementation" >&2
+    exit 2
+    ;;
+esac
 
 if [[ -n ${TD_BIN:-} ]]; then
   td_exe=$TD_BIN

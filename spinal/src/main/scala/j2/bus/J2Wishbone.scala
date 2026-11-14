@@ -9,10 +9,10 @@ object J2Wishbone {
     addressWidth = 32,
     dataWidth = 32,
     selWidth = 4,
-    useSTALL = true,
+    useSTALL = false,
     useLOCK = true,
     useERR = true
-  ).pipelined
+  )
 
   def apply(): Wishbone = Wishbone(config)
 }
@@ -37,70 +37,35 @@ final class J2WbRam(
 
   private def index(bus: Wishbone): UInt = bus.ADR(addressBits + 1 downto 2)
 
-  val dataRequest = io.data.CYC && io.data.STB
-  val instructionRequest =
-    io.instruction.CYC && io.instruction.STB && !io.instruction.WE
-  val dataAddress = index(io.data)
-  val instructionAddress = index(io.instruction)
+  private val dataCycle = new J2WbClassicCycle(io.data)
+  private val instructionCycle = new J2WbClassicCycle(io.instruction, !io.instruction.WE)
+  private val dataAddress = index(io.data)
+  private val instructionAddress = index(io.instruction)
+  private val dataResult = Reg(UInt(32 bits)) init 0
+  private val instructionData = Reg(UInt(32 bits)) init 0
 
-  val dataAck = Reg(Bool()) init False
-  val dataPending = Reg(Bool()) init False
-  val dataResult = Reg(UInt(32 bits)) init 0
-  val instructionAck = Reg(Bool()) init False
-  val instructionPending = Reg(Bool()) init False
-  val instructionData = Reg(UInt(32 bits)) init 0
-
-  val dataReadData = memory.readSync(dataAddress, dataRequest)
-  val instructionReadData =
-    memory.readSync(instructionAddress, instructionRequest)
-  val instructionHalfword =
+  private val dataReadData = memory.readSync(dataAddress, dataCycle.request)
+  private val instructionReadData =
+    memory.readSync(instructionAddress, instructionCycle.request)
+  private val instructionHalfword =
     Mux(!io.instruction.ADR(1), instructionData(31 downto 16), instructionData(15 downto 0))
   memory.write(
     address = dataAddress,
     data = io.data.DAT_MOSI.asUInt,
     mask = io.data.SEL,
-    enable = dataRequest && io.data.WE && !dataPending
+    enable = dataCycle.start && io.data.WE
   )
 
-  when(ClockDomain.current.isResetActive) {
-    dataAck := False
-    dataPending := False
-    instructionAck := False
-    instructionPending := False
-  } otherwise {
-    dataAck := False
-    when(dataRequest) {
-      when(!dataPending) {
-        dataPending := True
-      } otherwise {
-        dataResult := dataReadData
-        dataAck := True
-        dataPending := False
-      }
-    } otherwise {
-      dataPending := False
-    }
-    instructionAck := False
-    when(instructionRequest) {
-      when(!instructionPending) {
-        instructionPending := True
-      } otherwise {
-        instructionData := instructionReadData
-        instructionAck := True
-        instructionPending := False
-      }
-    } otherwise {
-      instructionPending := False
-    }
+  when(dataCycle.complete) {
+    dataResult := dataReadData
+  }
+  when(instructionCycle.complete) {
+    instructionData := instructionReadData
   }
 
-  io.data.ACK := dataAck
   io.data.ERR := False
-  io.data.STALL := False
   io.data.DAT_MISO := dataResult.asBits
 
-  io.instruction.ACK := instructionAck
   io.instruction.ERR := False
-  io.instruction.STALL := False
   io.instruction.DAT_MISO := instructionHalfword.resize(32).asBits
 }

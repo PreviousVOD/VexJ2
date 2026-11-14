@@ -6,6 +6,7 @@ out_dir="$repo_root/build/fpga/microcode_probe"
 log_dir="$repo_root/build/logs/td"
 
 mkdir -p "$out_dir" "$log_dir"
+make -C "$repo_root" td-vhdl
 
 # Bind the same CPU datapath to the 256x72-bit microcode ROM.
 sed \

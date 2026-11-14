@@ -49,5 +49,4 @@ final class J2WbRouter(val ramBytes: BigInt) extends Component {
   io.input.ACK := Mux(toRam, io.ram.ACK, io.external.ACK)
   io.input.DAT_MISO := Mux(toRam, io.ram.DAT_MISO, io.external.DAT_MISO)
   io.input.ERR := Mux(toRam, io.ram.ERR, io.external.ERR)
-  io.input.STALL := Mux(toRam, io.ram.STALL, io.external.STALL)
 }

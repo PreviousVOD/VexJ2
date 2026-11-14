@@ -65,11 +65,9 @@ int main(int argc, char **argv) {
   VSh2Core top;
   top.io_ibus_ACK = 0;
   top.io_ibus_DAT_MISO = 0;
-  top.io_ibus_STALL = 0;
   top.io_ibus_ERR = 0;
   top.io_dbus_ACK = 0;
   top.io_dbus_DAT_MISO = 0;
-  top.io_dbus_STALL = 0;
   top.io_dbus_ERR = 0;
   top.io_event_valid = 0;
   top.io_event_payload_command = 0;
@@ -93,6 +91,7 @@ int main(int argc, char **argv) {
   uint64_t instructions = 0;
   bool done = false;
   bool saw_expected = false;
+  bool saw_stop_pc = false;
 
   while (cycles < max_cycles && !done) {
     top.clk = 1;
@@ -106,7 +105,6 @@ int main(int argc, char **argv) {
                   [&](uint32_t address, bool, unsigned, uint32_t) {
                     return fetch_halfword(sys, address);
                   });
-    top.io_ibus_STALL = stall;
     top.io_ibus_DAT_MISO = data;
 
     top.io_dbus_ACK =
@@ -121,7 +119,6 @@ int main(int argc, char **argv) {
                     }
                     return sys.access(address, write, select, value);
                   });
-    top.io_dbus_STALL = stall;
     top.io_dbus_DAT_MISO = data;
 
     top.io_event_valid = sys.ev_en();
@@ -162,6 +159,7 @@ int main(int argc, char **argv) {
         for (const auto &line : retired_trace) {
           printf("  %s\n", line.c_str());
         }
+        saw_stop_pc = true;
         done = true;
       }
     }
@@ -203,13 +201,20 @@ int main(int argc, char **argv) {
   }
   printf("\n");
 
-  bool ok = true;
+  if (saw_stop_pc && sys.test_result < 0 && expect.empty()) {
+    printf("[sh2sim] STOPPED at requested PC (diagnostic stop, not a regression result)\n");
+    return 0;
+  }
+
+  bool ok = false;
   if (sys.test_result >= 0) {
     printf("[sh2sim] TEST_RESULT=%d\n", sys.test_result);
     ok = sys.test_result == 0;
   } else if (!expect.empty()) {
     printf("[sh2sim] expected output %s\n", saw_expected ? "seen" : "not seen");
     ok = saw_expected;
+  } else {
+    printf("[sh2sim] no TEST_RESULT or expected output\n");
   }
   printf("[sh2sim] %s\n", ok ? "PASS" : "FAIL");
   return ok ? 0 : 1;

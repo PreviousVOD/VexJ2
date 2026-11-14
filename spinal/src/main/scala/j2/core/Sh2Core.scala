@@ -250,13 +250,14 @@ final class Sh2Core extends Component {
   io.ibus.DAT_MOSI := B(0, 32 bits)
   io.ibus.LOCK := False
 
-  io.dbus.CYC := state === data
+  io.dbus.CYC := state === data ||
+    (state === dataGap && (action === tasWrite || action === casWrite))
   io.dbus.STB := state === data
   io.dbus.WE := dataWrite
   io.dbus.ADR := alignedAddress
   io.dbus.DAT_MOSI := memWriteData.asBits
-  io.dbus.LOCK :=
-    action === tasRead || action === tasWrite || action === casRead || action === casWrite
+  io.dbus.LOCK := io.dbus.CYC &&
+    (action === tasRead || action === tasWrite || action === casRead || action === casWrite)
   io.dbus.SEL := B"1111"
 
   io.pc := pcReg
