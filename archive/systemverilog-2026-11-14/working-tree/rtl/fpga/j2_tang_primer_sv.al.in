@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Project>
+    <Project_Created_Time>2026-11-14 18:20:00</Project_Created_Time>
+    <TD_Version>4.6.64949</TD_Version>
+    <UCode>00000000</UCode>
+    <Name>j2_tang_primer_sv</Name>
+    <HardWare>
+        <Family>EG4</Family>
+        <Device>EG4S20BG256</Device>
+    </HardWare>
+    <Source_Files>
+        <Verilog>
+            <File>../../rtl/pkg/j2_cpu_pkg.sv</File>
+            <File>../../rtl/pkg/j2_decode_pkg.sv</File>
+            <File>../../rtl/pkg/j2_alu_pkg.sv</File>
+            <File>../../rtl/pkg/j2_wb_pkg.sv</File>
+            <File>../../rtl/pkg/j2_isa_pkg.sv</File>
+            <File>../../rtl/core/j2_decode_table.sv</File>
+            <File>../../rtl/core/j2_decode_core.sv</File>
+            <File>../../rtl/core/j2_decode.sv</File>
+            <File>../../rtl/core/j2_regfile.sv</File>
+            <File>../../rtl/core/j2_mult.sv</File>
+            <File>../../rtl/core/j2_sr.sv</File>
+            <File>../../rtl/core/j2_dbus_wbm.sv</File>
+            <File>../../rtl/core/j2_ibus_wbm.sv</File>
+            <File>../../rtl/core/j2_debug.sv</File>
+            <File>../../rtl/core/j2_datapath.sv</File>
+            <File>../../rtl/core/j2_cpu.sv</File>
+            <File>../../rtl/wb/j2_wb_decoder.sv</File>
+            <File>../../rtl/wb/j2_wb_sram.sv</File>
+            <File>../../rtl/wb/j2_wb2native.sv</File>
+            <File>../../rtl/periph/j2_pio.sv</File>
+            <File>../../rtl/periph/j2_spi.sv</File>
+            <File>../../rtl/periph/j2_cache_ctrl.sv</File>
+            <File>../../rtl/periph/j2_uartlite.sv</File>
+            <File>../../rtl/periph/j2_aic.sv</File>
+            <File>../../rtl/periph/j2_periph.sv</File>
+            <File>../../rtl/soc/j2_soc.sv</File>
+            <File>../../rtl/fpga/j2_tang_primer.sv</File>
+        </Verilog>
+        <ADC_FILE>../../rtl/fpga/tang_primer.adc</ADC_FILE>
+        <SDC_FILE>../../rtl/fpga/tang_primer.sdc</SDC_FILE>
+        <CWC_FILE/>
+    </Source_Files>
+    <TOP_MODULE>
+        <LABEL/>
+        <MODULE>j2_tang_primer</MODULE>
+        <CREATEINDEX>auto</CREATEINDEX>
+    </TOP_MODULE>
+    <Project_Settings>
+        <Step_Last_Change>2026-11-14 18:20:00</Step_Last_Change>
+        <Current_Step>0</Current_Step>
+        <Step_Status>true</Step_Status>
+    </Project_Settings>
+</Project>

@@ -6,6 +6,8 @@
 /tools/third_party/build/
 # build outputs
 /build/
+/build/logs/
+/td_*.log
 /ref/gen/
 *.o
 *.vcd
@@ -13,6 +15,14 @@
 obj_dir/
 __pycache__/
 /tools/third_party/build.log
+/spinal/target/
+/spinal/project/target/
+/spinal/project/project/
+/spinal/.bsp/
+/spinal/simWorkspace/
+/spinal/.metals/
+/spinal/.scala-build/
+/spinal/.bloop/
 # editor files
 *.swp
 *.swo

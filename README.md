@@ -1,103 +1,85 @@
-# J2 rewrite: SystemVerilog J-Core J2 with Wishbone B4
+# J2 SpinalHDL redesign
 
-A modular SystemVerilog rewrite of the J-Core J2 CPU, which is SH-2 compatible, and of its SoC peripherals. The original VHDL release lives in `reference/` and stays untouched. It is converted to Verilog with GHDL and used as the golden reference in simulation.
+The previous SystemVerilog implementation is archived under
+`archive/systemverilog-2026-11-14/`. The active CPU, SoC, and Tang Primer
+integration are implemented in SpinalHDL.
+
+The baseline is the SH-2 ISA in
+`docs/isa/REN_rej09b0171_superh_MAH_20040630.pdf`. The J2-only `SHAD`, `SHLD`,
+`CAS.L`, and `BGND` instructions are implemented and decoded as legal
+instructions. There are no excluded instructions.
 
 ## Status
 
-| Phase | Content | Gate |
-|---|---|---|
-| 0 | Toolchain, reference flow, baseline | The original CPU, converted from VHDL, passes the test ROM, `rte.S` and `interrupts.S`* |
-| 1 | Decoder generator (`spec/j2_isa.csv` → SV) | Exhaustive equivalence with the original decode tables (8.4 M vectors) |
-| 2 | ALU, register file, multiplier | Differential tests against the original units |
-| 3 | Pipeline + Wishbone bus units (`j2_cpu`) | **Cycle-exact lockstep with the original CPU** |
-| 4 | `j2iss` instruction-set simulator, `j2sim`, constrained-random programs | Every instruction, memory access and register write checked against the ISS |
-| 5 | Wishbone fabric, Wishbone→native bridge, peripherals | — |
-| 6 | FPGA readiness | — |
+| Area | Status |
+|---|---|
+| SH-2 and J2 decode | 54,521 legal encodings, zero exclusions |
+| `SHAD` / `SHLD` | Passing signed and unsigned shift-direction tests |
+| `CAS.L` | Passing read-compare-write tests, including `Rm == Rn` |
+| `BGND` | Implemented with the `debugBreak` pulse |
+| Multicycle CPU with instruction/data Wishbone B4 masters | Implemented |
+| Addressing, arithmetic, shift/rotate, multiply, MAC, divide | Passing |
+| Delayed branches, illegal/slot-illegal exceptions, TRAPA, RTE | Passing |
+| NMI/interrupt masking, delay-slot deferral, SR-access hazard | Passing |
+| Internal BRAM, SoC router, PIO, UART | Passing simulation |
+| Full original test ROM, no instruction bypasses | Passing, 5,024 retired instructions |
+| EG4S20 LUT-ROM TD build | 4,568 LUTs, 1,053 registers, 8 BRAM32K |
+| Tang Primer hardware | UART prints `CPU tests passed` |
 
-\* The released J2 vectors illegal instructions through VBR+0. `ref_cpu_ill` is the same original design with that one fix (vectors 4/6).
-
-## Layout
-
-```
-reference/   original J-Core source (read-only)
-spec/        j2_isa.csv: instruction / micro-step spec (source of truth for the decoder)
-rtl/pkg/     packages (j2_isa_pkg.sv is generated)
-rtl/core/    CPU: j2_cpu, j2_decode*, j2_datapath, j2_regfile, j2_mult, j2_sr,
-             j2_dbus_wbm, j2_ibus_wbm, j2_debug (j2_decode_table.sv is generated)
-ref/         VHDL wrappers for the reference; ref/gen = GHDL-converted Verilog
-tools/       gen_decode.py, gen_random.py, ods2csv.py, ref_synth.sh, env.sh,
-             third_party/build-tools.sh
-sim/         j2sim (Verilator simulator of the new CPU), j2iss (golden instruction-set
-             simulator), shared C++ models (sim/common), generated tables (sim/gen)
-tests/       decode/, unit/, ref/ (baseline and lockstep testbenches)
-sw/          test programs: original test ROM, original simulator tests, stress program
-```
+The active SpinalHDL multi-cycle CPU passes the complete ROM in the Wishbone
+verification harness. Its combinational executor still maps too large for
+EG4S20. The current hardware validation image therefore uses the reference
+three-bus J2 core with its 256 x 72-bit LUT-ROM decoder, which already contains
+the J2 extensions and fits the device.
 
 ## Toolchain
 
-System tools are used when they are installed: verilator, ghdl (with synthesis), yosys, and sh-elf-gcc (Debian: `gcc-sh-elf`).
+- Java 21
+- sbt 1.10.7 through `tools/local/bin/sbt`
+- Scala 2.13.14
+- SpinalHDL 1.14.2
+- Scalafmt 3.8.4; run `scalafmtAll` in `spinal/` after every Scala edit
+- Verilator for generated-Verilog and board-top simulation
+- Tang Dynasty 4.6.7 at `TD_HOME`
 
-Any tool missing from the system can be built into `tools/local` without root. The script skips tools that are already installed; set `FORCE=1` to build them anyway.
+## Verification
 
-```
-tools/third_party/build-tools.sh     # flex, bison, help2man, Verilator, Yosys, GNAT (bootstrap) + GHDL,
-                                     # and the SH toolchain from ../Rev_UDI/Toolchain/sh-none-elf.tar.gz
-```
-
-The Makefile and `tools/ref_synth.sh` fall back to `tools/local` on their own. For interactive use, `. tools/env.sh` appends it to PATH, after the system directories.
-
-## Running
-
-```
-make check          # everything below
-make gen            # regenerate decoder files from spec/j2_isa.csv
-make ref            # convert the original VHDL to Verilog (ref/gen)
-make lint           # verilator -Wall on the RTL
-make test-decode    # exhaustive decoder equivalence
-make test-unit      # ALU / regfile / multiplier vs original
-make test-ref       # baseline: original CPU runs the test programs
-make test-lockstep  # new CPU vs original CPU, cycle-exact: test ROM, rte.S, interrupts.S,
-                    # random bus stall/latency, random interrupts/errors/resets/debug commands
-make test-isa       # test programs on the new CPU, checked by the j2iss ISS
-make test-random    # constrained-random programs (RANDOM_N=16), checked by the ISS
+```sh
+make spinal-test       # Scala decoder/ALU/shifter/register-file tests
+make spinal-generate   # Verilog under build/spinal/verilog
+make spinal-verif      # full unmodified ROM through the Wishbone harness
+make spinal-hw-sim     # generated Tang Primer top, including UART decode
 ```
 
-### j2sim
+The full ROM covers branches, all MOV forms, ALU and shift operations,
+`SHAD`/`SHLD`, the `CAS.L` path, multiply, divide, MAC.W/MAC.L, and status
+behavior. The existing `rte.bin` and `interrupts.bin` programs also pass.
 
+## FPGA
+
+The board image uses the LUT-ROM decoder:
+
+```sh
+TD_HOME=/home/imi415/Softwares/Tools/TD_4.6.7_Linux make spinal-fpga
 ```
-make j2sim [TRACE=1]
-build/j2sim/j2sim image.bin [--iss] [--log-ops] [--stall S --kmin K --kmax K --seed N]
-                            [--irq-rand N] [--expect STR] [--max-cycles N] [--trace f.fst A B]
+
+TD reports 4,568 LUTs, 1,053 registers, 8 `BRAM32K` blocks, two DSPs, no setup
+errors, and a 32.732 ns minimum period for the 41.667 ns (24 MHz) clock. Four
+hold checks are reported on the existing clock-mesh path; the programmed board
+runs the complete ROM successfully.
+
+Pins use the Tang Primer J13/H13 UART:
+
+- FPGA TX: J13
+- FPGA RX: H13
+
+```sh
+make spinal-program TD_HOME=/home/imi415/Softwares/Tools/TD_4.6.7_Linux
+picocom -b 19200 /dev/ttyACM0
 ```
 
-With `--iss`, the ISS checks:
-- each instruction the CPU starts (opcode, and so control flow);
-- every data access, in order;
-- every value written to each register.
+`spinal-program` uses `download -mode jtag`, which writes volatile FPGA
+configuration SRAM only. It never writes the external configuration flash.
 
-Interrupts, errors and resets are applied to the ISS at the same instruction boundaries where the RTL accepts them.
-
-`j2iss` models J2 where it differs from the SH-2 manual:
-- SLEEP doesn't halt;
-- a slot-illegal exception stacks the branch target;
-- interrupt entry pushes to the word-aligned stack;
-- CAS.L with Rm = Rn always succeeds.
-
-These are documented in `sim/iss/j2iss.h`.
-
-## CPU parameters (`j2_cpu`)
-
-| Parameter | Default | Meaning |
-|---|---|---|
-| `ILLEGAL_VEC_FIX` | 1 | Illegal and slot-illegal instructions use vectors 4 and 6. 0 = as released (vector 0). |
-| `ILLEGAL_OPCODE_TRAP` | 1 | Every opcode not defined by the spec raises the illegal-instruction exception. 0 = only 0xFFxx traps, as released; other undefined opcodes have unspecified behaviour. |
-
-## Bus
-
-The CPU has separate instruction and data **Wishbone B4 pipelined** masters:
-- big-endian byte lanes, with `sel[3]` = byte offset 0;
-- reads carry a size-accurate `sel`;
-- `lock` covers TAS.B and CAS.L;
-- `tgc[0]` = jump-target fetch.
-
-Acks arrive at least one cycle after a request is accepted. Compared with the original's zero-wait SRAM, each access therefore costs one extra cycle. Instruction flow is unchanged: a slave that acks *k* cycles after accepting behaves exactly like a native-bus slave with ack latency *k*.
+TD scripts use paths relative to `build/logs/td`, and all generated output and
+logs stay under ignored `build/` directories.

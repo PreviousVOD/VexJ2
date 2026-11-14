@@ -1,0 +1,9 @@
+## Sipeed Tang Primer / Anlogic EG4S20BG256 pin assignments.
+
+set_pin_assignment {clk24}    { LOCATION = K14; }
+set_pin_assignment {rst_n}    { LOCATION = K16; }
+set_pin_assignment {rgb_led[0]} { LOCATION = R3;  }
+set_pin_assignment {rgb_led[1]} { LOCATION = J14; }
+set_pin_assignment {rgb_led[2]} { LOCATION = P13; }
+set_pin_assignment {uart_rx}  { LOCATION = H13; }
+set_pin_assignment {uart_tx}  { LOCATION = J13; }

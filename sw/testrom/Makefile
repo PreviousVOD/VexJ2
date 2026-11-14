@@ -10,7 +10,8 @@ OUT     := $(ROOT)/build/sw/testrom
 CROSS   ?= $(if $(shell command -v sh-elf-gcc),sh-elf-,sh-none-elf-)
 ENDIAN  := $(if $(findstring sh-none-elf,$(CROSS)),-mb,)
 CC      := $(CROSS)gcc
-CFLAGS  := -m2 $(ENDIAN) -g -Os -Wall -Wno-builtin-declaration-mismatch -fno-builtin -ffreestanding
+CFLAGS  := -m2 $(ENDIAN) -g -Os -Wall -Wno-builtin-declaration-mismatch \
+           -Wno-implicit-function-declaration -fno-builtin -ffreestanding
 LDFLAGS := -m2 $(ENDIAN) -nostdlib -T $(SRC)/startup/sh32.x -Wl,-Map,$(OUT)/main.map
 
 OBJS  := entry.o gdb.o sh2.o main.o version.o uartlite.o

@@ -679,6 +679,38 @@ def imm_expr(name):
     raise SpecError(f'no expression for immediate {name}')
 
 
+def emit_decode_group(w, table, comment, defaults, selected):
+    """Emit one casez process for a subset of decode-table output paths."""
+    w('')
+    w('  // %s' % comment)
+    w('  always_comb begin')
+    for assignment in defaults:
+        w('    ' + assignment)
+    w('    (* parallel_case *) casez ({op.plane, op.code})')
+    for op, steps in table:
+        step_assignments = []
+        for i, st in enumerate(steps):
+            paths = [p for p in sorted(st) if p in selected]
+            if paths:
+                step_assignments.append((i, paths, st))
+        if not step_assignments:
+            continue
+        pat = op_pattern(op).replace('-', '?')
+        w("      17'b%s: begin" % pat)
+        w('        (* parallel_case *) case (op.addr[3:0])')
+        for i, paths, st in step_assignments:
+            w("          4'h%x: begin" % i)
+            for path in paths:
+                w('            %s = %s;' % (sv_path(path), sv_value(path, st[path])))
+            w('          end')
+        w('          default: ;')
+        w('        endcase')
+        w('      end')
+    w('      default: ;')
+    w('    endcase')
+    w('  end')
+
+
 def emit_sv(table, imm_names, src):
     L = []
     w = L.append
@@ -734,48 +766,83 @@ def emit_sv(table, imm_names, src):
     w('    endcase')
     w('  end')
     w('')
-    w('  always_comb begin')
-    w('    // zero outputs by default')
-    w("    o.debug           = 1'b0;")
-    w("    o.delay_jump      = 1'b0;")
-    w("    o.dispatch        = 1'b0;")
-    w("    o.event_ack_0     = 1'b0;")
-    w("    o.ilevel_cap      = 1'b0;")
-    w("    o.mac_s_latch     = 1'b0;")
-    w("    o.mac_stall_sense = 1'b0;")
-    w("    o.maskint_next    = 1'b0;")
-    w("    o.slp             = 1'b0;")
-    w('    o.id              = STAGE_ID_RESET;')
-    w('    o.ex_stall        = STAGE_EX_STALL_RESET;')
-    w('    o.wb_stall        = STAGE_WB_STALL_RESET;')
-    w('    // ex/wb fields other than imm_val/mac_busy (driven above)')
-    for f, d in (('xbus_sel', 'XBUS_IMM'), ('ybus_sel', 'YBUS_IMM'), ('regnum_z', "5'd0"),
-                 ('regnum_x', "5'd0"), ('regnum_y', "5'd0"), ('alumanip', 'MANIP_SWAP_BYTE'),
-                 ('aluinx_sel', 'ALUX_XBUS'), ('aluiny_sel', 'ALUY_YBUS'),
-                 ('arith_func', 'ARITH_ADD'), ('arith_ci_en', "1'b0"),
-                 ('arith_sr_func', 'ASR_ZERO'), ('logic_func', 'LOGIC_NOT'),
-                 ('logic_sr_func', 'LSR_ZERO'), ('ma_wr', "1'b0"), ('mem_lock', "1'b0"),
-                 ('mem_size', 'SZ_BYTE')):
-        w('    o.ex.%-14s = %s;' % (f, d))
-    w("    o.wb.regnum_w     = 5'd0;")
-    w('    imm_enum          = IMM_ZERO;')
-    w('    mac_busy          = MACB_NOT_BUSY;')
+    scalar_defaults = [
+        ('debug', "1'b0"), ('delay_jump', "1'b0"), ('dispatch', "1'b0"),
+        ('event_ack_0', "1'b0"), ('ilevel_cap', "1'b0"), ('mac_s_latch', "1'b0"),
+        ('mac_stall_sense', "1'b0"), ('maskint_next', "1'b0"), ('slp', "1'b0"),
+    ]
+    ex_defaults = []
+    for f, d in (('xbus_sel', 'XBUS_IMM'), ('ybus_sel', 'YBUS_IMM'),
+                 ('regnum_z', "5'd0"), ('regnum_x', "5'd0"), ('regnum_y', "5'd0"),
+                 ('alumanip', 'MANIP_SWAP_BYTE'), ('aluinx_sel', 'ALUX_XBUS'),
+                 ('aluiny_sel', 'ALUY_YBUS'), ('arith_func', 'ARITH_ADD'),
+                 ('arith_ci_en', "1'b0"), ('arith_sr_func', 'ASR_ZERO'),
+                 ('logic_func', 'LOGIC_NOT'), ('logic_sr_func', 'LSR_ZERO'),
+                 ('ma_wr', "1'b0"), ('mem_lock', "1'b0"), ('mem_size', 'SZ_BYTE')):
+        ex_defaults.append(('ex.' + f, d))
+    id_defaults = [('id.if_issue', "1'b0"), ('id.incpc', "1'b0"),
+                   ('id.ifadsel', "1'b0")]
+    ex_stall_defaults = [
+        ('ex_stall.wrpc_z', "1'b0"), ('ex_stall.wrsr_z', "1'b0"),
+        ('ex_stall.ma_issue', "1'b0"), ('ex_stall.wrpr_pc', "1'b0"),
+        ('ex_stall.zbus_sel', 'ZBUS_ARITH'), ('ex_stall.sr_sel', 'SR_PREV'),
+        ('ex_stall.t_sel', 'T_CLEAR'), ('ex_stall.mem_addr_sel', 'MADDR_XBUS'),
+        ('ex_stall.mem_wdata_sel', 'MWDATA_ZBUS'), ('ex_stall.wrreg_z', "1'b0"),
+        ('ex_stall.wrmach', "1'b0"), ('ex_stall.wrmacl', "1'b0"),
+        ('ex_stall.shiftfunc', 'SHIFT_LOGIC'), ('ex_stall.mulcom1', "1'b0"),
+        ('ex_stall.mulcom2', 'MULT_NOP'), ('ex_stall.macsel1', 'MACIN1_XBUS'),
+        ('ex_stall.macsel2', 'MACIN2_YBUS'),
+    ]
+    wb_stall_defaults = [
+        ('wb_stall.mulcom1', "1'b0"), ('wb_stall.wrmach', "1'b0"),
+        ('wb_stall.wrmacl', "1'b0"), ('wb_stall.wrreg_w', "1'b0"),
+        ('wb_stall.wrsr_w', "1'b0"), ('wb_stall.macsel1', 'MACIN1_XBUS'),
+        ('wb_stall.macsel2', 'MACIN2_YBUS'), ('wb_stall.mulcom2', 'MULT_NOP'),
+    ]
+
+    def emit_fields(fields):
+        for path, default in fields:
+            emit_decode_group(w, table, path, ['%s = %s;' % (sv_path(path), default)],
+                              {path})
+
+    emit_fields(scalar_defaults)
+    emit_fields(id_defaults)
+    emit_fields(ex_defaults)
+    emit_fields(ex_stall_defaults)
+    emit_fields([('wb.regnum_w', "5'd0")])
+    emit_fields(wb_stall_defaults)
     w('')
-    w('    casez ({op.plane, op.code})')
+    w('  always_comb begin')
+    w('    imm_enum = IMM_ZERO;')
+    w('    (* parallel_case *) casez ({op.plane, op.code})')
     for op, steps in table:
+        selected = [(i, st) for i, st in enumerate(steps) if 'imm_enum' in st]
+        if not selected:
+            continue
         pat = op_pattern(op).replace('-', '?')
         w("      17'b%s: begin" % pat)
-        w('        // %s [%s]%s' % (op['name'], op_mnemonic_hex(op),
-                                   (' -- ' + op['desc'].replace('\n', ' ')) if op.get('desc') else ''))
-        w('        unique case (op.addr[3:0])')
-        for i, st in enumerate(steps):
-            if not st:
-                w("          4'h%x: ;" % i)
-                continue
-            w("          4'h%x: begin" % i)
-            for path in sorted(st):
-                w('            %s = %s;' % (sv_path(path), sv_value(path, st[path])))
-            w('          end')
+        w('        (* parallel_case *) case (op.addr[3:0])')
+        for i, st in selected:
+            w("          4'h%x: imm_enum = %s;" % (i, sv_value('imm_enum', st['imm_enum'])))
+        w('          default: ;')
+        w('        endcase')
+        w('      end')
+    w('      default: ;')
+    w('    endcase')
+    w('  end')
+    w('')
+    w('  always_comb begin')
+    w('    mac_busy = MACB_NOT_BUSY;')
+    w('    (* parallel_case *) casez ({op.plane, op.code})')
+    for op, steps in table:
+        selected = [(i, st) for i, st in enumerate(steps) if 'mac_busy' in st]
+        if not selected:
+            continue
+        pat = op_pattern(op).replace('-', '?')
+        w("      17'b%s: begin" % pat)
+        w('        (* parallel_case *) case (op.addr[3:0])')
+        for i, st in selected:
+            w("          4'h%x: mac_busy = %s;" % (i, sv_value('mac_busy', st['mac_busy'])))
         w('          default: ;')
         w('        endcase')
         w('      end')

@@ -1,0 +1,19 @@
+## Sipeed Tang Primer / Anlogic EG4S20BG256 pin assignments.
+## Direction is taken from the top-level port declarations.
+
+set_pin_assignment {clk24}    { LOCATION = K14; }  ## 24 MHz oscillator
+set_pin_assignment {rst_n}    { LOCATION = K16; }  ## active-low user key
+
+set_pin_assignment {rgb_led[0]} { LOCATION = R3;  } ## red
+set_pin_assignment {rgb_led[1]} { LOCATION = J14; } ## green
+set_pin_assignment {rgb_led[2]} { LOCATION = P13; } ## blue
+
+set_pin_assignment {uart_rx}  { LOCATION = H13; }  ## UART1 RX / external TX
+set_pin_assignment {uart_tx}  { LOCATION = J13; }  ## UART1 TX / external RX
+
+## SPI is brought to general-purpose I/O for an external device.  Unlike the
+## configuration-flash pins, these do not interfere with FPGA programming.
+set_pin_assignment {spi_clk}  { LOCATION = J16; }
+set_pin_assignment {spi_cs}   { LOCATION = P15; }
+set_pin_assignment {spi_mosi} { LOCATION = P16; }
+set_pin_assignment {spi_miso} { LOCATION = M14; }
