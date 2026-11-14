@@ -3,6 +3,13 @@ package j2.core
 import spinal.core._
 import spinal.lib._
 
+final class J2Event extends Bundle {
+  val command = UInt(2 bits)
+  val vector = UInt(8 bits)
+  val level = UInt(4 bits)
+  val bypassMask = Bool()
+}
+
 object J2AluXSelect extends SpinalEnum {
   val XBUS, FC, ROTCL, ZERO = newElement()
 }

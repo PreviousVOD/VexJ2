@@ -3,6 +3,7 @@ SPINAL_DIR := spinal
 SPINAL_OUT := build/spinal/verilog
 TD_HOME ?= /home/imi415/Softwares/Tools/TD_4.6.7_Linux
 TESTROM := $(CURDIR)/build/sw/testrom/main.bin
+TESTROM16550 := $(CURDIR)/build/sw/testrom16550/main.bin
 SIMTESTS := $(CURDIR)/build/sw/simtests/rte.bin $(CURDIR)/build/sw/simtests/interrupts.bin
 REFSRC := reference/soc_top/README
 ARCHIVE := archive/systemverilog-2026-11-14/working-tree
@@ -16,8 +17,8 @@ MICROCODE_MIF := build/microcode/j2_microcode.mif
 export PATH := $(PATH):$(CURDIR)/tools/local/bin:$(CURDIR)/tools/local/sh-none-elf/bin
 
 .PHONY: all spinal-test spinal-generate spinal-clean spinal-verif spinal-microcode-verif spinal-hw-sim \
-	reference-verif reference-fpga spinal-fpga spinal-executor-fpga spinal-program sw td-vhdl \
-	microcode-data microcode-mif
+	reference-verif reference-fpga spinal-fpga spinal-program sw td-vhdl \
+	microcode-data microcode-mif verilog-hw-sim verilog-fpga verilog-program
 
 all: spinal-test spinal-generate
 
@@ -34,10 +35,7 @@ spinal-verif:
 spinal-microcode-verif:
 	$(MAKE) -C spinal/verif microcode-test
 
-spinal-hw-sim:
-	$(MAKE) sw
-	J2_ROM="$(TESTROM)" $(MAKE) spinal-generate
-	$(MAKE) -C spinal/verif tangprimer
+spinal-hw-sim: verilog-hw-sim
 
 spinal-clean:
 	rm -rf $(SPINAL_OUT) $(SPINAL_DIR)/target $(SPINAL_DIR)/project/target
@@ -54,8 +52,11 @@ $(MICROCODE_MIF): $(REFSRC) tools/gen_microcode_data.py
 microcode-data: $(MICROCODE_HEX) $(MICROCODE_PREDECODE)
 microcode-mif: $(MICROCODE_MIF)
 
-$(TESTROM): $(REFSRC)
+$(TESTROM): $(REFSRC) sw/testrom/Makefile
 	$(MAKE) -C sw/testrom
+
+$(TESTROM16550): $(REFSRC) sw/testrom/Makefile sw/testrom/uart16550.c
+	$(MAKE) -C sw/testrom OUT=$(CURDIR)/build/sw/testrom16550 UART=uart16550
 
 $(SIMTESTS) &: $(REFSRC)
 	$(MAKE) -C sw/simtests
@@ -83,11 +84,15 @@ reference-verif: $(REF_SIM) $(TESTROM) $(CURDIR)/build/sw/simtests/rte.bin
 reference-fpga: $(TESTROM) $(REFSRC)
 	TD_HOME="$(TD_HOME)" J2_CPU=microcode J2_ROM="$(TESTROM)" tools/build_tang_primer_td.sh
 
-spinal-fpga: $(TESTROM)
-	TD_HOME="$(TD_HOME)" J2_CPU=spinal J2_ROM="$(TESTROM)" tools/build_tang_primer_td.sh
+spinal-fpga: verilog-fpga
 
-spinal-executor-fpga: $(TESTROM)
-	TD_HOME="$(TD_HOME)" J2_CPU=spinal J2_ROM="$(TESTROM)" tools/build_tang_primer_td.sh
+spinal-program: verilog-program
 
-spinal-program: spinal-fpga
-	TD_HOME="$(TD_HOME)" tools/program_tang_primer_td.sh
+verilog-hw-sim: $(TESTROM16550)
+	$(MAKE) -C verilog test
+
+verilog-fpga: $(TESTROM16550)
+	TD_HOME="$(TD_HOME)" J2_ROM="$(TESTROM16550)" tools/build_tang_primer_verilog_td.sh
+
+verilog-program: verilog-fpga
+	TD_HOME="$(TD_HOME)" tools/program_tang_primer_verilog_td.sh

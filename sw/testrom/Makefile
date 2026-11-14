@@ -14,7 +14,8 @@ CFLAGS  := -m2 $(ENDIAN) -g -Os -Wall -Wno-builtin-declaration-mismatch \
            -Wno-implicit-function-declaration -fno-builtin -ffreestanding
 LDFLAGS := -m2 $(ENDIAN) -nostdlib -T $(SRC)/startup/sh32.x -Wl,-Map,$(OUT)/main.map
 
-OBJS  := entry.o gdb.o sh2.o main.o version.o uartlite.o
+UART    ?= uartlite
+OBJS  := entry.o gdb.o sh2.o main.o version.o $(UART).o
 TESTS := testbra testmov testmov2 testalu testshift testmul testmulu testmuls testmull \
          testdmulu testdmuls testmulconf testdiv testmacw testmacl
 OBJS  := $(addprefix $(OUT)/,$(OBJS) $(addprefix tests/,$(addsuffix .o,$(TESTS))))
@@ -29,6 +30,9 @@ $(OUT)/version.o: $(OUT)/version.c
 $(OUT)/main.o: $(SRC)/main.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -fno-inline -c $< -o $@
+$(OUT)/uart16550.o: $(ROOT)/sw/testrom/uart16550.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -c $< -o $@
 $(OUT)/%.o: $(SRC)/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -37,8 +41,8 @@ $(OUT)/tests/%.o: $(SRC)/tests/%.s
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -Wa,-isa=sh2a -c $< -o $@
 
-$(OUT)/main.elf: $(OBJS)
-	$(CC) $(LDFLAGS) $^ -lgcc -o $@
+$(OUT)/main.elf: $(OBJS) Makefile
+	$(CC) $(LDFLAGS) $(filter %.o,$^) -lgcc -o $@
 $(OUT)/main.bin: $(OUT)/main.elf
 	$(CROSS)objcopy -O binary $< $@
 $(OUT)/main.lst: $(OUT)/main.elf

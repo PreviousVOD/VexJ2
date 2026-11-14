@@ -4,9 +4,10 @@
 
 The validated VHDL baseline is commit `4c281cf`. It passed the reference
 simulation and ran on the Tang Primer, printing `CPU tests passed` over UART.
-Commit `2bebec7` checkpoints the modular SpinalHDL implementation. The
-microcoded core is now selected by `J2Soc` and the `spinal-fpga` build; the VHDL
-implementation remains available through `reference-fpga`.
+Commit `2bebec7` checkpoints the modular SpinalHDL implementation. Scala now
+generates only the microcoded CPU and its support modules. The current SoC,
+validation memory, bus fabric, PIO, and UART adapter are Verilog modules under
+`verilog/`; the VHDL implementation remains available through `reference-fpga`.
 
 Useful entry points:
 
@@ -28,8 +29,9 @@ Useful entry points:
 - Interrupts, illegal instructions and address-error events: `TEST_RESULT=0`
   (1,817 cycles).
 
-`make spinal-test` passes all 35 Scala tests, including the new integrated
-microcoded-core regression at three bus latency settings.
+`make spinal-test` passes all 26 retained CPU/ISA tests, including the
+integrated microcoded-core regression at three bus latency settings. SoC and
+peripheral-only Scala tests were removed with their replaced modules.
 
 The missing SP read was the first of several integration defects:
 
@@ -65,9 +67,10 @@ and delay-slot execution under three independently delayed bus configurations.
 `J2MultiplySpec` checks separated operand arrival, progress while slots are
 stalled, and signed MAC.W saturation with MACH preservation.
 
-The core is selected by `J2Soc` and the SpinalHDL FPGA target. Simulation,
-FPGA timing, and hardware validation are recorded separately; passing one does
-not replace the others.
+The generated CPU is instantiated by `verilog/j2_soc.v`. The Verilog SoC passes
+`make verilog-hw-sim`, running the full CPU test image and printing `CPU tests
+passed` through the 16550 UART. Simulation, FPGA timing, and hardware validation
+remain separate requirements.
 
 ## Reproduction
 
@@ -143,12 +146,34 @@ from advancing EX/WB with an arbitrary ROM output. Without this hold, randomized
 SoC simulations occasionally started at PC zero with SP zero and repeatedly
 stacked exceptions at `0xfffffffc`, `0xfffffff8`, and so on.
 
-The direct SoC regression uses explicit clock edges and four reset cycles, like
-the standalone core harness. The board wrapper also holds the core in reset for
-several complete clocks. Releasing a direct SoC instance's asynchronous reset at
-an arbitrary `forkStimulus` phase remains unsupported and was still able to
-expose bad startup behavior in testing; do not use that stimulus as a hardware
-reset model.
+The standalone core regression uses explicit clock edges and four reset cycles.
+The Verilog board wrapper also holds the core in reset for several complete
+clocks. Releasing a direct core's asynchronous reset at an arbitrary
+`forkStimulus` phase remains unsupported and was still able to expose bad
+startup behavior in testing; do not use that stimulus as a hardware reset model.
+
+### Verilog SoC integration
+
+The 16550 is configured for its upstream 8-bit Wishbone interface. The adapter
+in `verilog/j2_uart16550.v` presents 32-bit registers to the CPU with the data
+byte in bits 7:0. Its peripheral window must cover all eight 32-bit registers:
+the original 16-byte decode missed LSR at offset `0x14`, causing an immediate
+loopback ACK and a zero status read. The Verilog router uses a 32-byte window.
+
+The validation image needs writable data and BSS, so `j2_validation_rom` is an
+initialized dual-port memory, not a read-only instruction array. Generic
+`$readmemh` inference caused TD to construct hundreds of thousands of muxes.
+Hardware uses the existing `j2_eg4_bram32` true-dual-port primitive; Verilator
+uses the behavioral model in the same Verilog module. `gen_verilog_rom.py`
+generates the complete HEX and MIF images, avoiding uninitialized-word loops
+that also exceeded TD's elaboration limit. The SoC's `ROM_INIT_FILE` must name
+the MIF; passing the HEX file to the EG4 primitive produced a silent, empty
+hardware boot despite a successful simulation and bitstream build.
+
+Simulator and FPGA CPU generation use separate output directories. Sharing one
+output replaced the simulation ROM with the EG4 BlackBox on the next simulator
+build. The generated CPU now goes to `build/spinal/verilog-fpga` when
+`J2_FPGA=1`.
 
 ### FC must align, not shift
 
@@ -187,7 +212,7 @@ relationship and can skip branch delay slots.
 
 ### Register-file timing matters
 
-Do not replace `J2PipelineRegFile` with the simpler existing `J2RegFile` without
+Do not replace `J2PipelineRegFile` with a conventional register file without
 changing the microarchitecture:
 
 - Z writes are delayed through two pending-write stages.
@@ -204,16 +229,17 @@ early test failures came from incorrect test setup rather than RTL.
 
 ## FPGA validation and remaining boundary
 
-The final SpinalHDL image completed synthesis, place, route, and bit generation
-with 7,654 LUTs, 1,616 registers, nine DSPs, 64 BRAM9K blocks, and five BRAM32K
-blocks. TD reports zero setup and zero hold errors, a 29.414 ns minimum period,
-6.126 ns minimum setup slack, and 0.307 ns minimum hold slack for the 24 MHz
-clock. Volatile JTAG programming succeeded and `/dev/ttyACM0` captured `CPU
-tests passed` at 19,200 baud. The raw capture is
-`build/logs/spinal_fpga_uart.log`; it also contains the board's `DDR Init` and
-`GDB` messages and a trailing non-text byte.
+The earlier all-SpinalHDL SoC was validated at commit `3c38cca`. The current
+Verilog SoC completes synthesis, place, route, and bit generation with 8,265
+LUTs, 1,777 registers, nine DSPs, and 13 BRAM32K blocks. TD reports zero setup
+and zero hold errors, a 29.780 ns minimum period, 5.943 ns minimum setup slack,
+and 0.266 ns minimum hold slack for the 24 MHz clock.
+
+Volatile JTAG programming succeeded and `/dev/ttyACM0` captured `CPU tests
+passed` at 19,200 baud through the 16550, followed by DDR and GDB messages. The
+raw capture is `build/logs/verilog_fpga_uart.log`.
 
 The VHDL baseline has four known hold violations and the build script rejects
-bitstream generation when timing errors remain. The SpinalHDL core's debug
-interface is still a stub; these programs and hardware results do not establish
-debug support or exhaustive ISA correctness.
+bitstream generation when timing errors remain. The core's debug interface is
+still a stub; these programs and hardware results do not establish debug support
+or exhaustive ISA correctness.
