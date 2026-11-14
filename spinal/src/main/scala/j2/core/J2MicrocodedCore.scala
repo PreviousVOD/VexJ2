@@ -40,7 +40,7 @@ final class J2MicrocodedCore(val useEg4Rom: Boolean = false) extends Component {
   private val nextStatus = new J2Status
   nextStatus := status
   private val macS = RegInit(False)
-  private val slot = RegInit(True)
+  private val slot = RegInit(False)
 
   private val instruction = RegInit(U(0, 16 bits))
   private val instructionNext = RegInit(U(0, 16 bits))
@@ -307,7 +307,7 @@ final class J2MicrocodedCore(val useEg4Rom: Boolean = false) extends Component {
 
     when(pipeline.io.state.ex1Stall.pcWriteZ) {
       pcReg := datapath.io.zbus
-    } elsewhen(sequencer.io.incrementPc) {
+    } elsewhen (sequencer.io.incrementPc) {
       pcReg := sequentialInstructionAddress
     }
 
@@ -338,7 +338,7 @@ final class J2MicrocodedCore(val useEg4Rom: Boolean = false) extends Component {
     status.m := False
     status.interruptMask := 0xf
     macS := False
-    slot := True
+    slot := False
     instruction := 0
     instructionNext := 0
     instructionPending := False

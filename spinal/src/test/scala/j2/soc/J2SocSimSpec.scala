@@ -35,7 +35,6 @@ class J2SocSimSpec extends munit.FunSuite {
     SimConfig.withVerilator
       .compile(new J2Soc(ramWords = 1024, ramInit = init.toSeq))
       .doSim { dut =>
-        dut.clockDomain.forkStimulus(10)
         dut.io.external.ACK #= false
         dut.io.external.ERR #= false
         dut.io.external.DAT_MISO #= 0
@@ -47,10 +46,19 @@ class J2SocSimSpec extends munit.FunSuite {
         dut.io.event.payload.level #= 0
         dut.io.event.payload.bypassMask #= false
 
+        def tick(): Unit = {
+          dut.clockDomain.clockSim #= false
+          sleep(5)
+          dut.clockDomain.clockSim #= true
+          sleep(5)
+          dut.clockDomain.clockSim #= false
+          sleep(1)
+        }
+        dut.clockDomain.clockSim #= false
         dut.clockDomain.assertReset()
-        dut.clockDomain.waitSampling(2)
+        for (_ <- 0 until 4) tick()
         dut.clockDomain.deassertReset()
-        dut.clockDomain.waitSampling()
+        sleep(1)
 
         var retired = 0
         var cycles = 0
@@ -68,14 +76,17 @@ class J2SocSimSpec extends munit.FunSuite {
           } else {
             dut.io.external.ACK #= false
           }
-          sleep(1)
-          dut.clockDomain.waitSampling()
+          tick()
           cycles += 1
           if (dut.io.retired.toBoolean) retired += 1
         }
 
         assert(retired == 8, s"SoC retired only $retired instructions in $cycles cycles")
-        assertEquals(externalWrite, Some(0x1000L -> 3L))
+        assertEquals(
+          externalWrite,
+          Some(0x1000L -> 3L),
+          s"final PC was 0x${dut.io.pc.toLong.toHexString}"
+        )
         assertEquals(dut.io.pc.toLong, 0x10aL)
       }
   }

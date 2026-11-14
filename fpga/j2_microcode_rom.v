@@ -1,5 +1,5 @@
 module j2_microcode_rom #(
-  parameter INIT_FILE = "../../microcode/sh2_microcode.mif"
+  parameter INIT_FILE = "../../microcode/j2_microcode.mif"
 ) (
   input  wire        clk,
   input  wire [7:0]  address,

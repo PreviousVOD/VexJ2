@@ -11,10 +11,10 @@
         <Verilog>
             <File>J2TangPrimer.v</File>
             <File>j2_microcode_rom.v</File>
-            <File>j2_tang_primer_spinal.v</File>
+            <File>j2_tang_primer.v</File>
         </Verilog>
-        <ADC_FILE>j2_tang_primer_spinal.adc</ADC_FILE>
-        <SDC_FILE>j2_tang_primer_spinal.sdc</SDC_FILE>
+        <ADC_FILE>j2_tang_primer.adc</ADC_FILE>
+        <SDC_FILE>j2_tang_primer.sdc</SDC_FILE>
         <CWC_FILE/>
     </Source_Files>
     <TOP_MODULE>

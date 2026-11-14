@@ -4,8 +4,9 @@
 
 The validated VHDL baseline is commit `4c281cf`. It passed the reference
 simulation and ran on the Tang Primer, printing `CPU tests passed` over UART.
-The new SpinalHDL microcoded core is uncommitted development work and is not
-selected by `J2Soc` or the FPGA build.
+Commit `2bebec7` checkpoints the modular SpinalHDL implementation. The
+microcoded core is now selected by `J2Soc` and the `spinal-fpga` build; the VHDL
+implementation remains available through `reference-fpga`.
 
 Useful entry points:
 
@@ -22,10 +23,10 @@ Useful entry points:
 
 `make spinal-microcode-verif` now passes all three programs:
 
-- Full CPU ROM: `CPU tests passed` (31,560 cycles).
-- RTE: `TEST_RESULT=0` (885 cycles).
+- Full CPU ROM: `CPU tests passed` (31,561 cycles).
+- RTE: `TEST_RESULT=0` (886 cycles).
 - Interrupts, illegal instructions and address-error events: `TEST_RESULT=0`
-  (1,816 cycles).
+  (1,817 cycles).
 
 `make spinal-test` passes all 35 Scala tests, including the new integrated
 microcoded-core regression at three bus latency settings.
@@ -64,8 +65,9 @@ and delay-slot execution under three independently delayed bus configurations.
 `J2MultiplySpec` checks separated operand arrival, progress while slots are
 stalled, and signed MAC.W saturation with MACH preservation.
 
-The new core remains unselected by `J2Soc`; these are simulation results, not
-FPGA timing or hardware validation.
+The core is selected by `J2Soc` and the SpinalHDL FPGA target. Simulation,
+FPGA timing, and hardware validation are recorded separately; passing one does
+not replace the others.
 
 ## Reproduction
 
@@ -123,6 +125,31 @@ val memory = Mem(UInt(72 bits), 256)
 memory.initBigInt(J2MicrocodeData.entries)
 ```
 
+`spinal/src/main/resources/j2_microcode.hex` is the canonical 256 x 72-bit
+data. Simulation consumes it directly; `make microcode-mif` generates the FPGA
+MIF on demand. Do not add another independently maintained ROM representation.
+
+For the EG4 wrapper, use `setDefinitionName("j2_microcode_rom")`, not
+`setName`: the latter changed only the instance name and left TD trying to
+elaborate an unknown `Eg4MicrocodeRom` module. Drive `rom.io.clk` only from the
+core; combining that assignment with `mapClockDomain(clock = io.clk)` caused a
+TD assignment-overlap error.
+
+### Reset must allow the first ROM read
+
+A synchronous falling-edge ROM has no valid reset micro-op before its first
+read edge. `slot` therefore resets low, preventing the first active rising edge
+from advancing EX/WB with an arbitrary ROM output. Without this hold, randomized
+SoC simulations occasionally started at PC zero with SP zero and repeatedly
+stacked exceptions at `0xfffffffc`, `0xfffffff8`, and so on.
+
+The direct SoC regression uses explicit clock edges and four reset cycles, like
+the standalone core harness. The board wrapper also holds the core in reset for
+several complete clocks. Releasing a direct SoC instance's asynchronous reset at
+an arbitrary `forkStimulus` phase remains unsupported and was still able to
+expose bad startup behavior in testing; do not use that stimulus as a hardware
+reset model.
+
 ### FC must align, not shift
 
 An earlier implementation used:
@@ -175,9 +202,18 @@ in `spinal/src/test/scala/j2/core/J2ControlDrive.scala`. Allow sequential and
 combinational outputs to settle after sampling edges before assertions. Several
 early test failures came from incorrect test setup rather than RTL.
 
-## Remaining validation boundary
+## FPGA validation and remaining boundary
 
-The baseline FPGA has four known hold violations and the build script rejects
-bitstream generation when timing errors remain. The new core has not undergone
-FPGA synthesis or hardware testing. Its debug interface is still a stub; passing
-these programs does not establish debug support or exhaustive ISA correctness.
+The final SpinalHDL image completed synthesis, place, route, and bit generation
+with 7,654 LUTs, 1,616 registers, nine DSPs, 64 BRAM9K blocks, and five BRAM32K
+blocks. TD reports zero setup and zero hold errors, a 29.414 ns minimum period,
+6.126 ns minimum setup slack, and 0.307 ns minimum hold slack for the 24 MHz
+clock. Volatile JTAG programming succeeded and `/dev/ttyACM0` captured `CPU
+tests passed` at 19,200 baud. The raw capture is
+`build/logs/spinal_fpga_uart.log`; it also contains the board's `DDR Init` and
+`GDB` messages and a trailing non-text byte.
+
+The VHDL baseline has four known hold violations and the build script rejects
+bitstream generation when timing errors remain. The SpinalHDL core's debug
+interface is still a stub; these programs and hardware results do not establish
+debug support or exhaustive ISA correctness.

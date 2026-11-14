@@ -55,7 +55,7 @@ final class Eg4MicrocodeRom(
     with J2MicrocodeRomPort {
   val io = new J2MicrocodeRomIo
 
-  setName("j2_microcode_rom")
+  setDefinitionName("j2_microcode_rom")
   noIoPrefix()
   addGeneric("INIT_FILE", initFile)
 }

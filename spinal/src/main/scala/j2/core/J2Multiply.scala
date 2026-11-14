@@ -122,7 +122,7 @@ final class J2Multiply extends Component {
               machReg := machReg | U(1, 32 bits)
               maclReg := Mux(macwNegativeOverflow, U(0x80000000L, 32 bits), U(0x7fffffffL, 32 bits))
             } otherwise {
-              when(!saturate) { machReg := sum(63 downto 32) }
+              when(!saturate)(machReg := sum(63 downto 32))
               maclReg := sum(31 downto 0)
             }
           }
