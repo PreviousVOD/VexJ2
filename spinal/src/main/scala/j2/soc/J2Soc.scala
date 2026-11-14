@@ -1,7 +1,7 @@
 package j2.soc
 
 import j2.bus.{J2SocBusRouter, J2WbRam, J2Wishbone}
-import j2.core.{Sh2Core, Sh2Event}
+import j2.core.{J2Event, J2MicrocodedCore}
 import j2.periph.{J2Pio, J2UartLite}
 import spinal.core._
 import spinal.lib._
@@ -10,13 +10,14 @@ final class J2Soc(
     val ramWords: Int = 8192,
     val ramInit: Seq[BigInt] = Seq.empty,
     val clockHz: Int = 24000000,
-    val baud: Int = 19200
+    val baud: Int = 19200,
+    val useEg4Rom: Boolean = false
 ) extends Component {
   require(ramWords > 0 && (ramWords & (ramWords - 1)) == 0)
 
   val io = new Bundle {
     val external = master(J2Wishbone())
-    val event = slave(Stream(new Sh2Event()))
+    val event = slave(Stream(new J2Event()))
     val uartRx = in Bool ()
     val uartTx = out Bool ()
     val pioIn = in UInt (32 bits)
@@ -26,7 +27,7 @@ final class J2Soc(
     val sleep = out Bool ()
   }
 
-  private val core = new Sh2Core
+  private val core = new J2MicrocodedCore(useEg4Rom)
   private val ram = new J2WbRam(ramWords, ramInit)
   private val router = new J2SocBusRouter(BigInt(ramWords) * 4)
   private val pio = new J2Pio

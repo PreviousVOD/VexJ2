@@ -3,7 +3,13 @@
 // The system model and Wishbone slave are reused from the archived verification
 // infrastructure. The SpinaHDL core returns the addressed instruction halfword
 // in DAT_MISO[15:0], unlike the old J2 core which returned a full aligned word.
-#include "VSh2Core.h"
+#ifdef USE_MICROCODED_CORE
+#include "VJ2MicrocodedCore.h"
+using CoreModel = VJ2MicrocodedCore;
+#else
+#include "VJ2Core.h"
+using CoreModel = VJ2Core;
+#endif
 #include "sysmodel.h"
 #include "wbslave.h"
 #include "verilated.h"
@@ -62,7 +68,7 @@ int main(int argc, char **argv) {
     return 2;
   }
 
-  VSh2Core top;
+  CoreModel top;
   top.io_ibus_ACK = 0;
   top.io_ibus_DAT_MISO = 0;
   top.io_ibus_ERR = 0;
@@ -103,7 +109,12 @@ int main(int argc, char **argv) {
         ibus.step(top.io_ibus_CYC, top.io_ibus_STB, top.io_ibus_ADR,
                   false, top.io_ibus_SEL, 0, stall, data,
                   [&](uint32_t address, bool, unsigned, uint32_t) {
-                    return fetch_halfword(sys, address);
+                    uint32_t value = fetch_halfword(sys, address);
+                    if (cycles >= bus_log_from) {
+                      printf("%9llu IF adr=%08x data=%04x\n",
+                             (unsigned long long)cycles, address, value);
+                    }
+                    return value;
                   });
     top.io_ibus_DAT_MISO = data;
 
@@ -112,12 +123,13 @@ int main(int argc, char **argv) {
                   top.io_dbus_WE, top.io_dbus_SEL, top.io_dbus_DAT_MOSI,
                   stall, data,
                   [&](uint32_t address, bool write, unsigned select, uint32_t value) {
+                    uint32_t result = sys.access(address, write, select, value);
                     if (cycles >= bus_log_from) {
                       printf("%9llu dbus %s adr=%08x sel=%x data=%08x\n",
                              (unsigned long long)cycles, write ? "WR" : "RD",
-                             address, select, write ? value : 0);
+                             address, select, write ? value : result);
                     }
-                    return sys.access(address, write, select, value);
+                    return result;
                   });
     top.io_dbus_DAT_MISO = data;
 

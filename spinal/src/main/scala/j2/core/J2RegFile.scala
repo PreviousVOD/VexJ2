@@ -2,23 +2,23 @@ package j2.core
 
 import spinal.core._
 
-final class Sh2ReadPort extends Bundle {
+final class J2ReadPort extends Bundle {
   val address = in UInt (4 bits)
   val data = out UInt (32 bits)
 }
 
-final class Sh2WritePort extends Bundle {
+final class J2WritePort extends Bundle {
   val enable = in Bool ()
   val address = in UInt (4 bits)
   val data = in UInt (32 bits)
 }
 
-final class Sh2RegFile extends Component {
+final class J2RegFile extends Component {
   val io = new Bundle {
-    val readA = new Sh2ReadPort
-    val readB = new Sh2ReadPort
-    val writeW = new Sh2WritePort
-    val writeZ = new Sh2WritePort
+    val readA = new J2ReadPort
+    val readB = new J2ReadPort
+    val writeW = new J2WritePort
+    val writeZ = new J2WritePort
   }
 
   val registers = Vec(Reg(UInt(32 bits)) init 0, 16)

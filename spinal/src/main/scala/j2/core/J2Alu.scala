@@ -2,7 +2,7 @@ package j2.core
 
 import spinal.core._
 
-object Sh2AluOp extends SpinalEnum {
+object J2AluOp extends SpinalEnum {
   val ADD, ADDC, ADDV = newElement()
   val SUB, SUBC, SUBV = newElement()
   val NEG, NEGC = newElement()
@@ -56,11 +56,11 @@ object AluKind {
   )
 }
 
-final class Sh2Alu extends Component {
-  import Sh2AluOp._
+final class J2Alu extends Component {
+  import J2AluOp._
 
   val io = new Bundle {
-    val op = in(Sh2AluOp())
+    val op = in(J2AluOp())
     val a = in UInt (32 bits)
     val b = in UInt (32 bits)
     val tIn = in Bool ()
@@ -153,7 +153,7 @@ final class Sh2Alu extends Component {
   }
 }
 
-object Sh2AluModel {
+object J2AluModel {
   import AluKind._
 
   final case class Result(value: BigInt, t: Boolean)

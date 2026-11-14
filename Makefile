@@ -9,23 +9,30 @@ ARCHIVE := archive/systemverilog-2026-11-14/working-tree
 REF_BUILD := $(CURDIR)/build/ref_microcode
 REF_VERILOG := $(REF_BUILD)/j2_cpu_flat.v
 REF_SIM := $(REF_BUILD)/Vref_cpu
+MICROCODE_HEX := spinal/src/main/resources/j2_microcode.hex
+MICROCODE_PREDECODE := spinal/src/main/resources/j2_predecode.tsv
+MICROCODE_MIF := build/microcode/j2_microcode.mif
 
 export PATH := $(PATH):$(CURDIR)/tools/local/bin:$(CURDIR)/tools/local/sh-none-elf/bin
 
-.PHONY: all spinal-test spinal-generate spinal-clean spinal-verif spinal-hw-sim \
-	reference-verif reference-fpga spinal-fpga spinal-executor-fpga spinal-program sw td-vhdl
+.PHONY: all spinal-test spinal-generate spinal-clean spinal-verif spinal-microcode-verif spinal-hw-sim \
+	reference-verif reference-fpga spinal-fpga spinal-executor-fpga spinal-program sw td-vhdl \
+	microcode-data microcode-mif
 
 all: spinal-test spinal-generate
 
-spinal-test:
+spinal-test: microcode-data
 	cd $(SPINAL_DIR) && $(SBT) -batch test
 
-spinal-generate:
+spinal-generate: microcode-data
 	mkdir -p $(SPINAL_OUT)
 	cd $(SPINAL_DIR) && $(SBT) -batch run
 
 spinal-verif:
 	$(MAKE) -C spinal/verif test
+
+spinal-microcode-verif:
+	$(MAKE) -C spinal/verif microcode-test
 
 spinal-hw-sim:
 	$(MAKE) sw
@@ -37,6 +44,15 @@ spinal-clean:
 
 $(REFSRC): jcore-source-latest.tar.gz
 	mkdir -p reference && tar -xzf $< -C reference && chmod -R a-w reference/soc_top && touch $@
+
+$(MICROCODE_HEX) $(MICROCODE_PREDECODE) &: $(REFSRC) tools/gen_microcode_data.py
+	python3 tools/gen_microcode_data.py
+
+$(MICROCODE_MIF): $(REFSRC) tools/gen_microcode_data.py
+	python3 tools/gen_microcode_data.py --mif $@
+
+microcode-data: $(MICROCODE_HEX) $(MICROCODE_PREDECODE)
+microcode-mif: $(MICROCODE_MIF)
 
 $(TESTROM): $(REFSRC)
 	$(MAKE) -C sw/testrom
@@ -67,10 +83,11 @@ reference-verif: $(REF_SIM) $(TESTROM) $(CURDIR)/build/sw/simtests/rte.bin
 reference-fpga: $(TESTROM) $(REFSRC)
 	TD_HOME="$(TD_HOME)" J2_CPU=microcode J2_ROM="$(TESTROM)" tools/build_tang_primer_td.sh
 
-spinal-fpga: reference-fpga
+spinal-fpga: $(TESTROM)
+	TD_HOME="$(TD_HOME)" J2_CPU=spinal J2_ROM="$(TESTROM)" tools/build_tang_primer_td.sh
 
 spinal-executor-fpga: $(TESTROM)
 	TD_HOME="$(TD_HOME)" J2_CPU=spinal J2_ROM="$(TESTROM)" tools/build_tang_primer_td.sh
 
-spinal-program: reference-fpga
+spinal-program: spinal-fpga
 	TD_HOME="$(TD_HOME)" tools/program_tang_primer_td.sh

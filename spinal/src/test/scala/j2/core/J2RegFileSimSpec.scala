@@ -3,9 +3,9 @@ package j2.core
 import spinal.core.sim._
 import scala.language.reflectiveCalls
 
-class Sh2RegFileSimSpec extends munit.FunSuite {
+class J2RegFileSimSpec extends munit.FunSuite {
   test("register-file writes, read forwarding and writable r0") {
-    SimConfig.withVerilator.compile(new Sh2RegFile).doSim { dut =>
+    SimConfig.withVerilator.compile(new J2RegFile).doSim { dut =>
       dut.clockDomain.forkStimulus(10)
       dut.io.readA.address #= 0
       dut.io.readB.address #= 0

@@ -1,7 +1,8 @@
 package j2
 
-import j2.isa.Sh2Decoder
-import j2.core.{Sh2Alu, Sh2Core, Sh2RegFile, Sh2Shifter}
+import j2.isa._
+import j2.microcode._
+import j2.core._
 import j2.bus.J2WbRam
 import j2.periph.{J2Pio, J2UartLite}
 import j2.soc.{J2Soc, J2TangPrimer}
@@ -24,18 +25,29 @@ object Generate extends App {
     }
 
   private val rom = loadRom()
+  private val useEg4Rom = sys.env.get("J2_FPGA").contains("1")
   val config = SpinalConfig(
     targetDirectory = "../build/spinal/verilog",
     mode = Verilog
   ).withoutEnumString()
-  config.generateVerilog(new Sh2Decoder)
-  config.generateVerilog(new Sh2Alu)
-  config.generateVerilog(new Sh2Shifter)
-  config.generateVerilog(new Sh2RegFile)
-  config.generateVerilog(new Sh2Core)
+  config.generateVerilog(new J2Decoder)
+  config.generateVerilog(new J2Alu)
+  config.generateVerilog(new J2Shifter)
+  config.generateVerilog(new J2RegFile)
+  config.generateVerilog(new J2Core)
+  config.generateVerilog(new J2PipelineRegFile)
+  config.generateVerilog(new J2MicrocodedCore)
+  config.generateVerilog(new J2MicrocodeRom)
+  config.generateVerilog(new J2Predecoder)
+  config.generateVerilog(new J2MicrocodeTable)
+  config.generateVerilog(new J2Microsequencer)
+  config.generateVerilog(new J2Pipeline)
+  config.generateVerilog(new J2Hazards)
+  config.generateVerilog(new J2Datapath)
+  config.generateVerilog(new J2Multiply)
   config.generateVerilog(new J2WbRam)
   config.generateVerilog(new J2Pio)
   config.generateVerilog(new J2UartLite)
   config.generateVerilog(new J2Soc)
-  config.generateVerilog(new J2TangPrimer(rom))
+  config.generateVerilog(new J2TangPrimer(rom, useEg4Rom))
 }

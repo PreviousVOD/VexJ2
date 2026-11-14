@@ -3,7 +3,10 @@ package j2.soc
 import j2.bus.J2WbLoopback
 import spinal.core._
 
-final class J2TangPrimer(val ramInit: Seq[BigInt] = Seq.empty) extends Component {
+final class J2TangPrimer(
+    val ramInit: Seq[BigInt] = Seq.empty,
+    val useEg4Rom: Boolean = false
+) extends Component {
   val io = new Bundle {
     val clk24 = in Bool ()
     val rstN = in Bool ()
@@ -33,7 +36,8 @@ final class J2TangPrimer(val ramInit: Seq[BigInt] = Seq.empty) extends Component
       ramWords = 8192,
       ramInit = ramInit,
       clockHz = 24000000,
-      baud = 19200
+      baud = 19200,
+      useEg4Rom = useEg4Rom
     )
     val loopback = new J2WbLoopback
 

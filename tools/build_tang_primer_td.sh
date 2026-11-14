@@ -24,12 +24,14 @@ case "$implementation" in
   spinal)
     (
       cd "$repo_root"
-      J2_ROM="$rom" make spinal-generate
+      make microcode-mif
+      J2_FPGA=1 J2_ROM="$rom" make spinal-generate
     )
     cp "$repo_root"/build/spinal/verilog/J2TangPrimer.v \
        "$repo_root"/build/spinal/verilog/J2TangPrimer.v_*.bin \
        "$repo_root"/fpga/j2_tang_primer.adc \
        "$repo_root"/fpga/j2_tang_primer.sdc \
+       "$repo_root"/fpga/j2_microcode_rom.v \
        "$repo_root"/fpga/j2_tang_primer_spinal.v \
        "$fpga_out_dir/"
     cp "$repo_root/fpga/j2_tang_primer_spinal.al" \

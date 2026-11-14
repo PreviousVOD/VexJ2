@@ -2,7 +2,7 @@ package j2.core
 
 import spinal.core._
 
-object Sh2ShiftOp extends SpinalEnum {
+object J2ShiftOp extends SpinalEnum {
   val SHLL, SHLL2, SHLL8, SHLL16 = newElement()
   val SHLR, SHLR2, SHLR8, SHLR16 = newElement()
   val SHAL, SHAR = newElement()
@@ -44,11 +44,11 @@ object ShiftKind {
   )
 }
 
-final class Sh2Shifter extends Component {
-  import Sh2ShiftOp._
+final class J2Shifter extends Component {
+  import J2ShiftOp._
 
   val io = new Bundle {
-    val op = in(Sh2ShiftOp())
+    val op = in(J2ShiftOp())
     val value = in UInt (32 bits)
     val tIn = in Bool ()
     val result = out UInt (32 bits)
@@ -111,7 +111,7 @@ final class Sh2Shifter extends Component {
   }
 }
 
-object Sh2ShiftModel {
+object J2ShiftModel {
   import ShiftKind._
   final case class Result(value: BigInt, t: Boolean)
   private def u32(v: BigInt): BigInt = v & 0xffffffffL

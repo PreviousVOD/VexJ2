@@ -1,6 +1,6 @@
 package j2.isa
 
-final case class Sh2OpcodeDef(
+final case class J2OpcodeDef(
     id: Int,
     name: String,
     pattern: String,
@@ -21,15 +21,15 @@ final case class Sh2OpcodeDef(
   def matches(instruction: Int): Boolean = (instruction & mask) == value
 }
 
-sealed trait Sh2DecodeResult
-object Sh2DecodeResult {
-  final case class Legal(opcode: Sh2OpcodeDef) extends Sh2DecodeResult
-  final case class ExcludedJ2(opcode: Sh2OpcodeDef) extends Sh2DecodeResult
-  final case class Illegal(raw: Int) extends Sh2DecodeResult
+sealed trait J2DecodeResult
+object J2DecodeResult {
+  final case class Legal(opcode: J2OpcodeDef) extends J2DecodeResult
+  final case class ExcludedJ2(opcode: J2OpcodeDef) extends J2DecodeResult
+  final case class Illegal(raw: Int) extends J2DecodeResult
 }
 
-object Sh2Isa {
-  import Sh2DecodeResult._
+object J2Isa {
+  import J2DecodeResult._
 
   /*
    * SH-2 instruction set plus the J2 extensions BGND, CAS.L, SHAD and SHLD.
@@ -183,14 +183,14 @@ object Sh2Isa {
     "SHLD Rm, Rn" -> "0100nnnnmmmm1101"
   )
 
-  val instructions: Seq[Sh2OpcodeDef] =
+  val instructions: Seq[J2OpcodeDef] =
     basePatterns.zipWithIndex.map { case ((name, pattern), id) =>
-      Sh2OpcodeDef(id, name, pattern)
+      J2OpcodeDef(id, name, pattern)
     }
 
-  val excludedInstructions: Seq[Sh2OpcodeDef] = Seq.empty
+  val excludedInstructions: Seq[J2OpcodeDef] = Seq.empty
 
-  val allDefinitions: Seq[Sh2OpcodeDef] = instructions ++ excludedInstructions
+  val allDefinitions: Seq[J2OpcodeDef] = instructions ++ excludedInstructions
 
   final case class Fields(
       n: Int,
@@ -201,7 +201,7 @@ object Sh2Isa {
       immediate8: Int
   )
 
-  def decode(instruction: Int): Sh2DecodeResult = {
+  def decode(instruction: Int): J2DecodeResult = {
     val raw = instruction & 0xffff
     allDefinitions.find(_.matches(raw)) match {
       case Some(op) if op.excluded => ExcludedJ2(op)

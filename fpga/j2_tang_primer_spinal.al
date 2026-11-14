@@ -10,6 +10,7 @@
     <Source_Files>
         <Verilog>
             <File>J2TangPrimer.v</File>
+            <File>j2_microcode_rom.v</File>
             <File>j2_tang_primer_spinal.v</File>
         </Verilog>
         <ADC_FILE>j2_tang_primer_spinal.adc</ADC_FILE>

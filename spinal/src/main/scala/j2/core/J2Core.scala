@@ -1,22 +1,22 @@
 package j2.core
 
 import j2.bus.J2Wishbone
-import j2.isa.{Sh2Decoder, Sh2Isa}
+import j2.isa.{J2Decoder, J2Isa}
 import spinal.core._
 import spinal.lib._
 
-object Sh2CoreState extends SpinalEnum {
+object J2CoreState extends SpinalEnum {
   val resetData, fetch, execute, data, dataGap = newElement()
 }
 
-object Sh2DataAction extends SpinalEnum {
+object J2DataAction extends SpinalEnum {
   val resetPcRead, resetSpRead, loadByte, loadWord, loadLong, storeByte, storeWord, storeLong,
       tasRead, tasWrite, gbrRead, gbrWrite, macWordFirst, macWordSecond, macLongFirst,
       macLongSecond, casRead, casWrite, exceptionSrWrite, exceptionPcWrite, exceptionVectorRead,
       rtePcRead, rteSrRead = newElement()
 }
 
-final class Sh2Event extends Bundle {
+final class J2Event extends Bundle {
   val command = UInt(2 bits)
   val vector = UInt(8 bits)
   val level = UInt(4 bits)
@@ -30,14 +30,14 @@ final class Sh2Event extends Bundle {
   * through one or more data transactions. This keeps architectural changes independent from the old
   * SystemVerilog microarchitecture while retaining the Wishbone B4 board interface.
   */
-final class Sh2Core extends Component {
-  import Sh2CoreState._
-  import Sh2DataAction._
+final class J2Core extends Component {
+  import J2CoreState._
+  import J2DataAction._
 
   val io = new Bundle {
     val ibus = master(J2Wishbone())
     val dbus = master(J2Wishbone())
-    val event = slave(Stream(new Sh2Event))
+    val event = slave(Stream(new J2Event))
     val eventAck = out Bool ()
     val pc = out UInt (32 bits)
     val sr = out UInt (32 bits)
@@ -84,7 +84,7 @@ final class Sh2Core extends Component {
   private val pendingEventVector = Reg(UInt(8 bits)) init 0
   private val pendingEventLevel = Reg(UInt(4 bits)) init 0
 
-  private val decoder = new Sh2Decoder
+  private val decoder = new J2Decoder
   decoder.io.instruction := opcode.asBits
 
   private val n = opcode(11 downto 8)
@@ -147,14 +147,14 @@ final class Sh2Core extends Component {
     controlTaken := True
   }
 
-  private def startData(nextAction: Sh2DataAction.C, address: UInt): Unit = {
+  private def startData(nextAction: J2DataAction.C, address: UInt): Unit = {
     action := nextAction
     memAddress := address.resize(32)
     state := data
     controlTaken := True
   }
 
-  private def restartData(nextAction: Sh2DataAction.C, address: UInt): Unit = {
+  private def restartData(nextAction: J2DataAction.C, address: UInt): Unit = {
     action := nextAction
     memAddress := address.resize(32)
     state := dataGap

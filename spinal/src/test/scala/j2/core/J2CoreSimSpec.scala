@@ -5,7 +5,7 @@ import spinal.core.sim._
 
 import scala.language.reflectiveCalls
 
-class Sh2CoreSimSpec extends munit.FunSuite {
+class J2CoreSimSpec extends munit.FunSuite {
   private def wordIndex(address: Long): Int = ((address >>> 2) & 0x3ff).toInt
 
   private def pokeHalf(words: Array[Long], address: Long, value: Long): Unit = {
@@ -38,7 +38,7 @@ class Sh2CoreSimSpec extends munit.FunSuite {
   }
 
   test("reset vector, ALU, literal load, store and delayed branch") {
-    SimConfig.withVerilator.compile(new Sh2Core).doSim { dut =>
+    SimConfig.withVerilator.compile(new J2Core).doSim { dut =>
       val words = Array.fill[Long](1024)(0L)
 
       pokeWord(words, 0x0000, 0x00000100L)
@@ -107,7 +107,7 @@ class Sh2CoreSimSpec extends munit.FunSuite {
   }
 
   test("BGND raises the debug-break pulse and retires") {
-    SimConfig.withVerilator.compile(new Sh2Core).doSim { dut =>
+    SimConfig.withVerilator.compile(new J2Core).doSim { dut =>
       val words = Array.fill[Long](1024)(0L)
 
       pokeWord(words, 0x0000, 0x00000100L)
@@ -173,7 +173,7 @@ class Sh2CoreSimSpec extends munit.FunSuite {
   }
 
   test("TAS preserves a continuous locked cycle across delayed transfers") {
-    SimConfig.withVerilator.compile(new Sh2Core).doSim { dut =>
+    SimConfig.withVerilator.compile(new J2Core).doSim { dut =>
       val words = Array.fill[Long](1024)(0L)
 
       pokeWord(words, 0x0000, 0x00000100L)
