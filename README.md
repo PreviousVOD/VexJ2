@@ -15,27 +15,28 @@ decoded as legal instructions. There are no excluded instructions.
 | Area | Status |
 |---|---|
 | SH-2 and J2 decode | 54,521 legal encodings, zero exclusions |
-| Scala CPU, ISA and integration tests | 29 tests passing |
+| Scala CPU, ISA and integration tests | 30 tests passing |
 | Full original CPU test ROM | Passing, 5,779 retired instructions |
 | VHDL simulator cross-reference | Full original ROM and RTE passing |
 | Native UART, SPI/XIP, and SDRAM | Passing simulations and hardware UART-loader tests |
 | 32-bit bidirectional GPIO | Native `WishboneGpio` plus 32 EG4 pads |
-| FPGA implementation | Timing-clean at 30 MHz |
-| Tang Primer hardware | Boot banner, `Flash ID: ef4014`, SDRAM and XIP tests pass |
+| FPGA implementation | Timing-clean at 32 MHz |
+| Tang Primer hardware | Boot banner, `Flash ID: ef4014`, SDRAM, timer and XIP tests pass |
 
 The FPGA-only boot failure is fixed: the PLL now uses VCO feedback for its
 30 MHz divider calculation, power-on reset waits for PLL lock, and SPI uses
 the registered physical interface expected by its controller. The timing gate
 checks every clock domain. The current SpinalHDL SoC has been programmed over
 JTAG and the native application uploaded to the dedicated Winbond flash;
-hardware prints `SDRAM tests passed` and `XIP CPU tests passed`.
-Both the upload path and a fresh JTAG reload booting directly from flash pass.
+hardware prints `SDRAM tests passed`, `Timer tests passed`, and
+`XIP CPU tests passed`. Both the upload path and a fresh JTAG reload booting
+directly from flash pass.
 
 ## Architecture
 
 ```text
                               +-------------------+
- clk24 ---------------------->| EG4 PLL + BUFG    |--> 30 MHz SoC clock/reset
+ clk24 ---------------------->| EG4 PLL + BUFG    |--> 32 MHz SoC clock/reset
                               +-------------------+
                                         |
                  +----------------------+----------------------+
@@ -84,6 +85,7 @@ Wishbone error.
 | GPIO | `0xff000000` |
 | UART | `0xff001000` |
 | SPI flash control | `0xff002000` |
+| Architecture timer | `0xff003000` |
 
 The SPI controller is native `Apb3SpiXdrMasterCtrl`. XIP uses fast-read opcode
 `0x0b`, which matches the controller's mandatory dummy byte. Responses are
@@ -112,6 +114,20 @@ GPIO 0–2 retain the RGB LED locations R3/J14/P13. GPIO 3–31 use free
 display/camera header pins listed in `fpga/j2_tang_primer_verilog/j2_tang_primer.adc`.
 All external pins are LVCMOS33. The legacy validation ROM enables outputs at
 `0xff000008` before writing values at `0xff000004`.
+
+## Architecture timer
+
+`J2Timer` wraps the native SpinalHDL `Timer` with a `WishboneSlaveFactory`.
+Its 32-bit counter ticks at 1 MHz, derived from the parameterized SoC clock, and
+stops at the programmable limit. The interrupt is a level request on vector
+`0x40` at priority 14; software must stop, clear, or rearm the timer in the ISR.
+
+| Offset | Function |
+|---:|---|
+| `0x00` | Bit 0 enables counter ticks |
+| `0x04` | Read/write limit; writing clears the counter |
+| `0x08` | Read counter; any write clears it |
+| `0x0c` | Bit 0 enables the interrupt; bit 8 is read-only pending status |
 
 ## Project layout
 
@@ -158,7 +174,7 @@ or put `td` on `PATH`; no vendor installation path is stored in the project.
 ## Verification
 
 ```sh
-make spinal-test            # 29 CPU, ISA, reset and SPI tests
+make spinal-test            # 30 CPU, ISA, reset, SPI and timer tests
 make spinal-generate        # CPU and SoC Verilog under build/spinal/verilog
 make spinal-microcode-verif # full ROM, RTE, and interrupt regressions
 make verilog-hw-sim         # native SoC and full legacy CPU test ROM
@@ -168,19 +184,21 @@ make fpga-clock-test        # vendor PLL model; run after FPGA RTL generation
 ```
 
 The XIP regression covers reset-button and cold startup from preloaded flash,
-plus a cold blank-flash UART upload. All paths print `SDRAM tests passed` and
-`XIP CPU tests passed`. The CPU ROM also runs without a reset-button pulse.
+plus a cold blank-flash UART upload. All paths print `SDRAM tests passed`,
+`Timer tests passed`, and `XIP CPU tests passed`. The timer test covers masking,
+vector-`0x40` ISR entry, clearing, and rearming. The CPU ROM also runs without a
+reset-button pulse.
 A timeout without expected UART output fails. Integration pitfalls and their
 fixes are recorded in `docs/microcoded-core-debug.md`.
 
 ## FPGA
 
-The default SoC frequency is 30 MHz using internal VCO feedback,
-`feedbackDivider=15`, and `outputDivider=12` (24 MHz × 15 / 12).
+The default SoC frequency is 32 MHz using internal VCO feedback,
+`feedbackDivider=16`, and `outputDivider=12` (24 MHz × 16 / 12).
 Override generation parameters with:
 
 ```sh
-J2_CLOCK_HZ=30000000 J2_USE_PLL=1 make verilog-fpga
+J2_CLOCK_HZ=32000000 J2_USE_PLL=1 make verilog-fpga
 ```
 
 `J2_USE_PLL=0 J2_CLOCK_HZ=24000000` selects the 24 MHz input directly for diagnosis.
@@ -188,11 +206,11 @@ Rebuild clock-dependent firmware when changing the frequency. UART divisors
 and simulation baud timing derive from `J2_CLOCK_HZ`; the FPGA SDC is generated
 with the same value. `spinal-fpga` remains a compatibility alias.
 
-The validated 30 MHz build reports 9,817 LUTs, 2,207 registers, nine DSPs, 37 9K
-BRAMs, and 10 32K BRAMs. Timing passes in both clock domains with 0.509 ns minimum
-setup slack and 0.279 ns minimum hold slack. The 48 MHz configuration was also
-tried but failed timing;
-higher frequencies must be validated rather than assumed.
+The validated 32 MHz build reports 10,364 LUTs, 2,295 registers, nine DSPs, 37
+9K BRAMs, and 10 32K BRAMs. Timing passes in both clock domains with 0.384 ns
+minimum setup slack and 0.104 ns minimum hold slack. The 48 MHz configuration
+was also tried but failed timing; higher frequencies must be validated rather
+than assumed.
 
 Program volatile FPGA configuration and listen at 19,200 baud:
 

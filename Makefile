@@ -8,7 +8,7 @@ VERILATOR ?= $(TOOL_VERILATOR)
 SPINAL_DIR := spinal
 SPINAL_OUT := build/spinal/verilog
 TD_HOME ?=
-J2_CLOCK_HZ ?= 30000000
+J2_CLOCK_HZ ?= 32000000
 export J2_CLOCK_HZ
 TESTROM := $(CURDIR)/build/sw/testrom/main.bin
 TESTROM16550 := $(CURDIR)/build/sw/testrom16550/main.bin

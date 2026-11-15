@@ -5,7 +5,7 @@ repo_root=$(cd "$(dirname "$0")/.." && pwd)
 td_log_dir="$repo_root/build/logs/td_verilog"
 fpga_out_dir="$repo_root/build/fpga/j2_tang_primer_verilog"
 rom=${J2_ROM:-"$repo_root/build/sw/xiprom/main.bin"}
-export J2_CLOCK_HZ=${J2_CLOCK_HZ:-30000000}
+export J2_CLOCK_HZ=${J2_CLOCK_HZ:-32000000}
 export J2_USE_PLL=${J2_USE_PLL:-1}
 
 mkdir -p "$td_log_dir" "$fpga_out_dir"

@@ -8,7 +8,7 @@ import spinal.core._
 
 object Generate extends App {
   private val useEg4Rom = sys.env.get("J2_FPGA").contains("1")
-  private val clockHz = sys.env.getOrElse("J2_CLOCK_HZ", "30000000").toInt
+  private val clockHz = sys.env.getOrElse("J2_CLOCK_HZ", "32000000").toInt
   private val usePll = sys.env.getOrElse("J2_USE_PLL", "1") == "1"
   val config = SpinalConfig(
     targetDirectory = sys.env.getOrElse("J2_SPINAL_OUT", "../build/spinal/verilog"),

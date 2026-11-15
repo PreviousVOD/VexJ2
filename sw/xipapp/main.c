@@ -36,7 +36,56 @@ static int sdram_test(void) {
   }
 }
 
+#define TIMER_ENABLE (*(volatile uint32_t *)0xff003000)
+#define TIMER_LIMIT (*(volatile uint32_t *)0xff003004)
+#define TIMER_VALUE (*(volatile uint32_t *)0xff003008)
+#define TIMER_IRQ (*(volatile uint32_t *)0xff00300c)
+#define TIMER_IRQ_PENDING 0x100
+#define TIMER_COUNT (*(volatile uint32_t *)0x80710000)
+
+static void timer_set_mask(uint32_t mask) {
+  uint32_t status;
+  __asm__ volatile("stc sr, %0" : "=r"(status));
+  status = (status & ~0xf0U) | ((mask & 0xfU) << 4);
+  __asm__ volatile("ldc %0, sr" : : "r"(status));
+}
+
+static int timer_test(void) {
+  volatile uint32_t wait;
+
+  TIMER_ENABLE = 0;
+  TIMER_IRQ = 0;
+  TIMER_VALUE = 0;
+  TIMER_COUNT = 0;
+  TIMER_LIMIT = 64;
+  timer_set_mask(15);
+  TIMER_IRQ = 1;
+  TIMER_ENABLE = 1;
+
+  for (wait = 0; wait < 100000 && !(TIMER_IRQ & TIMER_IRQ_PENDING); ++wait) {
+  }
+  if (!(TIMER_IRQ & TIMER_IRQ_PENDING) || TIMER_COUNT != 0) return 1;
+
+  timer_set_mask(0);
+  for (wait = 0; wait < 100000 && TIMER_COUNT == 0; ++wait) {
+  }
+  if (TIMER_COUNT != 1 || (TIMER_IRQ & TIMER_IRQ_PENDING)) return 2;
+
+  TIMER_LIMIT = 128;
+  TIMER_ENABLE = 1;
+  for (wait = 0; wait < 100000 && TIMER_COUNT == 1; ++wait) {
+  }
+  if (TIMER_COUNT != 2 || (TIMER_IRQ & TIMER_IRQ_PENDING)) return 3;
+
+  timer_set_mask(15);
+  TIMER_ENABLE = 0;
+  TIMER_IRQ = 0;
+  TIMER_VALUE = 0;
+  return 0;
+}
+
 void xip_main(void) {
+  int timer_result;
   uart_init();
   if (!sdram_test()) {
     uart_puts("SDRAM tests failed\n");
@@ -44,6 +93,21 @@ void xip_main(void) {
     }
   }
   uart_puts("SDRAM tests passed\n");
+  timer_result = timer_test();
+  if (timer_result) {
+    uart_puts("Timer tests failed: ");
+    uart_hex(timer_result, 1);
+    uart_tx(' ');
+    uart_hex(TIMER_IRQ, 8);
+    uart_tx(' ');
+    uart_hex(TIMER_COUNT, 8);
+    uart_tx(' ');
+    uart_hex(TIMER_VALUE, 8);
+    uart_tx('\n');
+    for (;;) {
+    }
+  }
+  uart_puts("Timer tests passed\n");
   uart_puts("XIP CPU tests passed\n");
   for (;;) {
   }

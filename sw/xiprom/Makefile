@@ -3,7 +3,7 @@ OUT := $(ROOT)/build/sw/xiprom
 CROSS ?= $(if $(shell command -v sh-elf-gcc),sh-elf-,sh-none-elf-)
 ENDIAN := $(if $(findstring sh-none-elf,$(CROSS)),-mb,)
 CC := $(CROSS)gcc
-J2_CLOCK_HZ ?= 30000000
+J2_CLOCK_HZ ?= 32000000
 CFLAGS := -m2 $(ENDIAN) -Os -Wall -ffreestanding -fno-builtin -nostdlib -DJ2_CLOCK_HZ=$(J2_CLOCK_HZ)
 LDFLAGS := -m2 $(ENDIAN) -nostdlib -T boot.x -Wl,-Map,$(OUT)/main.map
 OBJS := $(addprefix $(OUT)/,entry.o main.o uart.o flash.o)

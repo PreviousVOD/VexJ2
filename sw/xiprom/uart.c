@@ -3,7 +3,7 @@
 #define UART_BASE 0xff001000
 #define UART_REG(index) (*(volatile uint32_t *)(UART_BASE + (index) * 4))
 #ifndef J2_CLOCK_HZ
-#define J2_CLOCK_HZ 30000000
+#define J2_CLOCK_HZ 32000000
 #endif
 #define UART_CLOCK_DIVIDER (J2_CLOCK_HZ / (19200 * 5) - 1)
 

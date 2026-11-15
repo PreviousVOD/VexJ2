@@ -8,7 +8,7 @@ struct st_uart16550
 #define UART 0xff001000
 #define UART16550 (*(volatile struct st_uart16550 *)UART)
 #ifndef J2_CLOCK_HZ
-#define J2_CLOCK_HZ 30000000
+#define J2_CLOCK_HZ 32000000
 #endif
 #define UART_CLOCK_DIVIDER (J2_CLOCK_HZ / (19200 * 5) - 1)
 

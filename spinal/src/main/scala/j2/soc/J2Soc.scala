@@ -10,7 +10,11 @@ import spinal.lib.bus.wishbone.{Wishbone, WishboneArbiter, WishboneDecoder}
 import spinal.lib.com.uart.{UartCtrlMemoryMappedConfig, WishboneUartCtrl}
 import spinal.lib.io.TriStateArray
 
-final class J2Soc(useEg4Rom: Boolean = false) extends Component {
+final class J2Soc(
+    useEg4Rom: Boolean = false,
+    clockHz: Int = 32000000,
+    timerTickHz: Int = 1000000
+) extends Component {
   val io = new Bundle {
     val uartRx = in Bool ()
     val uartTx = out Bool ()
@@ -29,6 +33,7 @@ final class J2Soc(useEg4Rom: Boolean = false) extends Component {
   private val pioMapping = SizeMapping(0xff000000L, 0x1000)
   private val uartMapping = SizeMapping(0xff001000L, 0x1000)
   private val flashControlMapping = SizeMapping(0xff002000L, 0x1000)
+  private val timerMapping = SizeMapping(0xff003000L, 0x1000)
 
   private val cpu = new J2MicrocodedCore(useEg4Rom, exposeDebug = false)
   private val rom = new J2Rom(useEg4Rom)
@@ -36,6 +41,7 @@ final class J2Soc(useEg4Rom: Boolean = false) extends Component {
   private val flash = new J2SpiFlash
   private val sdram = new J2Sdram
   private val pio = new J2Pio
+  private val timer = new J2Timer(clockHz, timerTickHz)
   private val uart = new WishboneUartCtrl(
     UartCtrlMemoryMappedConfig(19200, txFifoDepth = 32, rxFifoDepth = 32)
   )
@@ -110,7 +116,7 @@ final class J2Soc(useEg4Rom: Boolean = false) extends Component {
 
   private val peripheralAccess =
     pioMapping.hit(cpu.io.dbus.ADR) || uartMapping.hit(cpu.io.dbus.ADR) ||
-      flashControlMapping.hit(cpu.io.dbus.ADR)
+      flashControlMapping.hit(cpu.io.dbus.ADR) || timerMapping.hit(cpu.io.dbus.ADR)
   private val peripheralUnmapped = !memoryAccess && !peripheralAccess
   private val sdramPhy = new Eg4SdramPhy
   sdramPhy.clk := ClockDomain.current.readClockWire
@@ -153,7 +159,8 @@ final class J2Soc(useEg4Rom: Boolean = false) extends Component {
     Seq(
       pio.io.bus -> pioMapping,
       uartBus -> uartMapping,
-      flash.io.control -> flashControlMapping
+      flash.io.control -> flashControlMapping,
+      timer.io.bus -> timerMapping
     ),
     byteAddressedDecodings = false
   )
@@ -208,10 +215,10 @@ final class J2Soc(useEg4Rom: Boolean = false) extends Component {
   )
   cpu.io.dbus.DAT_MISO := Mux(memoryAccess, memoryData, peripheralBus.DAT_MISO)
 
-  cpu.io.event.valid := False
+  cpu.io.event.valid := timer.io.interrupt
   cpu.io.event.payload.command := 0
-  cpu.io.event.payload.vector := 0
-  cpu.io.event.payload.level := 0
+  cpu.io.event.payload.vector := 0x40
+  cpu.io.event.payload.level := 14
   cpu.io.event.payload.bypassMask := False
 
   uart.io.uart.rxd := io.uartRx

@@ -4,7 +4,7 @@ import j2.periph.Eg4GpioPad
 import spinal.core._
 
 final class J2TangPrimer(
-    clockHz: Int = 30000000,
+    clockHz: Int = 32000000,
     useEg4Rom: Boolean = false,
     usePll: Boolean = true
 ) extends Component {
@@ -77,7 +77,7 @@ final class J2TangPrimer(
     clock = socClock,
     reset = resetController.io.reset,
     frequency = FixedFrequency(clockHz Hz)
-  )(new J2Soc(useEg4Rom))
+  )(new J2Soc(useEg4Rom, clockHz))
   soc.io.uartRx := io.uartRx
   io.uartTx := soc.io.uartTx
   private val gpioPads = Seq.fill(32)(new Eg4GpioPad)

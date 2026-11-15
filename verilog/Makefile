@@ -1,5 +1,5 @@
 ROOT := $(abspath $(CURDIR)/..)
-J2_CLOCK_HZ ?= 30000000
+J2_CLOCK_HZ ?= 32000000
 VERILATOR ?= $(ROOT)/tools/local/bin/verilator
 BUILD := $(ROOT)/build/verilog/verif
 XIP_BUILD := $(ROOT)/build/verilog/xip_verif
