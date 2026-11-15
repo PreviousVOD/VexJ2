@@ -249,7 +249,7 @@ final class J2MicrocodedCore(
     dataReadNextValid := !io.dbus.ERR
     when(io.dbus.ERR) {
       faultPending := True
-      when(faultInService) { faultHalted := True }
+      when(faultInService)(faultHalted := True)
     }
     dataReadNext := alignReadData(io.dbus.DAT_MISO.asUInt)
     dataPending := True
@@ -257,7 +257,7 @@ final class J2MicrocodedCore(
   }
   when(instructionActive && (io.ibus.ACK || io.ibus.ERR)) {
     instructionFaultNext := io.ibus.ERR
-    when(io.ibus.ERR && faultInService) { faultHalted := True }
+    when(io.ibus.ERR && faultInService)(faultHalted := True)
     instructionNext := Mux(io.ibus.ERR, U(0x0009, 16 bits), io.ibus.DAT_MISO(15 downto 0).asUInt)
     instructionPending := True
     instructionActive := False
@@ -313,13 +313,15 @@ final class J2MicrocodedCore(
   when(slot) {
     // Architectural instruction addresses travel separately from the microcode's
     // speculative PC. All microsteps of an instruction share its resume address.
-    val resumePc = Mux(sequencer.io.delaySlot,
+    val resumePc = Mux(
+      sequencer.io.delaySlot,
       Mux(pipeline.io.state.ex1Stall.pcWriteZ, datapath.io.zbus, pcReg),
-      instructionPc + 2)
+      instructionPc + 2
+    )
     executeResumePc := Mux(sequencer.io.startInstruction, resumePc, operationResumePc)
     when(sequencer.io.startInstruction) {
       operationResumePc := resumePc
-      when(instructionFault && sequencer.io.delaySlot) { fetchFaultPc := resumePc }
+      when(instructionFault && sequencer.io.delaySlot)(fetchFaultPc := resumePc)
     }
     // Present the prefetched opcode only as ID advances, preserving the delay slot.
     when(instructionPending) {
@@ -342,15 +344,18 @@ final class J2MicrocodedCore(
       // Stop at the issuing edge: active is a register, so waiting for it
       // in the completion logic would advance EX/WB one extra slot.
       slot := False
-      val misaligned = (pipeline.io.state.ex1.memorySize === J2MemSize.WORD && datapath.io.memoryAddress(0)) ||
-        (pipeline.io.state.ex1.memorySize === J2MemSize.LONG && datapath.io.memoryAddress(1 downto 0) =/= 0)
+      val misaligned =
+        (pipeline.io.state.ex1.memorySize === J2MemSize.WORD && datapath.io.memoryAddress(0)) ||
+          (pipeline.io.state.ex1.memorySize === J2MemSize.LONG && datapath.io.memoryAddress(
+            1 downto 0
+          ) =/= 0)
       dataActive := !misaligned
       when(misaligned) {
         faultPending := True
         dataReadNextValid := False
         dataPending := True
         dataReadNext := 0
-        when(faultInService) { faultHalted := True }
+        when(faultInService)(faultHalted := True)
       }
       dataFaultPc := executeResumePc
       dataAddress := datapath.io.memoryAddress
@@ -371,7 +376,7 @@ final class J2MicrocodedCore(
         instructionNext := 0x0009
         instructionFaultNext := True
         instructionPending := True
-        when(faultInService) { faultHalted := True }
+        when(faultInService)(faultHalted := True)
       }
     }
 

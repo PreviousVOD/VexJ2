@@ -2,6 +2,8 @@ SBT ?= $(CURDIR)/tools/local/bin/sbt
 SPINAL_DIR := spinal
 SPINAL_OUT := build/spinal/verilog
 TD_HOME ?= /home/imi415/Softwares/Tools/TD_4.6.7_Linux
+J2_CLOCK_HZ ?= 30000000
+export J2_CLOCK_HZ
 TESTROM := $(CURDIR)/build/sw/testrom/main.bin
 TESTROM16550 := $(CURDIR)/build/sw/testrom16550/main.bin
 BOOTROM := $(CURDIR)/build/sw/xiprom/main.bin
@@ -57,7 +59,8 @@ microcode-mif: $(MICROCODE_MIF)
 $(TESTROM): $(REFSRC) sw/testrom/Makefile
 	$(MAKE) -C sw/testrom
 
-$(TESTROM16550): $(REFSRC) sw/testrom/Makefile sw/testrom/uart16550.c
+$(TESTROM16550): $(REFSRC) sw/testrom/Makefile sw/testrom/uart16550.c \
+		$(wildcard sw/testrom/original/*.c sw/testrom/original/*.h sw/testrom/original/tests/*.s sw/testrom/original/startup/*.x)
 	$(MAKE) -C sw/testrom OUT=$(CURDIR)/build/sw/testrom16550 UART=uart16550
 
 $(SIMTESTS) &: $(REFSRC)

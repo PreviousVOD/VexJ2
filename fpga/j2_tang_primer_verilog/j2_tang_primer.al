@@ -10,26 +10,8 @@
     <Source_Files>
         <Verilog>
             <File>J2MicrocodedCore.v</File>
-            <File>j2_microcode_rom.v</File>
-            <File>j2_eg4_bram32.v</File>
-            <File>j2_validation_rom.v</File>
-            <File>j2_pio.v</File>
-            <File>j2_uart16550.v</File>
-            <File>llqspi.v</File>
-            <File>j2_spiflash.v</File>
-            <File>j2_sdram.v</File>
-            <File>j2_sdram_phy.v</File>
-            <File>j2_soc.v</File>
             <File>j2_tang_primer.v</File>
-            <File>raminfr.v</File>
-            <File>uart_receiver.v</File>
-            <File>uart_regs.v</File>
-            <File>uart_rfifo.v</File>
-            <File>uart_sync_flops.v</File>
-            <File>uart_tfifo.v</File>
-            <File>uart_top.v</File>
-            <File>uart_transmitter.v</File>
-            <File>uart_wb.v</File>
+            <File>j2_microcode_rom.v</File>
         </Verilog>
         <ADC_FILE>j2_tang_primer.adc</ADC_FILE>
         <SDC_FILE>j2_tang_primer.sdc</SDC_FILE>

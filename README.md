@@ -1,152 +1,185 @@
-# J2 microcoded CPU and Verilog SoC
+# J2 microcoded CPU and SpinalHDL SoC
 
-SpinalHDL generates the validated `J2MicrocodedCore` and its core-level support
-modules. The SoC wrapper, validation memory, Wishbone fabric, PIO, UART adapter,
-and Tang Primer top are Verilog modules under `verilog/`. Original J-Core VHDL
-sources under `reference/` are used only for simulator cross-reference.
+SpinalHDL generates the `J2MicrocodedCore` and the complete SoC. The design uses
+native SpinalHDL Wishbone, UART, SPI/XIP, GPIO, and SDRAM libraries. Original
+J-Core VHDL sources under `reference/` are used only for simulator
+cross-reference; the handwritten Verilog SoC and third-party bus/peripheral RTL
+have been removed.
 
-The ISA baseline is the SH-2 specification in
-`docs/isa/REN_rej09b0171_superh_MAH_20040630.pdf`. The J2-only `SHAD`, `SHLD`,
-`CAS.L`, and `BGND` instructions are implemented and decoded as legal
-instructions. There are no excluded instructions.
+The ISA baseline is `docs/isa/REN_rej09b0171_superh_MAH_20040630.pdf`. The
+J2-only `SHAD`, `SHLD`, `CAS.L`, and `BGND` instructions are implemented and
+decoded as legal instructions. There are no excluded instructions.
 
 ## Status
 
 | Area | Status |
 |---|---|
 | SH-2 and J2 decode | 54,521 legal encodings, zero exclusions |
-| `SHAD` / `SHLD` | Passing signed and unsigned shift-direction tests |
-| `CAS.L` | Passing read-compare-write tests, including `Rm == Rn` |
-| `BGND` | Implemented with the `debugBreak` pulse |
-| Microcoded three-bus datapath and EX/WB pipeline | Implemented |
-| Classic instruction/data Wishbone B4 masters | Implemented |
-| Addressing, arithmetic, shift/rotate, multiply, MAC, divide | Passing |
-| Delayed branches, illegal/slot-illegal exceptions, TRAPA, RTE | Passing |
-| NMI/interrupt masking, delay-slot deferral, SR-access hazard | Passing |
+| Scala CPU and ISA tests | 27 suites passing |
 | Full original CPU test ROM | Passing, 5,779 retired instructions |
-| Verilog SoC with 16550 UART | Passing simulation and Tang Primer hardware |
-| SPI flash loader and XIP application | Passing simulation and Tang Primer hardware |
-| EG4S20 SiP SDRAM controller | Passing simulation and Tang Primer hardware |
-| EG4S20 Verilog SoC TD build | 7,120 LUTs, 1,936 registers, 13 BRAM32K |
 | VHDL simulator cross-reference | Full original ROM and RTE passing |
+| Native UART, SPI/XIP, and SDRAM | Passing direct and loader simulations |
+| 32-bit bidirectional GPIO | Native `WishboneGpio` plus 32 EG4 pads |
+| FPGA implementation | Timing-clean at 30 MHz |
+| Tang Primer hardware | JTAG programming succeeds; no UART banner yet |
 
-The core passes the complete ROM in the classic Wishbone harness, plus RTE,
-interrupt, illegal-instruction, and address-error programs. The Verilog SoC runs
-the same architectural tests and prints `CPU tests passed` through the 16550
-UART on hardware.
+The remaining board bring-up issue is unresolved: the current image produces no
+serial transitions, although simulation, ROM initialization, clock constraints,
+and place-and-route all pass. Do not treat earlier hardware results from the
+removed Verilog SoC as validation of this implementation.
 
-## Project layout
+## Architecture
 
-- `spinal/src/main/scala/j2/core/`: CPU, datapath, pipeline, register file, and
-  multiply/MAC modules.
-- `spinal/src/main/scala/j2/isa/`: ISA definitions and microcode predecoder.
-- `spinal/src/main/scala/j2/microcode/`: ROM data, control decoding, and
-  sequencing.
-- `verilog/j2_soc.v`: CPU, memory, and peripheral integration.
-- `verilog/j2_validation_rom.v`: initialized dual-port validation memory, with
-  behavioral simulation and explicit EG4 block-RAM implementations.
-- `verilog/j2_uart16550.v`: big-endian CPU adapter for the 16550's 8-bit bus.
-- `verilog/j2_spiflash.v`: classic-Wishbone adapter and instruction/data arbiter
-  for ZipCPU `llqspi`, with a `0x10000000` XIP window and `0xff002000`
-  flash-control port.
-- `verilog/j2_sdram.v`: single-beat Wishbone controller for the 8 MiB EG4S20
-  SiP SDRAM at `0x80000000`; `j2_sdram_phy.v` wraps the TD primitive.
-- `sw/xiprom/`: resident boot ROM, flash driver, and flow-controlled UART loader.
-- `sw/xipapp/`: minimal XIP application and its flash linker script.
-- `tools/xip_image.py`: application packager and host-side UART uploader.
-- `third_party/qspiflash/`: [ZipCPU qspiflash](https://github.com/ZipCPU/qspiflash)
-  at commit `f0a3d2ac4c0e2d4bd2a7847bc0df24bb3a7c11ad`, including its flash
-  simulator.
-- `fpga/j2_tang_primer_verilog/`: the sole FPGA project, using the generated
-  SpinalHDL core and Verilog SoC.
-- `reference/`: original VHDL/VHM sources for the simulator cross-reference.
-- `docs/isa/j2_isa.csv`: ISA instruction and micro-step specification.
-- `third_party/uart16550/`: [FreeCores UART 16550](https://github.com/freecores/uart16550)
-  at commit `2b0ad80d0968f201f95506854ad769c8a44abe2b`.
+```text
+                              +-------------------+
+ clk24 ---------------------->| EG4 PLL + BUFG    |--> 30 MHz SoC clock/reset
+                              +-------------------+
+                                        |
+                 +----------------------+----------------------+
+                 |             J2MicrocodedCore                 |
+                 |  I-bus                              D-bus   |
+                 +---+----------------+---------------------+--+
+                     |                |                     |
+                     |                |                     +----------------+
+                     |                |                                      |
+               WishboneDecoder        |                             WishboneDecoder
+                 (iMux)               |                                  (dMux)
+                     |                |                                      |
+        +------------+-----------+    |                         +------------+-----------+
+        |                        |    |                         |                        |
+   +----+----+            +------+----+-+--+             +------+------+          +------+------+
+   | ROM     |            | SRAM       |    |            | GPIO 32-bit|          | UART       |
+   | arbiter |            | arbiter    |    |            | 0xff000000 |          | 0xff001000 |
+   +----+----+            +------+-----+    |            +------+-----+          +------+-----+
+        |                        |          |                   |                       |
+   +----+----+            +------+-----+    |            +------+-----+                 |
+   | Flash   |            | SDRAM    |      |            | EG_PHY_PAD |                 |
+   | arbiter |            | arbiter  |      |            | x32        |                 |
+   +----+----+            +------+---+      |            +------------+                 |
+        |                        |          |
+   +----+----+            +------+-----+    |
+   | SPI XDR |            | BmbSdramCtrl|   |
+   | APB/XIP |            | EG4 SDRAM   |   |
+   +---------+            +-------------+   |
+                                              |
+                         D-bus memory select -+
+```
 
-The Verilog SoC memory map is independent of the original J2 ROM layout:
+Each memory has its own native `WishboneArbiter`: data master 0, instruction
+master 1. The instruction side has no peripheral path. GPIO and UART are
+peripheral-only. Unmapped instruction, memory, or peripheral accesses return a
+Wishbone error.
+
+## Memory map
 
 | Region | Address range |
 |---|---:|
-| Internal ROM/RAM | `0x00000000`–`0x00007fff` |
-| SPI flash XIP (1 MiB) | `0x10000000`–`0x100fffff` |
-| SiP SDRAM (8 MiB) | `0x80000000`–`0x807fffff` |
-| PIO | `0xff000000` |
-| 16550 UART | `0xff001000` |
+| Internal ROM | `0x00000000`–`0x00007fff` |
+| Internal SRAM | `0x00008000`–`0x0000ffff` |
+| SPI flash XIP, 1 MiB | `0x10000000`–`0x100fffff` |
+| SiP SDRAM, 8 MiB | `0x80000000`–`0x807fffff` |
+| GPIO | `0xff000000` |
+| UART | `0xff001000` |
 | SPI flash control | `0xff002000` |
 
-The canonical microcode source is
-`spinal/src/main/resources/j2_microcode.hex`, containing all 256 72-bit entries.
-`j2_predecode.tsv` is the generated opcode mapping. Simulation uses these
-resources directly. `make microcode-mif` generates
-`build/microcode/j2_microcode.mif` only for FPGA targets.
+The SPI controller is native `Apb3SpiXdrMasterCtrl`. XIP uses fast-read opcode
+`0x0b`, which matches the controller's mandatory dummy byte. Responses are
+assembled in big-endian order and aligned to 32-bit words before the CPU selects
+a byte or halfword lane. ROM and SRAM use synchronous one-cycle reads. FPGA boot
+ROM uses `EG_LOGIC_BRAM` with a generated MIF; simulation uses a native `Mem`.
 
-The baseline and 16550 validation ROMs are separate outputs:
-`build/sw/testrom/main.bin` uses UART-lite for the VHDL/core harnesses, while
-`build/sw/testrom16550/main.bin` uses the 16550 driver. `gen_verilog_rom.py`
-creates complete HEX and MIF images for the Verilog validation memory.
+## 32-bit GPIO
+
+`J2Pio` wraps native `WishboneGpio` with 32 bidirectional pins:
+
+| Offset | Function |
+|---:|---|
+| `0x00` | Input values |
+| `0x04` | Output values |
+| `0x08` | Output enable, one bit per pin; reset to zero/input |
+
+The Tang Primer top instantiates 32 `EG_PHY_PAD` primitives with `MODE="BI"`,
+`TSMUX="TS"`, `DRIVE="12"`, and `IOTYPE="LVCMOS33"`. `ts` is the inverse of the
+native output-enable signal: zero drives the pad, one makes it high impedance.
+The simulation-only model is `verilog/verif/j2_gpio_pad_model.v`.
+
+GPIO 0–2 retain the RGB LED locations R3/J14/P13. GPIO 3–31 use free
+display/camera header pins listed in `fpga/j2_tang_primer_verilog/j2_tang_primer.adc`.
+All external pins are LVCMOS33. The legacy validation ROM enables outputs at
+`0xff000008` before writing values at `0xff000004`.
+
+## Project layout
+
+- `spinal/src/main/scala/j2/core/`: CPU, datapath, pipeline, register file, MAC.
+- `spinal/src/main/scala/j2/isa/`: ISA definitions and microcode predecoder.
+- `spinal/src/main/scala/j2/microcode/`: ROM data, control decoding, sequencing.
+- `spinal/src/main/scala/j2/bus/`: byte-addressed CPU Wishbone and native adapters.
+- `spinal/src/main/scala/j2/periph/`: ROM/SRAM, GPIO, SPI/XIP, SDRAM peripherals.
+- `spinal/src/main/scala/j2/soc/`: SoC interconnect, PLL/reset, board top.
+- `sw/xiprom/`: resident boot ROM, flash driver, and UART loader.
+- `sw/xipapp/`: XIP application and SDRAM read/write/execute tests.
+- `tools/xip_image.py`: application packager and host-side UART uploader.
+- `third_party/qspiflash/`: flash simulator sources only; upstream RTL is removed.
+- `fpga/j2_tang_primer_verilog/`: the sole FPGA project.
+- `reference/`: original VHDL/VHM sources for simulator cross-reference.
+- `docs/isa/j2_isa.csv`: ISA instruction and micro-step specification.
+
+The canonical microcode source is `spinal/src/main/resources/j2_microcode.hex`,
+containing all 256 72-bit entries. `j2_predecode.tsv` is the generated opcode
+mapping. `make microcode-mif` generates the FPGA MIF on demand; no separately
+maintained microcode representation is required.
 
 ## Toolchain
 
-- Java 21
-- sbt 1.10.7 through `tools/local/bin/sbt`
-- Scala 2.13.14
-- SpinalHDL 1.14.2
-- Scalafmt 3.8.4; run `scalafmtAll` in `spinal/` after every Scala edit
-- Verilator for core and Verilog SoC simulation
+- Java 21, sbt 1.10.7, Scala 2.13.14, SpinalHDL 1.14.2
+- Scalafmt 3.8.4; run `scalafmtAll` in `spinal/` after Scala edits
+- Verilator for core and SoC simulation
 - Tang Dynasty 4.6.7 at `TD_HOME`
 
 ## Verification
 
 ```sh
-make spinal-test            # 26 retained CPU and ISA tests
-make spinal-generate        # CPU Verilog under build/spinal/verilog
+make spinal-test            # 27 retained CPU and ISA test suites
+make spinal-generate        # CPU and SoC Verilog under build/spinal/verilog
 make spinal-microcode-verif # full ROM, RTE, and interrupt regressions
-make verilog-hw-sim         # Verilog SoC, 16550 UART decode, and full ROM
+make verilog-hw-sim         # native SoC and full legacy CPU test ROM
 make xip-hw-sim             # direct XIP and blank-flash UART loader tests
 make reference-verif        # full ROM and RTE on the VHDL baseline
 ```
 
-`spinal-hw-sim` is a compatibility alias for `verilog-hw-sim`. The generated
-simulator CPU and EG4 CPU use separate output directories, so an FPGA build does
-not replace the simulator's microcode implementation.
-
-The XIP regression runs the application once from preloaded flash and once after
-a blank-flash UART upload. The loader waits for erase completion before sending
-page data and waits for verification before each subsequent page, preventing
-16550 receive-FIFO overruns.
-
-A timeout without `TEST_RESULT` or expected UART output fails. `--stop-pc` is
-only a diagnostic stop, not a regression pass. Integration pitfalls and their
+The XIP regression runs once from preloaded flash and once after a blank-flash
+UART upload. Both paths print `SDRAM tests passed` and `XIP CPU tests passed`.
+A timeout without expected UART output fails. Integration pitfalls and their
 fixes are recorded in `docs/microcoded-core-debug.md`.
 
 ## FPGA
 
-Build the Verilog SoC with:
+The default SoC frequency is 30 MHz using `feedbackDivider=15` and
+`outputDivider=12`. Override generation parameters with:
 
 ```sh
-TD_HOME=/home/imi415/Softwares/Tools/TD_4.6.7_Linux make verilog-fpga
+J2_CLOCK_HZ=30000000 J2_USE_PLL=1 make verilog-fpga
 ```
 
-`spinal-fpga` remains a compatibility alias for `verilog-fpga`. The flow runs
-synthesis, place, route, timing analysis, and bit generation.
+`J2_USE_PLL=0` selects the 24 MHz input directly for diagnosis. UART divisors
+and simulation baud timing derive from `J2_CLOCK_HZ`; the FPGA SDC is generated
+with the same value. `spinal-fpga` remains a compatibility alias.
 
-The Verilog SoC uses 7,120 LUTs, 1,936 registers, nine DSPs, 13 BRAM32K blocks,
-and the SiP SDRAM macro. TD reports no setup or hold errors, a 27.028 ns minimum
-period for the 41.667 ns (24 MHz) clock, 7.319 ns minimum setup slack, and
-0.221 ns minimum hold slack. Volatile JTAG programming, the 16550 hardware test,
-and direct XIP boot with SDRAM read/write tests pass.
+The final 30 MHz build reports 9,832 LUTs, 2,151 registers, nine DSPs, 37 9K
+BRAMs, and 10 32K BRAMs. Timing passes with 0.058 ns minimum setup slack and no
+hold violations. The 48 MHz configuration was also tried but failed timing;
+higher frequencies must be validated rather than assumed.
 
-Pins use the Tang Primer J13/H13 UART:
+Program volatile FPGA configuration and listen at 19,200 baud:
 
-- FPGA TX: J13
-- FPGA RX: H13
+```sh
+make verilog-program TD_HOME=/home/imi415/Softwares/Tools/TD_4.6.7_Linux
+stty -F /dev/ttyACM0 19200 raw -echo
+cat /dev/ttyACM0
+```
 
-The free Winbond 25Q80 uses CS=D3, CLK=H4, MOSI=B3, MISO=F4, IO2=F5, and
-IO3=B1. The design drives IO2/WP and IO3/HOLD high. All top-level I/O pins use
-LVCMOS33. The configuration flash on CSO/CCLK is never targeted. Hardware reads
-the expected JEDEC ID `ef4014`; UART erase, program, verification, and XIP boot
-pass. To upload the packaged application after a fresh boot banner, run:
+`verilog-program` writes only volatile FPGA configuration SRAM, never external
+configuration flash. To upload the application after a fresh boot banner:
 
 ```sh
 make xip-upload
@@ -158,20 +191,7 @@ If the ROM is already waiting at `J2 loader`, use:
 tools/xip_image.py upload build/sw/xipapp/flash.bin --no-wait
 ```
 
-After a timing-clean build, program volatile FPGA configuration and listen at
-19,200 baud:
-
-```sh
-make verilog-program TD_HOME=/home/imi415/Softwares/Tools/TD_4.6.7_Linux
-stty -F /dev/ttyACM0 19200 raw -echo
-cat /dev/ttyACM0
-```
-
-`verilog-program` rebuilds before downloading, and `spinal-program` is an alias.
-Start the UART listener before rebuilding, with a sufficient timeout. JTAG
-`download -mode jtag` writes only volatile FPGA configuration SRAM; it never
-writes external configuration flash.
-
-Generated output and logs stay under ignored `build/` directories. Verilog TD
-logs are under `build/logs/td_verilog`; the hardware UART capture is
-`build/logs/verilog_fpga_uart.log`.
+The free Winbond 25Q80 uses CS=D3, CLK=H4, MOSI=B3, MISO=F4, IO2=F5, and
+IO3=B1. IO2/WP and IO3/HOLD are driven high. The configuration flash on
+CSO/CCLK is never targeted. Generated output and logs stay under ignored
+`build/` directories; Verilog TD logs are under `build/logs/td_verilog`.

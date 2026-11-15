@@ -533,7 +533,7 @@ _pass:
  rts
  nop
 .align 4
-_ppass_addr: .long 0xABCD0000
+_ppass_addr: .long 0xFF000004
 _ppass_value: .long 0x00000012
 
 /**********

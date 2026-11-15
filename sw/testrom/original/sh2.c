@@ -202,7 +202,7 @@ int gdb_peek_register_file (int id, long* val)
 	return retval;
 	}
 
-#define PORT (*(volatile unsigned long  *)0xabcd0000)
+#define PORT (*(volatile unsigned long  *)0xff000004)
 
 /*
   Stuffs a register value into gdb_register_file.  Returns the size of

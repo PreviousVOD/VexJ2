@@ -102,7 +102,7 @@ final class J2Pipeline extends Component {
     state.ex1 := io.ex
     state.wb3Stall := state.wb2Stall
     state.wb2Stall := state.wb1Stall
-    when(io.cancelWb1) { state.wb2Stall := J2ControlDefaults.wbStall() }
+    when(io.cancelWb1)(state.wb2Stall := J2ControlDefaults.wbStall())
     when(io.nextIdStall) {
       state.ex1Stall := J2ControlDefaults.exStall()
       state.wb1Stall := J2ControlDefaults.wbStall()

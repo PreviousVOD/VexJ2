@@ -30,7 +30,7 @@ int main(int argc, char **argv) {
 
   auto update_flash = [&]() {
     int mosi = top.spi_mosi;
-    top.spi_miso = (flash(top.spi_cs, top.spi_clk, mosi) >> 1) & 1;
+    top.spi_miso = (flash(top.spi_cs, !top.spi_clk, mosi) >> 1) & 1;
   };
 
   for (int cycle = 0; cycle < 8; ++cycle) {
@@ -43,7 +43,7 @@ int main(int argc, char **argv) {
   }
   top.rst_n = 1;
 
-  constexpr double bit_cycles = 24000000.0 / 19200.0;
+  constexpr double bit_cycles = CLKRATE_HZ / 19200.0;
   int state = -1;
   double next_sample = 0;
   unsigned shift = 0;

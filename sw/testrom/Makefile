@@ -7,8 +7,9 @@ OUT     := $(ROOT)/build/sw/testrom
 CROSS   ?= $(if $(shell command -v sh-elf-gcc),sh-elf-,sh-none-elf-)
 ENDIAN  := $(if $(findstring sh-none-elf,$(CROSS)),-mb,)
 CC      := $(CROSS)gcc
+J2_CLOCK_HZ ?= 30000000
 CFLAGS  := -m2 $(ENDIAN) -g -Os -Wall -Wno-builtin-declaration-mismatch \
-           -Wno-implicit-function-declaration -fno-builtin -ffreestanding
+           -Wno-implicit-function-declaration -fno-builtin -ffreestanding -DJ2_CLOCK_HZ=$(J2_CLOCK_HZ)
 LDFLAGS := -m2 $(ENDIAN) -nostdlib -T $(SRC)/startup/sh32.x -Wl,-Map,$(OUT)/main.map
 
 UART    ?= uartlite
@@ -24,21 +25,21 @@ $(OUT)/version.c:
 	printf 'char version_string[] = "revision: open\\nbuild: j2 rewrite\\n";\n' > $@
 $(OUT)/version.o: $(OUT)/version.c
 	$(CC) $(CFLAGS) -c $< -o $@
-$(OUT)/main.o: $(SRC)/main.c
+$(OUT)/main.o: $(SRC)/main.c Makefile
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -fno-inline -c $< -o $@
-$(OUT)/uart16550.o: $(ROOT)/sw/testrom/uart16550.c
+$(OUT)/uart16550.o: $(ROOT)/sw/testrom/uart16550.c Makefile
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@
-$(OUT)/%.o: $(SRC)/%.c
+$(OUT)/%.o: $(SRC)/%.c Makefile
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@
 # The J2 shift tests use SHAD/SHLD (SH-3/SH-2A opcodes, implemented by J2).
-$(OUT)/tests/%.o: $(SRC)/tests/%.s
+$(OUT)/tests/%.o: $(SRC)/tests/%.s Makefile
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -Wa,-isa=sh2a -c $< -o $@
 
-$(OUT)/main.elf: $(OBJS) Makefile
+$(OUT)/main.elf: $(OBJS) Makefile $(SRC)/startup/sh32.x
 	$(CC) $(LDFLAGS) $(filter %.o,$^) -lgcc -o $@
 $(OUT)/main.bin: $(OUT)/main.elf
 	$(CROSS)objcopy -O binary $< $@

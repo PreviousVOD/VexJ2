@@ -8,7 +8,8 @@ OUTPUT_ARCH(sh)
 MEMORY
 {
 	ram    : o = 0x00000000, l = 0x7b00
-	stack  : o = 0x00007d00, l = 0x0300
+	sram   : o = 0x00008000, l = 0x7d00
+	stack  : o = 0x0000fd00, l = 0x0300
 }
 
 SECTIONS 				
@@ -47,7 +48,7 @@ __idata_end = __idata_start + SIZEOF(.data);
 	*(.bss)
 	*(COMMON)
 	_end = .;
-	}  >ram
+	}  >sram
 
 .stack :
 	{

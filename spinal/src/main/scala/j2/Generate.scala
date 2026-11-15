@@ -3,12 +3,15 @@ package j2
 import j2.isa._
 import j2.microcode._
 import j2.core._
+import j2.soc._
 import spinal.core._
 
 object Generate extends App {
   private val useEg4Rom = sys.env.get("J2_FPGA").contains("1")
+  private val clockHz = sys.env.getOrElse("J2_CLOCK_HZ", "30000000").toInt
+  private val usePll = sys.env.getOrElse("J2_USE_PLL", "1") == "1"
   val config = SpinalConfig(
-    targetDirectory = "../build/spinal/verilog",
+    targetDirectory = sys.env.getOrElse("J2_SPINAL_OUT", "../build/spinal/verilog"),
     mode = Verilog
   ).withoutEnumString()
   config.generateVerilog(new J2Alu)
@@ -17,6 +20,8 @@ object Generate extends App {
   val cpuConfig =
     if (useEg4Rom) config.copy(targetDirectory = "../build/spinal/verilog-fpga") else config
   cpuConfig.generateVerilog(new J2MicrocodedCore(useEg4Rom, exposeDebug = !useEg4Rom))
+  config.generateVerilog(new J2TangPrimer(clockHz, useEg4Rom = false))
+  cpuConfig.generateVerilog(new J2TangPrimer(clockHz, useEg4Rom = useEg4Rom, usePll = usePll))
   config.generateVerilog(new J2MicrocodeRom)
   config.generateVerilog(new J2Predecoder)
   config.generateVerilog(new J2MicrocodeTable)

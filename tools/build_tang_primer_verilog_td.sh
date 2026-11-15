@@ -5,6 +5,8 @@ repo_root=$(cd "$(dirname "$0")/.." && pwd)
 td_log_dir="$repo_root/build/logs/td_verilog"
 fpga_out_dir="$repo_root/build/fpga/j2_tang_primer_verilog"
 rom=${J2_ROM:-"$repo_root/build/sw/xiprom/main.bin"}
+export J2_CLOCK_HZ=${J2_CLOCK_HZ:-30000000}
+export J2_USE_PLL=${J2_USE_PLL:-1}
 
 mkdir -p "$td_log_dir" "$fpga_out_dir"
 
@@ -15,17 +17,19 @@ python3 tools/gen_verilog_rom.py "$rom" build/verilog/xip/j2_validation_rom.hex 
   --mif build/verilog/xip/j2_validation_rom.mif
 J2_FPGA=1 J2_ROM="$rom" make spinal-generate
 
-cp build/spinal/verilog-fpga/J2MicrocodedCore.v "$fpga_out_dir/"
-cp build/verilog/xip/j2_validation_rom.hex build/verilog/xip/j2_validation_rom.mif "$fpga_out_dir/"
-cp fpga/j2_microcode_rom.v fpga/j2_eg4_bram32.v "$fpga_out_dir/"
-cp verilog/j2_validation_rom.v verilog/j2_pio.v verilog/j2_uart16550.v \
-   verilog/j2_spiflash.v verilog/j2_sdram.v verilog/j2_sdram_phy.v \
-   verilog/j2_soc.v verilog/j2_tang_primer.v "$fpga_out_dir/"
-cp third_party/uart16550/rtl/verilog/*.v "$fpga_out_dir/"
-cp third_party/qspiflash/rtl/llqspi.v "$fpga_out_dir/"
+cp build/spinal/verilog-fpga/J2MicrocodedCore.v build/spinal/verilog-fpga/j2_tang_primer.v "$fpga_out_dir/"
+cp build/spinal/verilog-fpga/j2_tang_primer.v_*.bin "$fpga_out_dir/"
+cp build/verilog/xip/j2_validation_rom.mif "$fpga_out_dir/"
+cp fpga/j2_microcode_rom.v "$fpga_out_dir/"
 cp fpga/j2_tang_primer_verilog/j2_tang_primer.al \
    fpga/j2_tang_primer_verilog/j2_tang_primer.adc \
    fpga/j2_tang_primer_verilog/j2_tang_primer.sdc "$fpga_out_dir/"
+soc_period=$(python3 -c "print(f'{1e9 / $J2_CLOCK_HZ:.6f}')")
+sed -i "s/create_clock -name soc_clk -period [0-9.]*/create_clock -name soc_clk -period ${soc_period}/" \
+  "$fpga_out_dir/j2_tang_primer.sdc"
+if [[ $J2_USE_PLL == 0 ]]; then
+  sed -i '/create_clock -name soc_clk/d' "$fpga_out_dir/j2_tang_primer.sdc"
+fi
 
 if [[ -n ${TD_BIN:-} ]]; then
   td_exe=$TD_BIN

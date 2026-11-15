@@ -12,3 +12,10 @@ xip_halt:
 .align 2
 xip_main_pointer:
   .long _xip_main
+
+.global _sdram_test_function
+_sdram_test_function:
+  mov r4, r0
+  add r5, r0
+  rts
+  nop

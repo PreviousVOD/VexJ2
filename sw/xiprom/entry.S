@@ -1,7 +1,7 @@
 .section .vect
 .align 2
 .long _start
-.long 0x00007ffc
+.long 0x0000fffc
 .rept 62
 .long boot_halt
 .endr

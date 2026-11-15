@@ -46,7 +46,13 @@ static void boot_application(void) {
   void (*entry)(void);
 
   if (!image_header_valid()) {
-    uart_puts("No valid XIP image\n");
+    uart_puts("No valid XIP image: ");
+    uart_hex(header[0], 8);
+    uart_puts(" ");
+    uart_hex(header[1], 8);
+    uart_puts(" ");
+    uart_hex(length, 8);
+    uart_puts("\n");
     return;
   }
   uart_puts("Booting XIP image\n");

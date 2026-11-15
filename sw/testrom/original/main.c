@@ -1,4 +1,4 @@
-#define LEDPORT (*(volatile unsigned long  *)0xabcd0000)
+#define LEDPORT (*(volatile unsigned long  *)0xff000004)
 
 extern char version_string[];
 
@@ -85,9 +85,6 @@ main_sh (void)
 
   putstr ("CPU tests passed\n");
   led(0x043);
-  putstr ("DDR Init\n");
-  led(0x042);
-  ddr_init ();
 
   putstr ("GDB Stub for HS-2J0 SH2 ROM\n");
   putstr (version_string);

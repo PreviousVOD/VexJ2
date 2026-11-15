@@ -1,11 +1,11 @@
-# qspiflash vendor sources
+# qspiflash simulation sources
 
 Source: https://github.com/ZipCPU/qspiflash
 
 Upstream commit: `f0a3d2ac4c0e2d4bd2a7847bc0df24bb3a7c11ad`
 
-The J2 integration uses `llqspi.v` for registered-clock single-SPI transfers.
-`verilog/j2_spiflash.v` adds XIP read sequencing, byte-oriented flash control,
-and classic-Wishbone arbitration. `flashsim.cpp` and `flashsim.h` support the
-Verilator integration. Original LGPL notices are retained; the license is in
-`doc/lgpl-3.0.pdf`.
+Only `bench/cpp/flashsim.cpp` and `flashsim.h` are retained for Verilator. The
+hardware SPI/XIP implementation uses native SpinalHDL `Apb3SpiXdrMasterCtrl`;
+upstream `llqspi` RTL has been removed. The testbench inverts the model clock to
+match the native PHY's launch/sample timing. Original LGPL notices are retained;
+the license is in `doc/lgpl-3.0.pdf`.

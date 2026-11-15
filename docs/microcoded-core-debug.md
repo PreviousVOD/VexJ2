@@ -202,7 +202,76 @@ clocks. Releasing a direct core's asynchronous reset at an arbitrary
 `forkStimulus` phase remains unsupported and was still able to expose bad
 startup behavior in testing; do not use that stimulus as a hardware reset model.
 
-### Verilog SoC integration
+### Native SpinalHDL SoC integration (current)
+
+The current SoC is entirely under `spinal/src/main/scala/j2/soc` and
+`spinal/src/main/scala/j2/periph`. It uses native Wishbone arbiters/decoders,
+`WishboneUartCtrl`, `WishboneGpio`, `Apb3SpiXdrMasterCtrl`, and `BmbSdramCtrl`.
+The handwritten Verilog SoC, UART16550, `llqspi`, and third-party Wishbone
+interconnect have been removed.
+
+The instruction bus feeds `iMux`; the data bus feeds each memory arbiter and
+`dMux`. ROM, SRAM, SPI flash, and SDRAM each have an independent two-master
+arbiter. Peripherals are data-only. CPU addresses remain byte addresses, while
+several native Wishbone slaves expect word addresses. Use
+`J2Wishbone.connectToWordAddressed` at those boundaries, and supply a local
+address for small peripherals. Setting `byteAddressedDecodings = true` shifted
+the CPU address by two bits and broke decoding; native peripherals also need
+`ADR >> 2`, not `connectTo(..., allowAddressResize = true)` alone.
+
+The native UART data register pops its FIFO on every read. Receive a byte with
+one register read, not one validity read followed by another data read. Check
+RX occupancy in status bits 29:24 instead of consuming data for readiness. The
+UART divider is derived from `J2_CLOCK_HZ`, not fixed for one board frequency.
+
+The SPI flash model and native PHY use opposite clock-edge conventions, so the
+simulation harness passes an inverted clock to `flashsim`. Native XIP emits one
+dummy byte even with `dummyCount = 0`; fast-read opcode `0x0b` is required,
+while opcode `0x03` discards the first payload byte. Assemble XIP response bytes
+in big-endian order and align each command to a 32-bit word. Exact-byte reads
+produce shifted windows and fail the application checksum.
+
+ROM and SRAM use synchronous one-cycle reads, avoiding thousands of distributed
+RAM muxes. FPGA boot ROM uses `EG_LOGIC_BRAM` with `j2_validation_rom.mif`;
+simulation uses a native synchronous `Mem`. TD ignores the simulator's
+`$readmemb` initialization, so a working simulation alone does not prove the
+boot image is present. The build log must contain `Reading BRAM
+"soc/rom/eg4Bram32" init file`.
+
+The SDRAM DQ bus must be high impedance when not writing. Connect the analog
+net to the primitive with `<>` and drive it only when
+`sdramInterface.DQ.writeEnable(0)` is asserted. Per-bit analog assignment and
+multiple inout nets hit SpinalHDL analog-phase limitations. `WishboneToBmb`
+also requires a word-addressed input and explicit BMB address truncation to the
+EG4S20 layout.
+
+The 32-bit GPIO uses native `WishboneGpio`, with input at `0x00`, output at
+`0x04`, and direction at `0x08`. Each `EG_PHY_PAD` uses `MODE="BI"`,
+`TSMUX="TS"`, and `IOTYPE="LVCMOS33"`; `ts = !writeEnable`. All pins are inputs
+at reset and software must explicitly enable outputs. GPIO 0–2 retain the RGB
+LED pins; the remaining bits use free display/camera header pins.
+
+Writable BSS must not be linked into ROM. The XIP loader originally placed its
+page buffer near `0x0900`, so uploads silently wrote zero. It now links BSS at
+`0x8000`. The legacy test ROM also needed its BSS moved to SRAM, its legacy DDR
+initialization removed, and its PIO/progress addresses changed to the native
+GPIO registers.
+
+The PLL output divider is in megahertz, so `360000000 / clockHz` is required;
+`360 / clockHz` silently generated a zero divider. Reset stretching runs in the
+SoC clock domain to avoid a 24-to-30 MHz crossing. Timing was checked at 48,
+38.4, 32, and 30 MHz. Only the 30 MHz configuration is currently accepted: TD
+reports no setup/hold errors with 0.058 ns minimum setup slack.
+
+The current board issue is still open. JTAG programming succeeds and TD reads
+both MIF images, but `/dev/ttyACM0` receives no bytes or transitions. Direct
+24 MHz operation, synchronized reset, and a forced-running diagnostic did not
+change that result; the diagnostic reset override was removed. The next useful
+debug step is to probe the external 24 MHz clock, PLL output, UART TX, and CPU
+I-bus activity on hardware. Do not claim hardware validation until `Flash ID:
+ef4014`, `SDRAM tests passed`, and `XIP CPU tests passed` are observed.
+
+### Legacy Verilog SoC integration
 
 The 16550 is configured for its upstream 8-bit Wishbone interface. The adapter
 in `verilog/j2_uart16550.v` presents 32-bit registers to the CPU with the data

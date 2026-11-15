@@ -20,7 +20,7 @@ int main(int argc, char **argv) {
   }
   top.rst_n = 1;
 
-  constexpr double bit_cycles = 24000000.0 / 19200.0;
+  constexpr double bit_cycles = CLKRATE_HZ / 19200.0;
   int state = -1;
   double next_sample = 0;
   unsigned shift = 0;
