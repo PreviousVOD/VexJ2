@@ -84,6 +84,8 @@ final class J2Pipeline extends Component {
   val io = new Bundle {
     val slot = in Bool ()
     val nextIdStall = in Bool ()
+    // Kill the younger writeback paired with EX when a data access faults.
+    val cancelWb1 = in Bool ()
     val ex = in(new J2ExControl)
     val exStall = in(new J2ExStallControl)
     val wb = in(new J2WbControl)
@@ -100,6 +102,7 @@ final class J2Pipeline extends Component {
     state.ex1 := io.ex
     state.wb3Stall := state.wb2Stall
     state.wb2Stall := state.wb1Stall
+    when(io.cancelWb1) { state.wb2Stall := J2ControlDefaults.wbStall() }
     when(io.nextIdStall) {
       state.ex1Stall := J2ControlDefaults.exStall()
       state.wb1Stall := J2ControlDefaults.wbStall()

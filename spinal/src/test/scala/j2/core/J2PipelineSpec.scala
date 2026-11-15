@@ -8,6 +8,7 @@ class J2PipelineSpec extends munit.FunSuite {
     SimConfig.withVerilator.compile(new J2Pipeline).doSim { dut =>
       dut.io.slot #= false
       dut.io.nextIdStall #= false
+      dut.io.cancelWb1 #= false
       J2ControlDrive.ex(dut.io.ex)
       J2ControlDrive.exStall(dut.io.exStall)
       J2ControlDrive.wb(dut.io.wb)
@@ -42,6 +43,14 @@ class J2PipelineSpec extends munit.FunSuite {
       assert(dut.io.state.wb3Stall.regWriteW.toBoolean)
       assert(!dut.io.state.ex1Stall.regWriteZ.toBoolean)
       assert(!dut.io.state.wb1Stall.regWriteW.toBoolean)
+
+      dut.io.nextIdStall #= false
+      dut.clockDomain.waitSampling(2)
+      dut.io.cancelWb1 #= true
+      dut.clockDomain.waitSampling()
+      sleep(1)
+      assert(!dut.io.state.wb2Stall.regWriteW.toBoolean)
+      assert(dut.io.state.wb3Stall.regWriteW.toBoolean, "older writeback must drain")
     }
   }
 

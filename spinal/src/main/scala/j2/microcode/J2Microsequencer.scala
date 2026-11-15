@@ -43,6 +43,7 @@ final class J2Microsequencer extends Component {
     val nextIdStall = out Bool ()
     val maskInterrupt = out Bool ()
     val delaySlot = out Bool ()
+    val startInstruction = out Bool ()
   }
 
   private val maskInterruptReg = RegInit(False)
@@ -104,6 +105,7 @@ final class J2Microsequencer extends Component {
   io.instructionAddress := io.id.instructionAddress
   io.maskInterrupt := maskInterruptReg
   io.delaySlot := delaySlotReg
+  io.startInstruction := !idStall && instructionSequenceZero && !io.nextIdStall && !nextOperation.system
   io.interruptLevel := interruptLevelReg
   io.eventAck := io.slot &&
     (io.eventAcknowledge || (io.eventValid && io.eventCommand === 2 && io.debug))

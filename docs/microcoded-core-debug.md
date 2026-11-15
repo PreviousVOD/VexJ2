@@ -73,6 +73,55 @@ The generated CPU is instantiated by `verilog/j2_soc.v`. The Verilog SoC passes
 passed` through the 16550 UART. Simulation, FPGA timing, and hardware validation
 remain separate requirements.
 
+## SLEEP and synchronous access faults (2026-11-15)
+
+The first two findings from the microarchitecture review are fixed in the
+SpinalHDL core:
+
+- `SLEEP` latches an internal sleeping state and stops pipeline slots until an
+  eligible event arrives. Masked interrupts leave it asleep; an unmasked IRQ or
+  bypass-mask interrupt wakes it through the existing exception sequence.
+  This works with debug ports disabled. The debug `sleep` output now reports
+  the sleeping state rather than a one-slot pulse.
+- Word accesses require two-byte alignment, long accesses require four-byte
+  alignment, and instruction fetches require two-byte alignment. A rejected
+  access never asserts its bus request. Either Wishbone `ERR` terminates the
+  outstanding request and raises CPU address-error vector 9 (`VBR + 0x24`),
+  even without `ACK`; `ERR` takes precedence when both are asserted.
+
+Failed data responses carry an invalid flag through the W path to suppress
+GPR, SR, and multiply-register writeback. Pending data faults cancel younger
+EX effects and their WB1 controls while older writebacks drain. Instruction
+fetch faults substitute a harmless opcode until exception selection, allowing
+the preceding instruction to complete. Internal exception acknowledgements
+do not acknowledge an unrelated external event.
+
+Exception return addresses are tracked separately from the microcode's
+prefetch PC, including across multi-cycle instructions. A data fault saves
+the following instruction address; an ordinary fetch fault saves the failed
+fetch address. A fault in a branch delay slot saves the branch target. The
+existing ERROR microcode stacks that address and SR, and RTE resumes from the
+saved frame. The CPU address-error semantics are described in section 5.3 of
+the [Renesas SH-2 hardware manual](https://www.renesas.com/en/document/mah/sh-2-sh7052-f-ztat-sh7053-f-ztat-sh7054-f-ztat).
+
+There is no rollback of side effects already completed by the faulting
+instruction or a bus slave. A second access fault during internal address-error
+entry stops both buses until reset; nested address-error recovery is not
+implemented. Board-level interrupt delivery remains a separate review finding.
+
+Validation:
+
+- `make spinal-test`: 27 tests pass. `J2SleepFaultSpec` runs 25 scenarios at two
+  bus latencies, with debug ports enabled and disabled (100 simulations). It
+  checks valid byte/word/long loads, alignment faults, instruction/data `ERR`,
+  failed SR/MACH/MACL loads, delayed branches, saved exception frames, RTE,
+  masked and unmasked wakeup, and faults during exception entry.
+- `make spinal-microcode-verif`: CPU ROM, RTE, and interrupt ROMs pass, at
+  31,561, 886, and 1,817 cycles respectively.
+
+These changes have simulation coverage; the earlier FPGA timing and hardware
+results below predate this fix.
+
 ## Reproduction
 
 Build the generated RTL and run the new core:

@@ -44,6 +44,26 @@ final class J2MicrocodedCore(
   nextStatus := status
   private val macS = RegInit(False)
   private val slot = RegInit(False)
+  private val sleeping = RegInit(False)
+  // Data faults cancel younger EX/WB1 work. Fetch faults stay attached to the
+  // prefetched opcode so the preceding instruction (including a branch) drains.
+  private val faultPending = RegInit(False)
+  private val dataFaultPc = RegInit(U(0, 32 bits))
+  private val fetchFaultPc = RegInit(U(0, 32 bits))
+  private val instructionPc = RegInit(U(0, 32 bits))
+  private val operationResumePc = RegInit(U(0, 32 bits))
+  private val executeResumePc = RegInit(U(0, 32 bits))
+  private val faultInService = RegInit(False)
+  private val faultHalted = RegInit(False)
+  private val instructionFault = RegInit(False)
+  private val instructionFaultNext = RegInit(False)
+  private val dataReadValid = RegInit(True)
+  private val dataReadNextValid = RegInit(True)
+  private val internalFault = faultPending || instructionFault
+  private val wakeEvent = io.event.valid &&
+    (io.event.payload.command =/= 0 ||
+      (!sequencer.io.maskInterrupt &&
+        (io.event.payload.bypassMask || io.event.payload.level > status.interruptMask)))
 
   private val instruction = RegInit(U(0, 16 bits))
   private val instructionNext = RegInit(U(0, 16 bits))
@@ -70,6 +90,7 @@ final class J2MicrocodedCore(
   table.io.nextIdStall := sequencer.io.nextIdStall
 
   pipeline.io.slot := slot
+  pipeline.io.cancelWb1 := faultPending
   pipeline.io.nextIdStall := sequencer.io.nextIdStall
   pipeline.io.ex := table.io.control.ex
   pipeline.io.exStall := table.io.control.exStall
@@ -100,23 +121,24 @@ final class J2MicrocodedCore(
   sequencer.io.maskInterruptNext := table.io.control.maskInterruptNext
   sequencer.io.enterDebug := False
   sequencer.io.debug := table.io.control.debug
-  sequencer.io.eventValid := io.event.valid
-  sequencer.io.eventCommand := io.event.payload.command
-  sequencer.io.eventVector := io.event.payload.vector
+  sequencer.io.eventValid := io.event.valid || internalFault
+  sequencer.io.eventCommand := Mux(internalFault, U(1, 2 bits), io.event.payload.command)
+  sequencer.io.eventVector := Mux(internalFault, U(9, 8 bits), io.event.payload.vector)
   sequencer.io.eventLevel := io.event.payload.level
   sequencer.io.eventBypassMask := io.event.payload.bypassMask
   sequencer.io.id := table.io.control.id
 
-  io.event.ready := sequencer.io.eventAck
-  io.eventAck := sequencer.io.eventAck
+  io.event.ready := sequencer.io.eventAck && !internalFault && !faultInService
+  io.eventAck := io.event.ready
 
   registers.io.slot := slot
   registers.io.readX := pipeline.io.state.ex1.regX
   registers.io.readY := pipeline.io.state.ex1.regY
-  registers.io.writeW.enable := pipeline.io.state.wb3Stall.regWriteW
+  registers.io.writeW.enable := pipeline.io.state.wb3Stall.regWriteW && dataReadValid
   registers.io.writeW.address := pipeline.io.state.wb3.regW
   registers.io.writeW.data := dataRead
-  registers.io.writeZ.enable := pipeline.io.state.ex1Stall.regWriteZ
+  registers.io.writeZ.enable := pipeline.io.state.ex1Stall.regWriteZ && !faultPending &&
+    (pipeline.io.state.ex1Stall.zSelect =/= J2ZBusSelect.WBUS || dataReadValid)
   registers.io.writeZ.address := pipeline.io.state.ex1.regZ
   registers.io.writeZ.data := Mux(
     pipeline.io.state.ex1Stall.prWritePc,
@@ -138,10 +160,10 @@ final class J2MicrocodedCore(
   datapath.io.yOverride := 0
 
   private val multiplyUseEx1 =
-    pipeline.io.state.ex1Stall.multiplyStart || pipeline.io.state.ex1Stall.machWrite
+    !faultPending && (pipeline.io.state.ex1Stall.multiplyStart || pipeline.io.state.ex1Stall.machWrite)
   private val multiplyUseEx2 =
-    pipeline.io.state.ex1Stall.multiplyCommand =/= J2MultiplyCommand.NOP ||
-      pipeline.io.state.ex1Stall.maclWrite
+    !faultPending && (pipeline.io.state.ex1Stall.multiplyCommand =/= J2MultiplyCommand.NOP ||
+      pipeline.io.state.ex1Stall.maclWrite)
   private val multiplySelect1 = Mux(
     multiplyUseEx1,
     pipeline.io.state.ex1Stall.macSelect1,
@@ -155,9 +177,9 @@ final class J2MicrocodedCore(
 
   multiply.io.slot := slot
   multiply.io.command := Mux(
-    pipeline.io.state.ex1Stall.multiplyCommand =/= J2MultiplyCommand.NOP,
+    !faultPending && pipeline.io.state.ex1Stall.multiplyCommand =/= J2MultiplyCommand.NOP,
     pipeline.io.state.ex1Stall.multiplyCommand,
-    pipeline.io.state.wb3Stall.multiplyCommand
+    Mux(dataReadValid, pipeline.io.state.wb3Stall.multiplyCommand, J2MultiplyCommand.NOP)
   )
   multiply.io.in1 := multiplySelect1.mux(
     J2MacSelect1.XBUS -> datapath.io.xbus,
@@ -170,9 +192,12 @@ final class J2MicrocodedCore(
     J2MacSelect2.WBUS -> dataRead
   )
   multiply.io.s := macS
-  multiply.io.writeM1 := pipeline.io.state.ex1Stall.multiplyStart || pipeline.io.state.wb3Stall.multiplyStart
-  multiply.io.writeMach := pipeline.io.state.ex1Stall.machWrite || pipeline.io.state.wb3Stall.machWrite
-  multiply.io.writeMacl := pipeline.io.state.ex1Stall.maclWrite || pipeline.io.state.wb3Stall.maclWrite
+  multiply.io.writeM1 := (!faultPending && pipeline.io.state.ex1Stall.multiplyStart) ||
+    (pipeline.io.state.wb3Stall.multiplyStart && dataReadValid)
+  multiply.io.writeMach := (!faultPending && pipeline.io.state.ex1Stall.machWrite) ||
+    (pipeline.io.state.wb3Stall.machWrite && dataReadValid)
+  multiply.io.writeMacl := (!faultPending && pipeline.io.state.ex1Stall.maclWrite) ||
+    (pipeline.io.state.wb3Stall.maclWrite && dataReadValid)
 
   io.ibus.CYC := instructionActive
   io.ibus.STB := instructionActive
@@ -218,18 +243,27 @@ final class J2MicrocodedCore(
     )
   }
 
-  when(dataActive && io.dbus.ACK) {
+  // ERR terminates a Wishbone request just like ACK, but must not write back data.
+  // ERR wins if a slave incorrectly asserts both responses.
+  when(dataActive && (io.dbus.ACK || io.dbus.ERR)) {
+    dataReadNextValid := !io.dbus.ERR
+    when(io.dbus.ERR) {
+      faultPending := True
+      when(faultInService) { faultHalted := True }
+    }
     dataReadNext := alignReadData(io.dbus.DAT_MISO.asUInt)
     dataPending := True
     dataActive := False
   }
-  when(instructionActive && io.ibus.ACK) {
-    instructionNext := io.ibus.DAT_MISO(15 downto 0).asUInt
+  when(instructionActive && (io.ibus.ACK || io.ibus.ERR)) {
+    instructionFaultNext := io.ibus.ERR
+    when(io.ibus.ERR && faultInService) { faultHalted := True }
+    instructionNext := Mux(io.ibus.ERR, U(0x0009, 16 bits), io.ibus.DAT_MISO(15 downto 0).asUInt)
     instructionPending := True
     instructionActive := False
   }
 
-  when(!dataActive && !instructionActive) {
+  when(!dataActive && !instructionActive && !sleeping && !faultHalted) {
     slot := True
   } otherwise {
     slot := False
@@ -239,9 +273,9 @@ final class J2MicrocodedCore(
   private val sequentialInstructionAddress = pcReg + 2
 
   private val srSelect = Mux(
-    pipeline.io.state.wb3Stall.srWriteW,
+    pipeline.io.state.wb3Stall.srWriteW && dataReadValid,
     J2SrSelect.WBUS,
-    pipeline.io.state.ex1Stall.srSelect
+    Mux(faultPending, J2SrSelect.PREV, pipeline.io.state.ex1Stall.srSelect)
   )
 
   switch(srSelect) {
@@ -277,22 +311,48 @@ final class J2MicrocodedCore(
   }
 
   when(slot) {
+    // Architectural instruction addresses travel separately from the microcode's
+    // speculative PC. All microsteps of an instruction share its resume address.
+    val resumePc = Mux(sequencer.io.delaySlot,
+      Mux(pipeline.io.state.ex1Stall.pcWriteZ, datapath.io.zbus, pcReg),
+      instructionPc + 2)
+    executeResumePc := Mux(sequencer.io.startInstruction, resumePc, operationResumePc)
+    when(sequencer.io.startInstruction) {
+      operationResumePc := resumePc
+      when(instructionFault && sequencer.io.delaySlot) { fetchFaultPc := resumePc }
+    }
     // Present the prefetched opcode only as ID advances, preserving the delay slot.
     when(instructionPending) {
       instruction := instructionNext
+      instructionPc := instructionAddress
+      when(instructionFaultNext) {
+        instructionFault := True
+        fetchFaultPc := instructionAddress
+      }
       instructionPending := False
     }
     // W belongs to the preceding memory slot. Keep it stable while the
     // next transaction completes, then advance it with the WB controls.
     when(dataPending) {
       dataRead := dataReadNext
+      dataReadValid := dataReadNextValid
       dataPending := False
     }
-    when(pipeline.io.state.ex1Stall.memoryIssue && !dataActive) {
+    when(pipeline.io.state.ex1Stall.memoryIssue && !dataActive && !faultPending) {
       // Stop at the issuing edge: active is a register, so waiting for it
       // in the completion logic would advance EX/WB one extra slot.
       slot := False
-      dataActive := True
+      val misaligned = (pipeline.io.state.ex1.memorySize === J2MemSize.WORD && datapath.io.memoryAddress(0)) ||
+        (pipeline.io.state.ex1.memorySize === J2MemSize.LONG && datapath.io.memoryAddress(1 downto 0) =/= 0)
+      dataActive := !misaligned
+      when(misaligned) {
+        faultPending := True
+        dataReadNextValid := False
+        dataPending := True
+        dataReadNext := 0
+        when(faultInService) { faultHalted := True }
+      }
+      dataFaultPc := executeResumePc
       dataAddress := datapath.io.memoryAddress
       dataWrite := pipeline.io.state.ex1.memoryWrite
       dataWriteData := datapath.io.memoryWriteData
@@ -300,15 +360,22 @@ final class J2MicrocodedCore(
     }
     when(sequencer.io.instructionIssue && !instructionActive) {
       slot := False
-      instructionActive := True
-      instructionAddress := Mux(
+      val fetchAddress = Mux(
         sequencer.io.instructionAddress,
         datapath.io.zbus,
         sequentialInstructionAddress
       )
+      instructionAddress := fetchAddress
+      instructionActive := !fetchAddress(0)
+      when(fetchAddress(0)) {
+        instructionNext := 0x0009
+        instructionFaultNext := True
+        instructionPending := True
+        when(faultInService) { faultHalted := True }
+      }
     }
 
-    when(pipeline.io.state.ex1Stall.pcWriteZ) {
+    when(pipeline.io.state.ex1Stall.pcWriteZ && !faultPending) {
       pcReg := datapath.io.zbus
     } elsewhen (sequencer.io.incrementPc) {
       pcReg := sequentialInstructionAddress
@@ -320,19 +387,47 @@ final class J2MicrocodedCore(
       macS := nextStatus.s
     }
     dataLock := pipeline.io.state.ex1.memoryLock
+    when(table.io.control.sleep && !wakeEvent && !internalFault) {
+      sleeping := True
+      slot := False
+    }
+    when(internalFault && sequencer.io.eventAck) {
+      // ERROR microcode subtracts two in its first EX slot. Undo speculative
+      // fetch advancement and supply the actual architectural resume address.
+      pcReg := Mux(faultPending, dataFaultPc, fetchFaultPc) + 2
+      faultPending := False
+      instructionFault := False
+      faultInService := True
+      dataLock := False
+    }
+    when(faultInService && table.io.control.dispatch) {
+      faultInService := False
+    }
+  }
+
+  when(sleeping && (wakeEvent || internalFault)) {
+    sleeping := False
+  }
+  // A fault during address-error entry cannot be serviced using the same broken
+  // stack/vector memory. Quiesce until reset rather than recursively corrupt it.
+  when(faultHalted) {
+    slot := False
+    instructionActive := False
+    dataActive := False
+    dataLock := False
   }
 
   if (exposeDebug) {
     io.pc := pcReg
     io.sr := status.asUInt
-    io.sleep := slot && table.io.control.sleep
+    io.sleep := sleeping
     io.retired := slot && table.io.control.dispatch
     io.illegal := slot && !predecoder.io.legal
     io.debugBreak := slot && table.io.control.debug
     io.debugState := 0
     io.debugOpcode := instruction
     io.debugSlotIllegal := predecoder.io.delaySlotIllegal
-    io.debugEventPending := False
+    io.debugEventPending := internalFault
   }
 
   when(ClockDomain.current.isResetActive) {
@@ -344,6 +439,14 @@ final class J2MicrocodedCore(
     status.interruptMask := 0xf
     macS := False
     slot := False
+    sleeping := False
+    faultPending := False
+    faultInService := False
+    faultHalted := False
+    instructionFault := False
+    instructionFaultNext := False
+    dataReadValid := True
+    dataReadNextValid := True
     instruction := 0
     instructionNext := 0
     instructionPending := False
