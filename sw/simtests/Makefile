@@ -1,8 +1,7 @@
-# Build the ORIGINAL simulator tests (reference/.../cpu/sim/tests) unchanged:
-# interrupts.S, rte.S. They report through TEST_RESULT (0xBCDE0010) and use
-# the event trigger at 0xBCDE0000. Output: build/sw/simtests/<name>.bin
+# Build the original simulator tests. They report through TEST_RESULT
+# (0xBCDE0010) and use the event trigger at 0xBCDE0000.
 ROOT   := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)
-SRC    := $(ROOT)/reference/soc_top/components/cpu/sim/tests
+SRC    := $(ROOT)/sw/simtests/original
 OUT    := $(ROOT)/build/sw/simtests
 CROSS  ?= $(if $(shell command -v sh-elf-gcc),sh-elf-,sh-none-elf-)
 ENDIAN := $(if $(findstring sh-none-elf,$(CROSS)),-mb,)

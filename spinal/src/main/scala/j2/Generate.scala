@@ -16,7 +16,7 @@ object Generate extends App {
   config.generateVerilog(new J2PipelineRegFile)
   val cpuConfig =
     if (useEg4Rom) config.copy(targetDirectory = "../build/spinal/verilog-fpga") else config
-  cpuConfig.generateVerilog(new J2MicrocodedCore(useEg4Rom))
+  cpuConfig.generateVerilog(new J2MicrocodedCore(useEg4Rom, exposeDebug = !useEg4Rom))
   config.generateVerilog(new J2MicrocodeRom)
   config.generateVerilog(new J2Predecoder)
   config.generateVerilog(new J2MicrocodeTable)

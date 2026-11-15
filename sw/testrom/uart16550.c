@@ -11,7 +11,7 @@ struct st_uart16550
   unsigned int MSR;
   unsigned int SCR;
 };
-#define UART 0xabcd0100
+#define UART 0xff001000
 #define UART16550 (*(volatile struct st_uart16550 *)UART)
 
 void

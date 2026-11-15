@@ -1,5 +1,5 @@
 ROOT := $(abspath $(CURDIR)/../..)
-ARCHIVE := $(ROOT)/archive/systemverilog-2026-11-14/working-tree/sim
+REF_COMMON := $(ROOT)/verilog/verif/common
 VERILATOR ?= $(ROOT)/tools/local/bin/verilator
 SPINAL_DIR := $(ROOT)/spinal
 MICRO_VERILOG := $(ROOT)/build/spinal/verilog/J2MicrocodedCore.v
@@ -11,7 +11,8 @@ SCALA_SRC := $(wildcard $(SPINAL_DIR)/src/main/scala/j2/*.scala) \
 	$(wildcard $(SPINAL_DIR)/src/main/scala/j2/*/*.scala)
 SPINAL_BUILD := $(SPINAL_DIR)/build.sbt $(SPINAL_DIR)/project/build.properties \
 	$(SPINAL_DIR)/project/plugins.sbt
-HARNESS_HEADERS := $(ARCHIVE)/common/sysmodel.h $(ARCHIVE)/common/wbslave.h
+HARNESS_HEADERS := $(REF_COMMON)/sysmodel.h $(REF_COMMON)/wbslave.h
+REFSRC := $(ROOT)/reference/soc_top/components/cpu/cpu2j0_pkg.vhd
 
 .PHONY: all generate rom test microcode-test clean
 
@@ -36,18 +37,14 @@ $(MICRO_BUILD)/VJ2MicrocodedCore: cpp/sh2sim.cpp $(MICRO_VERILOG) $(HARNESS_HEAD
 	cp $(ROOT)/build/spinal/verilog/J2MicrocodedCore.v_*.bin $(MICRO_BUILD)/
 	$(VERILATOR) --cc --exe --build -O2 -Wno-fatal --top-module J2MicrocodedCore \
 		-Mdir $(MICRO_BUILD)/obj -o ../VJ2MicrocodedCore \
-		-CFLAGS "-O2 -DUSE_MICROCODED_CORE -I$(ARCHIVE)/common" \
+		-CFLAGS "-O2 -DUSE_MICROCODED_CORE -I$(REF_COMMON)" \
 		$(MICRO_VERILOG) cpp/sh2sim.cpp
 
-$(TESTROM): $(ROOT)/reference/soc_top/README $(ROOT)/sw/testrom/Makefile
+$(TESTROM): $(REFSRC) $(ROOT)/sw/testrom/Makefile
 	$(MAKE) -C $(ROOT) $(TESTROM)
 
-$(SIMTESTS) &: $(ROOT)/reference/soc_top/README
+$(SIMTESTS) &: $(REFSRC)
 	$(MAKE) -C $(ROOT)/sw/simtests
-
-$(ROOT)/reference/soc_top/README: $(ROOT)/jcore-source-latest.tar.gz
-	mkdir -p $(ROOT)/reference && tar -xzf $< -C $(ROOT)/reference
-	chmod -R a-w $(ROOT)/reference/soc_top && touch $@
 
 clean:
 	rm -rf $(MICRO_BUILD)

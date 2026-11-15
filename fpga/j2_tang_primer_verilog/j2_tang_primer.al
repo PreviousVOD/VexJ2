@@ -15,6 +15,10 @@
             <File>j2_validation_rom.v</File>
             <File>j2_pio.v</File>
             <File>j2_uart16550.v</File>
+            <File>llqspi.v</File>
+            <File>j2_spiflash.v</File>
+            <File>j2_sdram.v</File>
+            <File>j2_sdram_phy.v</File>
             <File>j2_soc.v</File>
             <File>j2_tang_primer.v</File>
             <File>raminfr.v</File>

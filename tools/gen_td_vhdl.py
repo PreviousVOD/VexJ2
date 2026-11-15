@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "reference/soc_top"
 OUT = ROOT / "build/td_vhdl"
 PRE = OUT / "pre"
-V2P = SRC / "tools/v2p"
+V2P = ROOT / "tools/v2p"
 
 
 def replace_once(text: str, old: str, new: str, description: str) -> str:

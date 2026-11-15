@@ -1,6 +1,6 @@
 # Lockstep stress program (stress.S + the original CPU self-test routines).
 ROOT   := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)
-TSRC   := $(ROOT)/reference/soc_top/components/cpu/testrom
+TSRC   := $(ROOT)/sw/testrom/original
 OUT    := $(ROOT)/build/sw/stress
 CROSS  ?= $(if $(shell command -v sh-elf-gcc),sh-elf-,sh-none-elf-)
 ENDIAN := $(if $(findstring sh-none-elf,$(CROSS)),-mb,)

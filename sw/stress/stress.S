@@ -71,7 +71,7 @@ _isr:
 stack_k:        .long _stack_top
 counter_k:      .long _counter
 scratch_k:      .long _scratch
-pio_k:          .long 0xabcd0000
+pio_k:          .long 0xff000000
 testbra_k:      .long _testbra
 testmov2_k:     .long _testmov2
 testalu_k:      .long _testalu

@@ -7,7 +7,8 @@ simulation and ran on the Tang Primer, printing `CPU tests passed` over UART.
 Commit `2bebec7` checkpoints the modular SpinalHDL implementation. Scala now
 generates only the microcoded CPU and its support modules. The current SoC,
 validation memory, bus fabric, PIO, and UART adapter are Verilog modules under
-`verilog/`; the VHDL implementation remains available through `reference-fpga`.
+`verilog/`. Original VHDL sources under `reference/` are retained only for
+simulator cross-reference; the VHDL FPGA flow has been removed.
 
 Useful entry points:
 
@@ -175,6 +176,103 @@ output replaced the simulation ROM with the EG4 BlackBox on the next simulator
 build. The generated CPU now goes to `build/spinal/verilog-fpga` when
 `J2_FPGA=1`.
 
+### SPI flash and XIP
+
+`verilog/j2_spiflash.v` integrates ZipCPU `llqspi` at 24 MHz. The 1 MiB XIP
+window is `0x10000000` through `0x100fffff`; the byte-control port is
+`0xff002000`. A registered arbiter
+allows one data or instruction transaction at a time. The controller sends the
+`0x03` command and 24-bit address in one four-byte transfer, then performs a
+32-bit read while managing chip-select hold. Configuration writes use the same
+byte-transfer path and preserve received data for configuration reads.
+
+The Verilog SoC no longer preserves the original J2 peripheral layout. PIO is
+at `0xff000000`, UART at `0xff001000`, and flash control at `0xff002000`.
+CPU debug/event outputs are left unconnected in the SoC. Production FPGA
+generation sets `exposeDebug = false`, so the debug ports are absent from the
+generated core itself. Simulator/core regressions retain debug instrumentation.
+
+`llqspi` always transmits from bit 31, including for byte transfers, so control
+bytes must be left-aligned. Its command/address transfer is 32 bits, not 24.
+Chip select must remain asserted across the ROM's multi-byte control sequences,
+including the ACK and cooldown cycles between bytes, until the ROM explicitly
+releases it. Releasing CS after each byte resets the flash command state and
+produced idle `0xfe` reads.
+
+Both instruction and data flash reads issue word-aligned `0x03` commands. Data
+reads rely on the CPU's normal byte-lane selection; reading from the exact byte
+address shifts the data twice and breaks checksums. Instruction reads retain the
+original address bit 1 for halfword selection. Using an exact halfword flash
+address returned apparently correct opcodes but led to an exception during early
+XIP execution; word-aligned commands match the validated `spixpress` behavior.
+
+The earlier `spixpress` attempt required an external DDR clock-output stage.
+Approximating that stage incorrectly shifted the command (`0x9f` became `0x4f`)
+and did not produce a valid hardware ID. The lower-level `llqspi` has a directly
+registered SCK and explicit transfer timing, avoiding that ambiguity. The flash
+simulator returns single-bit MISO on QSPI data bit 1, which the harness extracts
+explicitly.
+
+The board has two Winbond 25Q80 devices; the PDF's `26Q80B` label is a typo.
+The device on CSO/CCLK is the FPGA configuration flash and must not be written
+by this project. The free device uses CS=D3, CLK=H4, MOSI/IO0=B3,
+MISO/IO1=F4, IO2=F5, and IO3=B1. Single-SPI mode drives IO2/WP and IO3/HOLD
+high; leaving them undriven allowed the flash to remain write-protected or held.
+The working E203 constraints confirm these locations. All top-level I/O pins,
+not only flash, use LVCMOS33. The boot ROM limits image sizes to its 1 MiB
+capacity and sends sixteen `0xff` bytes before identification to recover a
+flash left in continuous/QPI mode.
+
+The resident ROM in `sw/xiprom` supports JEDEC ID, 64 KiB erase, 256-byte page
+program, busy polling, and read-back verification. UART uploads require two
+flow-control handshakes: wait for `Program flash` after erase, then wait for a
+`Page xxxxxx` acknowledgment after each page is programmed and verified. Raw
+streaming overruns the 16550's 16-byte receive FIFO while the CPU is working on
+flash. `tools/xip_image.py` packs the 16-byte application header and implements
+the host protocol.
+
+`make xip-hw-sim` verifies both a preloaded direct XIP boot and a blank-flash
+UART upload followed by XIP execution. The test image prints `XIP CPU tests
+passed`.
+
+### EG4S20 SiP SDRAM
+
+The EG4S20 contains an 8 MiB SDRAM die, so no external SDRAM pins appear on the
+Tang Primer schematic. TD's `EG_PHY_SDRAM_2M_32` primitive provides a 2M x 32
+interface with 11-bit rows, 8-bit columns, four banks, and four byte masks.
+`verilog/j2_sdram.v` is a single-outstanding classic-Wishbone controller;
+`verilog/j2_sdram_phy.v` contains only the primitive wrapper. No additional
+clock PLL or external PHY is required at 24 MHz.
+
+The controller maps SDRAM at `0x80000000` through `0x807fffff`, uses CL=3,
+single-word accesses, auto-precharge, and byte enables. It performs a 200 us
+power-up delay, precharge-all, two refreshes, and mode-register setup, then
+refreshes every 15 us. The address mapping is bank=`addr[3:2]`,
+column=`addr[11:4]`, row=`addr[22:12]`.
+
+The initialization and timing choices were checked against the official Tang
+examples and the minimal controller in
+`ReinForce-II/anlogic_eg4s_sdram_controller` at commit
+`a488f2f73dbd2af4c57436a62eee0b13b1919da2`. The Wishbone/SDRAM example in
+`Icenowy/picorv32-wb-test` at commit
+`e1c80ff0f705b841ca487ee78ea2678e9bb89317` also confirms the primitive and
+geometry. The controller here is implemented locally rather than importing the
+larger asynchronous/FIFO-based SDRAM core.
+
+`verilog/verif/j2_sdram_model.v` supplies the simulation-only primitive model.
+The XIP application checks all four banks, multiple rows and columns, and
+word/byte/halfword writes before printing `SDRAM tests passed`. Byte lane
+expectations must follow big-endian SH addressing: byte offset 1 selects bits
+23:16. A missing tri-state DQ assignment during initial bring-up made every
+written word zero even though the Wishbone write data was correct.
+
+### Deferred boot-mode controls
+
+For a future power-up download-mode control, use one button for CPU reset and
+sample a second boot-mode button while reset is asserted. Release reset into the
+UART loader when boot mode is held, otherwise boot the validated flash image.
+Debounce and synchronize the asynchronous buttons before using them in the SoC.
+
 ### FC must align, not shift
 
 An earlier implementation used:
@@ -230,16 +328,28 @@ early test failures came from incorrect test setup rather than RTL.
 ## FPGA validation and remaining boundary
 
 The earlier all-SpinalHDL SoC was validated at commit `3c38cca`. The current
-Verilog SoC completes synthesis, place, route, and bit generation with 8,265
-LUTs, 1,777 registers, nine DSPs, and 13 BRAM32K blocks. TD reports zero setup
-and zero hold errors, a 29.780 ns minimum period, 5.943 ns minimum setup slack,
-and 0.266 ns minimum hold slack for the 24 MHz clock.
+Verilog SoC completes synthesis, place, route, and bit generation with 7,120
+LUTs, 1,936 registers, nine DSPs, 13 BRAM32K blocks, and the SiP SDRAM macro.
+TD reports zero setup and zero hold errors, a 27.028 ns minimum period, 7.319 ns
+minimum setup slack, and 0.221 ns minimum hold slack for the 24 MHz clock.
 
 Volatile JTAG programming succeeded and `/dev/ttyACM0` captured `CPU tests
 passed` at 19,200 baud through the 16550, followed by DDR and GDB messages. The
 raw capture is `build/logs/verilog_fpga_uart.log`.
 
-The VHDL baseline has four known hold violations and the build script rejects
-bitstream generation when timing errors remain. The core's debug interface is
-still a stub; these programs and hardware results do not establish debug support
-or exhaustive ISA correctness.
+The XIP design also passed on the Tang Primer. The free flash reported JEDEC ID
+`ef4014`, then the UART loader erased and programmed two pages, verified the
+image, and printed `XIP CPU tests passed`. The normal uploader waits for a fresh
+boot banner; when the ROM is already waiting at `J2 loader`, use the uploader's
+`--no-wait` option instead of waiting for output that has already been emitted.
+
+With SDRAM enabled, the three-page uploaded image and a subsequent direct flash
+boot both printed `SDRAM tests passed` and `XIP CPU tests passed` on hardware.
+This validates the local controller's initialization, addressing, byte masks,
+and read/write path at 24 MHz; it is not yet an exhaustive full-capacity memory
+stress test.
+
+The original VHDL implementation is supported only through `reference-verif`
+on the simulator. Its former FPGA build and timing waivers have been removed.
+The core's debug interface is still a stub; these programs and hardware results
+do not establish debug support or exhaustive ISA correctness.

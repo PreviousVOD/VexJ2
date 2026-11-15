@@ -1,6 +1,0 @@
-`verilator_config
-// Package constants/functions are shared; not every user consumes every one.
-lint_off -rule UNUSEDPARAM  -file "*rtl/pkg/*"
-lint_off -rule UNUSEDSIGNAL -file "*rtl/pkg/j2_alu_pkg.sv" -match "*'x'*"
-// Pre-decode helper functions look at selected opcode bits only.
-lint_off -rule UNUSEDSIGNAL -file "*rtl/pkg/j2_decode_pkg.sv" -match "*'code'*"

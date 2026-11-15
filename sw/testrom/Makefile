@@ -1,11 +1,8 @@
-# Build the ORIGINAL J-Core CPU test ROM (reference/.../components/cpu/testrom)
-# unchanged, into build/sw/testrom. Output: main.elf, main.bin (raw image
-# loaded at address 0), main.lst (disassembly).
-#
+# Build the original J-Core CPU test ROM into build/sw/testrom.
 # CROSS defaults to Debian's sh-elf- (big-endian); the repository-local
 # sh-none-elf- toolchain also works (it defaults to little-endian, so -mb).
 ROOT    := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)
-SRC     := $(ROOT)/reference/soc_top/components/cpu/testrom
+SRC     := $(ROOT)/sw/testrom/original
 OUT     := $(ROOT)/build/sw/testrom
 CROSS   ?= $(if $(shell command -v sh-elf-gcc),sh-elf-,sh-none-elf-)
 ENDIAN  := $(if $(findstring sh-none-elf,$(CROSS)),-mb,)

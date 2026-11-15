@@ -6,22 +6,25 @@ import j2.microcode._
 import spinal.core._
 import spinal.lib._
 
-final class J2MicrocodedCore(val useEg4Rom: Boolean = false) extends Component {
+final class J2MicrocodedCore(
+    val useEg4Rom: Boolean = false,
+    val exposeDebug: Boolean = true
+) extends Component {
   val io = new Bundle {
     val ibus = master(J2Wishbone())
     val dbus = master(J2Wishbone())
     val event = slave(Stream(new J2Event))
     val eventAck = out Bool ()
-    val pc = out UInt (32 bits)
-    val sr = out UInt (32 bits)
-    val sleep = out Bool ()
-    val retired = out Bool ()
-    val illegal = out Bool ()
-    val debugBreak = out Bool ()
-    val debugState = out UInt (3 bits)
-    val debugOpcode = out UInt (16 bits)
-    val debugSlotIllegal = out Bool ()
-    val debugEventPending = out Bool ()
+    val pc = if (exposeDebug) out UInt (32 bits) else null
+    val sr = if (exposeDebug) out UInt (32 bits) else null
+    val sleep = if (exposeDebug) out Bool () else null
+    val retired = if (exposeDebug) out Bool () else null
+    val illegal = if (exposeDebug) out Bool () else null
+    val debugBreak = if (exposeDebug) out Bool () else null
+    val debugState = if (exposeDebug) out UInt (3 bits) else null
+    val debugOpcode = if (exposeDebug) out UInt (16 bits) else null
+    val debugSlotIllegal = if (exposeDebug) out Bool () else null
+    val debugEventPending = if (exposeDebug) out Bool () else null
   }
 
   private val sequencer = new J2Microsequencer
@@ -319,16 +322,18 @@ final class J2MicrocodedCore(val useEg4Rom: Boolean = false) extends Component {
     dataLock := pipeline.io.state.ex1.memoryLock
   }
 
-  io.pc := pcReg
-  io.sr := status.asUInt
-  io.sleep := slot && table.io.control.sleep
-  io.retired := slot && table.io.control.dispatch
-  io.illegal := slot && !predecoder.io.legal
-  io.debugBreak := slot && table.io.control.debug
-  io.debugState := 0
-  io.debugOpcode := instruction
-  io.debugSlotIllegal := predecoder.io.delaySlotIllegal
-  io.debugEventPending := False
+  if (exposeDebug) {
+    io.pc := pcReg
+    io.sr := status.asUInt
+    io.sleep := slot && table.io.control.sleep
+    io.retired := slot && table.io.control.dispatch
+    io.illegal := slot && !predecoder.io.legal
+    io.debugBreak := slot && table.io.control.debug
+    io.debugState := 0
+    io.debugOpcode := instruction
+    io.debugSlotIllegal := predecoder.io.delaySlotIllegal
+    io.debugEventPending := False
+  }
 
   when(ClockDomain.current.isResetActive) {
     pcReg := 0

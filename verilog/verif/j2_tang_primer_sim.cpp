@@ -9,6 +9,7 @@ int main(int argc, char **argv) {
   top.clk24 = 0;
   top.rst_n = 0;
   top.uart_rx = 1;
+  top.spi_miso = 1;
   top.eval();
 
   for (int cycle = 0; cycle < 8; ++cycle) {

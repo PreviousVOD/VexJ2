@@ -1,9 +1,15 @@
 ## Sipeed Tang Primer / Anlogic EG4S20BG256 pin assignments.
 
-set_pin_assignment {clk24}      { LOCATION = K14; }
-set_pin_assignment {rst_n}      { LOCATION = K16; }
-set_pin_assignment {rgb_led[0]} { LOCATION = R3;  }
-set_pin_assignment {rgb_led[1]} { LOCATION = J14; }
-set_pin_assignment {rgb_led[2]} { LOCATION = P13; }
-set_pin_assignment {uart_rx}    { LOCATION = H13; }
-set_pin_assignment {uart_tx}    { LOCATION = J13; }
+set_pin_assignment {clk24}      { LOCATION = K14; IOSTANDARD = LVCMOS33; }
+set_pin_assignment {rst_n}      { LOCATION = K16; IOSTANDARD = LVCMOS33; }
+set_pin_assignment {rgb_led[0]} { LOCATION = R3;  IOSTANDARD = LVCMOS33; }
+set_pin_assignment {rgb_led[1]} { LOCATION = J14; IOSTANDARD = LVCMOS33; }
+set_pin_assignment {rgb_led[2]} { LOCATION = P13; IOSTANDARD = LVCMOS33; }
+set_pin_assignment {uart_rx}    { LOCATION = H13; IOSTANDARD = LVCMOS33; }
+set_pin_assignment {uart_tx}    { LOCATION = J13; IOSTANDARD = LVCMOS33; }
+set_pin_assignment {spi_clk}    { LOCATION = H4;  IOSTANDARD = LVCMOS33; }
+set_pin_assignment {spi_cs}     { LOCATION = D3;  IOSTANDARD = LVCMOS33; }
+set_pin_assignment {spi_mosi}   { LOCATION = B3;  IOSTANDARD = LVCMOS33; }
+set_pin_assignment {spi_miso}   { LOCATION = F4;  IOSTANDARD = LVCMOS33; }
+set_pin_assignment {spi_wp_n}   { LOCATION = F5;  IOSTANDARD = LVCMOS33; }
+set_pin_assignment {spi_hold_n} { LOCATION = B1;  IOSTANDARD = LVCMOS33; }

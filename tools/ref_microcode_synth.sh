@@ -27,11 +27,11 @@ mkdir -p "$work"
   "$td/decode_bound.vhd" \
   "$td/datapath_bound.vhd" \
   "$td/cpu_bound.vhd" \
-  "$root/fpga/j2_cpu_flat.vhd"
+  "$root/reference/j2_cpu_flat.vhd"
 
 "$ghdl" --synth "${gflags[@]}" --out=verilog j2_cpu_flat > "$out/j2_cpu_flat.v.tmp"
 perl -pi -e 's/\$fatal\(1, "assertion failure (\w+)"\);/; \/\/ assert $1 stripped/g' "$out/j2_cpu_flat.v.tmp"
 perl -pi -e 's/\b(table|config|cell|design|library|use|int|bit|byte|shortint|longint|string|class|do|final|type|const|var|logic)\b/$1_i/g' "$out/j2_cpu_flat.v.tmp"
-python3 "$root/archive/systemverilog-2026-11-14/working-tree/tools/fix_ghdl_verilog.py" \
+python3 "$root/tools/fix_ghdl_verilog.py" \
   "$out/j2_cpu_flat.v.tmp"
 mv "$out/j2_cpu_flat.v.tmp" "$out/j2_cpu_flat.v"
