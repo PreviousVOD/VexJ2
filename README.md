@@ -136,10 +136,24 @@ maintained microcode representation is required.
 
 ## Toolchain
 
-- Java 21, sbt 1.10.7, Scala 2.13.14, SpinalHDL 1.14.2
-- Scalafmt 3.8.4; run `scalafmtAll` in `spinal/` after Scala edits
-- Verilator for core and SoC simulation
-- Tang Dynasty 4.6.7 at `TD_HOME`
+Run `make toolchain` to populate `tools/local` with sbt 1.10.7, Verilator
+5.032, and a big-endian SH-2 GCC 13.3.0/binutils 2.43.1 cross-toolchain using
+the `sh-none-elf-` prefix. The individual targets are `toolchain-sbt`,
+`toolchain-verilator`, and `toolchain-sh`. Downloads and build trees are cached
+under `tools/third_party/`; no root privileges or external source tarballs are
+required. Scala, simulation, and firmware targets bootstrap their respective
+tools automatically. Verilator 5.032 is intentional: newer releases are not
+currently compatible with SpinalHDL 1.14.2's generated simulation wrapper.
+
+Host prerequisites are Java 21, gcc/g++, make, autoconf, m4, perl, python3,
+curl, wget, and Verilator's documented build dependencies. Source
+`tools/env.sh` to use the repository-local tools in a shell. Scalafmt 3.8.4 is
+available through sbt; run `scalafmtAll` in `spinal/` after Scala edits. The
+optional VHDL reference build can install GHDL with
+`tools/third_party/build-tools.sh ghdl`.
+
+Tang Dynasty 4.6.7 is a separate vendor installation. Set `TD_HOME` or `TD_BIN`,
+or put `td` on `PATH`; no vendor installation path is stored in the project.
 
 ## Verification
 
@@ -183,7 +197,7 @@ higher frequencies must be validated rather than assumed.
 Program volatile FPGA configuration and listen at 19,200 baud:
 
 ```sh
-make verilog-program TD_HOME=/home/imi415/Softwares/Tools/TD_4.6.7_Linux
+make verilog-program
 stty -F /dev/ttyACM0 19200 raw -echo
 cat /dev/ttyACM0
 ```

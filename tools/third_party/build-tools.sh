@@ -6,12 +6,13 @@
 #   tools/local/                   install prefix (PATH: see tools/env.sh)
 #
 # No root needed. Host requirements: gcc/g++, make, autoconf, m4, perl,
-# python3, tcl-dev, libreadline-dev, libffi-dev, zlib1g-dev, curl.
+# python3, tcl-dev, libreadline-dev, libffi-dev, zlib1g-dev, curl, wget.
 #
 # Usage: tools/third_party/build-tools.sh [component...]
-#   components: flex bison help2man verilator yosys gnat ghdl sh-toolchain
-#   (default: all). A component whose tool is already installed on the system
-#   is skipped; set FORCE=1 to build it anyway.
+#   components: sbt verilator sh-toolchain flex bison help2man yosys gnat ghdl
+#   (default: all). sbt, Verilator, and the SH toolchain are always installed
+#   locally. Other components use system installations when available; set
+#   FORCE=1 to rebuild those as well.
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
@@ -21,14 +22,16 @@ BUILD=$TP/build
 PREFIX=$REPO/tools/local
 JOBS=${JOBS:-$(nproc)}
 
+SBT_VER=1.10.7
 HELP2MAN_VER=1.49.3
 FLEX_VER=2.6.4
 BISON_VER=3.8.2
-VERILATOR_VER=5.054
+VERILATOR_VER=5.032
+BINUTILS_VER=2.43.1
+GCC_VER=13.3.0
 YOSYS_VER=0.70
 GNAT_VER=15.3.0-1
 GHDL_VER=6.0.0
-SH_TOOLCHAIN_TARBALL=${SH_TOOLCHAIN_TARBALL:-$REPO/../Rev_UDI/Toolchain/sh-none-elf.tar.gz}
 
 mkdir -p "$DL" "$BUILD" "$PREFIX/bin"
 SYS_PATH=$PATH
@@ -49,7 +52,7 @@ fetch() {  # fetch <url> <file>
   local url=$1 out=$DL/$2
   if [[ ! -s $out ]]; then
     log "download $url"
-    curl -fL --retry 3 -o "$out.part" "$url"
+    curl -fL --retry 3 --retry-all-errors --silent --show-error -C - -o "$out.part" "$url"
     mv "$out.part" "$out"
   fi
 }
@@ -62,6 +65,18 @@ unpack() {  # unpack <tarball> <dir>  -> fresh $BUILD/<dir>
 
 stamp() { [[ -f $PREFIX/.stamp-$1 ]]; }
 done_stamp() { touch "$PREFIX/.stamp-$1"; }
+
+build_sbt() {
+  [[ -x $PREFIX/bin/sbt ]] && return
+  fetch https://github.com/sbt/sbt/releases/download/v$SBT_VER/sbt-$SBT_VER.tgz sbt-$SBT_VER.tgz
+  log "install sbt $SBT_VER"
+  rm -rf "$PREFIX/sbt"
+  tar -xzf "$DL/sbt-$SBT_VER.tgz" -C "$PREFIX"
+  ln -sfn ../sbt/bin/sbt "$PREFIX/bin/sbt"
+  touch "$PREFIX/sbt/bin/sbt"
+  "$PREFIX/bin/sbt" --script-version
+  done_stamp sbt-$SBT_VER
+}
 
 build_flex() {
   on_system flex && return
@@ -94,13 +109,15 @@ build_bison() {
 }
 
 build_verilator() {
-  on_system verilator && return
-  stamp verilator-$VERILATOR_VER && return
+  local installed=
+  [[ -x $PREFIX/bin/verilator ]] && installed=$("$PREFIX/bin/verilator" --version)
+  [[ $installed == "Verilator $VERILATOR_VER "* ]] && return
   fetch https://github.com/verilator/verilator/archive/refs/tags/v$VERILATOR_VER.tar.gz verilator-$VERILATOR_VER.tar.gz
   unpack verilator-$VERILATOR_VER.tar.gz verilator
   log "build verilator $VERILATOR_VER"
   (cd "$BUILD/verilator" && autoconf && ./configure --prefix="$PREFIX" \
      && make -j"$JOBS" && make install)
+  "$PREFIX/bin/verilator" --version
   done_stamp verilator-$VERILATOR_VER
 }
 
@@ -147,25 +164,42 @@ build_ghdl() {
 }
 
 install_sh_toolchain() {
-  if on_system sh-elf-gcc; then return; fi
-  stamp sh-toolchain && return
-  [[ -f $SH_TOOLCHAIN_TARBALL ]] || { echo "missing $SH_TOOLCHAIN_TARBALL" >&2; return 1; }
-  log "install sh-none-elf toolchain from $SH_TOOLCHAIN_TARBALL"
-  rm -rf "$PREFIX/sh-none-elf"; mkdir -p "$PREFIX/sh-none-elf"
-  local top
-  top=$( (tar -tzf "$SH_TOOLCHAIN_TARBALL" || true) | head -1 | cut -d/ -f1)
-  if [[ $top == sh-none-elf ]]; then
-    tar -xzf "$SH_TOOLCHAIN_TARBALL" -C "$PREFIX/sh-none-elf" --strip-components=1
-  else
-    tar -xzf "$SH_TOOLCHAIN_TARBALL" -C "$PREFIX/sh-none-elf"
-  fi
-  "$PREFIX/sh-none-elf/bin/sh-none-elf-gcc" -dumpversion
-  done_stamp sh-toolchain
+  local sh_prefix=$PREFIX/sh-none-elf
+  [[ -x $sh_prefix/bin/sh-none-elf-gcc ]] && return
+  fetch https://ftp.gnu.org/gnu/binutils/binutils-$BINUTILS_VER.tar.xz binutils-$BINUTILS_VER.tar.xz
+  fetch https://ftp.gnu.org/gnu/gcc/gcc-$GCC_VER/gcc-$GCC_VER.tar.xz gcc-$GCC_VER.tar.xz
+  rm -rf "$sh_prefix"
+  mkdir -p "$sh_prefix"
+
+  unpack binutils-$BINUTILS_VER.tar.xz binutils-sh
+  mkdir -p "$BUILD/binutils-sh/_build"
+  log "build binutils $BINUTILS_VER for SH-2"
+  (cd "$BUILD/binutils-sh/_build" && ../configure \
+     --prefix="$sh_prefix" --target=sh-elf --program-prefix=sh-none-elf- \
+     --disable-nls --disable-werror --disable-multilib --disable-gdb --disable-sim \
+     && make -j"$JOBS" && make install)
+
+  unpack gcc-$GCC_VER.tar.xz gcc-sh
+  log "download GCC $GCC_VER prerequisites"
+  (cd "$BUILD/gcc-sh" && ./contrib/download_prerequisites)
+  mkdir -p "$BUILD/gcc-sh/_build"
+  log "build GCC $GCC_VER for big-endian SH-2"
+  (cd "$BUILD/gcc-sh/_build" && export PATH="$sh_prefix/bin:$PATH" && ../configure \
+     --prefix="$sh_prefix" --target=sh-elf --program-prefix=sh-none-elf- \
+     --with-cpu=m2 --with-newlib --without-headers --with-gnu-as --with-gnu-ld \
+     --enable-languages=c --disable-multilib --disable-nls --disable-shared \
+     --disable-threads --disable-libssp --disable-libgomp --disable-libatomic \
+     --disable-libquadmath \
+     && make -j"$JOBS" all-gcc all-target-libgcc \
+     && make install-gcc install-target-libgcc)
+  "$sh_prefix/bin/sh-none-elf-gcc" -dumpversion
+  done_stamp sh-toolchain-$BINUTILS_VER-$GCC_VER
 }
 
-ALL=(flex bison verilator yosys ghdl sh-toolchain)
+ALL=(sbt flex bison verilator yosys ghdl sh-toolchain)
 for c in "${@:-${ALL[@]}}"; do
   case $c in
+    sbt) build_sbt ;;
     flex) build_flex ;;
     bison) build_bison ;;
     help2man) build_help2man ;;

@@ -136,9 +136,9 @@ For a trace from the start:
 make -C spinal/verif microcode-test   # builds the model when needed
 cd build/spinal/verif/microcoded
 ./VJ2MicrocodedCore \
-  /home/imi415/Documents/Hardwares/TD_Projects/J2/build/sw/testrom/main.bin \
+  ../../../sw/testrom/main.bin \
   --quiet --max-cycles 12000 --log-bus-from 0 \
-  > /home/imi415/Documents/Hardwares/TD_Projects/J2/build/logs/microcoded_full_trace.log 2>&1
+  > ../../../logs/microcoded_full_trace.log 2>&1
 ```
 
 Reference trace:

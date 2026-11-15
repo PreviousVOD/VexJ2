@@ -1,4 +1,4 @@
-#!/opt/local/bin/perl
+#!/usr/bin/env perl
 
 # here is an ugly, straight forward C like attempt to parse .vhm 2 process
 # templates into clean VHDL.  It might break, behave badly or even work.

@@ -5,15 +5,22 @@ import argparse
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rtl", type=Path, required=True)
-    parser.add_argument("--td-home", type=Path, required=True)
+    parser.add_argument("--td-home", type=Path)
     parser.add_argument("--clock-hz", type=int, required=True)
     args = parser.parse_args()
+    td_home = args.td_home
+    if td_home is None:
+        td = shutil.which("td")
+        if td is None:
+            parser.error("set TD_HOME, pass --td-home, or put td on PATH")
+        td_home = Path(td).resolve().parent.parent
     root = Path(__file__).resolve().parents[1]
     output = root / "build/verilog/pll_verif"
     output.mkdir(parents=True, exist_ok=True)
@@ -24,7 +31,7 @@ def main():
     # TD 4.6.7's model reuses the input name load_reg for an internal 5-bit
     # signal. Rename only that internal net in a build-directory copy so that
     # Verilator accepts it. Leave clock generation and divider logic unchanged.
-    model = (args.td_home / "sim/eg/eg_phy_pll.v").read_text()
+    model = (td_home / "sim/eg/eg_phy_pll.v").read_text()
     model = model.replace("sclk, load_reg, rotate", "sclk, load_reg_internal, rotate")
     model = model.replace("assign load_reg  =", "assign load_reg_internal  =")
     model = model.replace("shot(load_reg[", "shot(load_reg_internal[")
