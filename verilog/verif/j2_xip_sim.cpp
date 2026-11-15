@@ -10,7 +10,12 @@
 
 int main(int argc, char **argv) {
   const char *image_path = argc > 1 ? argv[1] : "flash.bin";
-  bool loader = argc > 2 && std::string(argv[2]) == "--loader";
+  bool loader = false;
+  bool cold_boot = false;
+  for (int index = 2; index < argc; ++index) {
+    loader |= std::string(argv[index]) == "--loader";
+    cold_boot |= std::string(argv[index]) == "--cold-boot";
+  }
   std::ifstream stream(image_path, std::ios::binary);
   std::vector<uint8_t> image((std::istreambuf_iterator<char>(stream)),
                              std::istreambuf_iterator<char>());
@@ -23,7 +28,7 @@ int main(int argc, char **argv) {
   FLASHSIM flash(22);
   if (!loader) flash.load(image_path);
   top.clk24 = 0;
-  top.rst_n = 0;
+  top.rst_n = cold_boot ? 1 : 0;
   top.uart_rx = 1;
   top.spi_miso = 1;
   top.eval();

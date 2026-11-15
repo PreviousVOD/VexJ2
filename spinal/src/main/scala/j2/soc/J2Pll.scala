@@ -3,8 +3,11 @@ package j2.soc
 import spinal.core._
 
 final class Eg4Pll(feedbackDivider: Int, outputDivider: Int) extends BlackBox {
+  require(feedbackDivider >= 1 && feedbackDivider <= 128)
+  require(outputDivider >= 1 && outputDivider <= 128)
   val refclk = in Bool ()
   val reset = in Bool ()
+  val load_reg = in Bool ()
   val stdby = in Bool ()
   val extlock = out Bool ()
   val fbclk = in Bool ()
@@ -25,7 +28,9 @@ final class Eg4Pll(feedbackDivider: Int, outputDivider: Int) extends BlackBox {
   addGeneric("DYNCFG", "DISABLE")
   addGeneric("FIN", "24.000")
   addGeneric("FEEDBK_MODE", "NORMAL")
-  addGeneric("FEEDBK_PATH", "CLKC0_EXT")
+  // The divider calculation assumes VCO feedback: Fout = Fin * FB / OUT.
+  // CLKC0_EXT also multiplies the VCO by OUT, yielding Fin * FB at CLKC0.
+  addGeneric("FEEDBK_PATH", "VCO_PHASE_0")
   addGeneric("STDBY_ENABLE", "ENABLE")
   addGeneric("PLLRST_ENA", "ENABLE")
   addGeneric("SYNC_ENABLE", "DISABLE")

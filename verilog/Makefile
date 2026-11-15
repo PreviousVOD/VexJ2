@@ -26,11 +26,13 @@ all: test
 
 test: $(BUILD)/Vj2_tang_primer
 	cd $(BUILD) && ./Vj2_tang_primer
+	cd $(BUILD) && ./Vj2_tang_primer --cold-boot
 
 xip-test: $(XIP_BUILD)/Vj2_tang_primer $(XIP_IMAGE)
 	cp $(XIP_IMAGE) $(XIP_BUILD)/flash.bin
 	cd $(XIP_BUILD) && ./Vj2_tang_primer flash.bin
-	cd $(XIP_BUILD) && ./Vj2_tang_primer flash.bin --loader
+	cd $(XIP_BUILD) && ./Vj2_tang_primer flash.bin --cold-boot
+	cd $(XIP_BUILD) && ./Vj2_tang_primer flash.bin --loader --cold-boot
 
 $(BUILD)/Vj2_tang_primer: Makefile verif/j2_tang_primer_sim.cpp $(TEST_TOP) $(ROM) $(SDRAM_SIM) $(GPIO_PAD_SIM)
 	mkdir -p $(BUILD)

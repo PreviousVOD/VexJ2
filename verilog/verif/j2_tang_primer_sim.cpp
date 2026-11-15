@@ -5,9 +5,10 @@
 #include <string>
 
 int main(int argc, char **argv) {
+  const bool cold_boot = argc > 1 && std::string(argv[1]) == "--cold-boot";
   Vj2_tang_primer top;
   top.clk24 = 0;
-  top.rst_n = 0;
+  top.rst_n = cold_boot ? 1 : 0;
   top.uart_rx = 1;
   top.spi_miso = 1;
   top.eval();

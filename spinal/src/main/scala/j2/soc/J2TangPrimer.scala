@@ -1,14 +1,18 @@
 package j2.soc
 
-import j2.periph.{Eg4GpioPad, Eg4SdramPhy}
+import j2.periph.Eg4GpioPad
 import spinal.core._
-import spinal.lib.memory.sdram.sdr.EG4S20
 
 final class J2TangPrimer(
     clockHz: Int = 30000000,
     useEg4Rom: Boolean = false,
     usePll: Boolean = true
 ) extends Component {
+  require(clockHz > 0)
+  require(
+    !useEg4Rom || usePll || clockHz == 24000000,
+    "PLL bypass runs at 24 MHz; set J2_CLOCK_HZ=24000000"
+  )
   setDefinitionName("j2_tang_primer")
   val io = new Bundle {
     val clk24 = in Bool ()
@@ -34,13 +38,16 @@ final class J2TangPrimer(
   io.spiMiso.setName("spi_miso")
   io.spiWpN.setName("spi_wp_n")
   io.spiHoldN.setName("spi_hold_n")
+  private val clockLocked = Bool()
   private val socClock = if (useEg4Rom && usePll) {
+    require(360000000 % clockHz == 0, "J2_CLOCK_HZ must divide the 360 MHz PLL VCO exactly")
     val pll = new Eg4Pll(feedbackDivider = 15, outputDivider = 360000000 / clockHz)
     val buffer = new Eg4Bufg
     pll.refclk := io.clk24
     pll.reset := False
+    pll.load_reg := False
     pll.stdby := False
-    pll.fbclk := buffer.o
+    pll.fbclk := False // Internal VCO feedback; external feedback is unused.
     pll.psclk := False
     pll.psdown := False
     pll.psstep := False
@@ -51,23 +58,20 @@ final class J2TangPrimer(
     pll.di := 0
     pll.daddr := 0
     buffer.i := pll.clkc(0)
+    clockLocked := pll.extlock
     buffer.o
   } else {
+    clockLocked := True
     io.clk24
   }
-  private val reset = Bool()
-  ClockDomain(socClock, !io.rstN) {
-    val count = RegInit(U(3, 2 bits))
-    when(!io.rstN) {
-      count := 3
-    }.elsewhen(count =/= 0) {
-      count := count - 1
-    }
-    reset := !io.rstN || count =/= 0
-  }
+  private val resetController = new J2ResetController
+  resetController.io.referenceClock := io.clk24
+  resetController.io.systemClock := socClock
+  resetController.io.resetN := io.rstN
+  resetController.io.clockLocked := clockLocked
   private val soc = ClockDomain(
     clock = socClock,
-    reset = reset,
+    reset = resetController.io.reset,
     frequency = FixedFrequency(clockHz Hz)
   )(new J2Soc(useEg4Rom))
   soc.io.uartRx := io.uartRx

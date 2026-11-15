@@ -107,9 +107,13 @@ final class J2SpiFlash extends Component {
     }
   }
 
-  io.spi.cs := controller.io.spi.ss(0)
-  io.spi.clk := controller.io.spi.sclk.write(0)
-  io.spi.mosi := controller.io.spi.data(0).write(0)
-  controller.io.spi.data(0).read(0) := False
-  controller.io.spi.data(1).read(0) := io.spi.miso
+  // The XDR controller's receive pipeline assumes one output-register cycle
+  // and one input-register cycle. Driving its raw PHY signals straight onto
+  // pins samples the next bit on a real mode-0 flash (JEDEC ID shifts left).
+  private val spiPins = controller.io.spi.toSpi()
+  io.spi.cs := spiPins.ss(0)
+  io.spi.clk := spiPins.sclk
+  io.spi.mosi := spiPins.data.write(0)
+  spiPins.data.read(0) := False
+  spiPins.data.read(1) := io.spi.miso
 }

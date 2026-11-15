@@ -19,13 +19,16 @@ report_timing -file $timing_report
 set stream [open $timing_report r]
 set timing [read $stream]
 close $stream
-if {![regexp {([0-9]+) errors detected} $timing -> errors]} {
+set summaries [regexp -all -inline {([0-9]+) errors detected} $timing]
+if {[llength $summaries] == 0} {
   puts "ERROR: could not find the timing summary in $timing_report"
   exit 1
 }
-if {$errors != 0} {
-  puts "ERROR: timing reported $errors errors; refusing to generate a bitstream"
-  exit 1
+foreach {summary errors} $summaries {
+  if {$errors != 0} {
+    puts "ERROR: timing reported $errors errors; refusing to generate a bitstream"
+    exit 1
+  }
 }
 
 bitgen -bit j2_tang_primer.bit \

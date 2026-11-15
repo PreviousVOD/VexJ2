@@ -5,10 +5,10 @@
 The validated VHDL baseline is commit `4c281cf`. It passed the reference
 simulation and ran on the Tang Primer, printing `CPU tests passed` over UART.
 Commit `2bebec7` checkpoints the modular SpinalHDL implementation. Scala now
-generates only the microcoded CPU and its support modules. The current SoC,
-validation memory, bus fabric, PIO, and UART adapter are Verilog modules under
-`verilog/`. Original VHDL sources under `reference/` are retained only for
-simulator cross-reference; the VHDL FPGA flow has been removed.
+generates the microcoded CPU, complete SoC, and board top; `verilog/verif/`
+contains simulation harnesses and primitive models. Original VHDL sources under
+`reference/` are retained only for simulator cross-reference; the VHDL FPGA
+flow has been removed.
 
 Useful entry points:
 
@@ -231,6 +231,15 @@ while opcode `0x03` discards the first payload byte. Assemble XIP response bytes
 in big-endian order and align each command to a 32-bit word. Exact-byte reads
 produce shifted windows and fail the application checksum.
 
+The raw `SpiXdrMasterCtrl.io.spi` interface must pass through `toSpi()` before
+connecting to physical pins. At `ioRate=1`, that adapter registers SCLK, CS,
+MOSI and the MISO return path; the controller delays its receive controls by
+two cycles to match those registers. Direct wiring happened to pass the
+single-edge `flashsim` model, but read the real Winbond ID as `de8028` instead
+of `ef4014` after CPU boot was restored. `J2SpiFlashSpec` now supplies an
+independent mode-0 responder that samples commands on rising edges and launches
+response bits on falling edges, checking the exact three-byte JEDEC response.
+
 ROM and SRAM use synchronous one-cycle reads, avoiding thousands of distributed
 RAM muxes. FPGA boot ROM uses `EG_LOGIC_BRAM` with `j2_validation_rom.mif`;
 simulation uses a native synchronous `Mem`. TD ignores the simulator's
@@ -257,19 +266,78 @@ page buffer near `0x0900`, so uploads silently wrote zero. It now links BSS at
 initialization removed, and its PIO/progress addresses changed to the native
 GPIO registers.
 
-The PLL output divider is in megahertz, so `360000000 / clockHz` is required;
-`360 / clockHz` silently generated a zero divider. Reset stretching runs in the
-SoC clock domain to avoid a 24-to-30 MHz crossing. Timing was checked at 48,
-38.4, 32, and 30 MHz. Only the 30 MHz configuration is currently accepted: TD
-reports no setup/hold errors with 0.058 ns minimum setup slack.
+### FPGA-only clock and cold-start failures (2026-11-15)
 
-The current board issue is still open. JTAG programming succeeds and TD reads
-both MIF images, but `/dev/ttyACM0` receives no bytes or transitions. Direct
-24 MHz operation, synchronized reset, and a forced-running diagnostic did not
-change that result; the diagnostic reset override was removed. The next useful
-debug step is to probe the external 24 MHz clock, PLL output, UART TX, and CPU
-I-bus activity on hardware. Do not claim hardware validation until `Flash ID:
-ef4014`, `SDRAM tests passed`, and `XIP CPU tests passed` are observed.
+The passing SoC tests bypassed the vendor PLL and always asserted the reset
+button before running. Those assumptions concealed two independent startup
+defects in commit `d200b5a`:
+
+1. `Eg4Pll` selected `CLKC0_EXT` feedback but calculated dividers as if it used
+   VCO feedback. In Anlogic's `sim/eg/eg_phy_pll.v`, output feedback includes
+   `CLKC0_DIV` in the VCO multiplication. With reference divider 1, feedback
+   divider 15, and output divider 12, the old configuration requests a 4.32 GHz
+   VCO and a 360 MHz output. A timed simulation of the actual generated PLL
+   instance measured **2.777822 ns**, despite the SDC declaring 33.333333 ns.
+   Passing static timing against that SDC did not validate the physical clock.
+   `VCO_PHASE_0` now gives a 360 MHz VCO and 30 MHz output; the same vendor-model
+   test measures **33.333280 ns**. The unused external feedback and load inputs
+   are tied low. Invalid or truncated divider configurations are rejected.
+2. The reset counter used `RegInit` inside an asynchronous-reset domain. Its
+   generated Verilog had a reset assignment but no power-up initial value.
+   With the button already released after configuration, a zero counter never
+   asserted CPU reset. The same SoC simulation, changed only to leave `rst_n`
+   high from startup, reproduced an empty UART log. `J2ResetController` now
+   uses a BOOT-initialized counter on the reference clock to assert power-on
+   reset for 255 reference edges. It also holds reset while the PLL is unlocked
+   and releases it through three system-clock stages. Button assertion and
+   lock loss assert reset asynchronously, including when the system clock stops.
+
+The TD build also checked only the first `errors detected` summary. With two
+clock domains, a clean `clk24` result could hide failing `soc_clk` timing. The
+build now scans every summary and refuses bit generation if any domain fails.
+During validation this correctly rejected a 30 MHz placement with a failing
+half-cycle path to the microcode ROM. The reset output is driven solely by the
+last system-clock synchronizer stage, without an asynchronous combinational
+bypass into the SoC's synchronous reset/data logic.
+
+`RegInit` reset behavior versus `BOOT` initialization is documented in the
+[SpinalHDL clock-domain reference](https://spinalhdl.github.io/SpinalDoc-RTD/master/SpinalHDL/Structuring/clock_domain.html).
+The reset request's `crossClockDomain` tag describes intentional asynchronous
+assertion into a reset synchronizer; it is not a timing waiver.
+
+Reproduction and regression commands:
+
+```sh
+make spinal-test        # includes cold-start, button and PLL-lock reset checks
+make verilog-hw-sim     # full CPU ROM, with and without a reset-button pulse
+make xip-hw-sim         # normal/cold XIP boot and cold UART-loader boot
+make verilog-fpga       # generate FPGA RTL and a timing-checked bitstream
+make fpga-clock-test    # measure that generated PLL using the TD vendor model
+```
+
+`check_fpga_clock.py` uses a build-directory copy of Anlogic's model and renames
+its conflicting internal `load_reg` signal for Verilator compatibility; its
+frequency-generation logic is unchanged. The regression rejects the original
+PLL configuration. Logs and before/after reproductions are under
+`build/review/boot/`.
+
+The final build passes both clock domains at 30 MHz: 0.509 ns minimum setup
+slack, 0.279 ns minimum hold slack, 9,817 LUTs, 2,207 registers, nine DSPs,
+37 BRAM9Ks, and ten BRAM32Ks. All 29 Scala tests pass, as do the CPU ROM cold/
+warm boot and XIP/loader simulations. Hardware first reached `J2 boot` and
+`Flash ID: ef4014` after the clock/reset/SPI fixes. The installed application
+then produced only `N` after the ROM jumped to it. With user approval, the
+current native-SoC application replaced that image in the dedicated Winbond
+flash; all four pages verified, followed by `SDRAM tests passed` and
+`XIP CPU tests passed`. A fresh JTAG reload, without entering the UART loader,
+then printed the same passing results from the installed flash image. Logs are
+`build/review/boot/upload.log` and `build/review/boot/fpga-uart.log`.
+FPGA configuration was loaded into volatile SRAM over JTAG; configuration
+flash was not written.
+
+For PLL bypass, specify **both** `J2_USE_PLL=0` and `J2_CLOCK_HZ=24000000` and
+rebuild clock-dependent firmware. The top rejects a 30 MHz frequency declaration
+when driven directly by the 24 MHz oscillator.
 
 ### Legacy Verilog SoC integration
 
@@ -443,10 +511,10 @@ in `spinal/src/test/scala/j2/core/J2ControlDrive.scala`. Allow sequential and
 combinational outputs to settle after sampling edges before assertions. Several
 early test failures came from incorrect test setup rather than RTL.
 
-## FPGA validation and remaining boundary
+## Earlier Verilog SoC FPGA validation (2026-11-14)
 
-The earlier all-SpinalHDL SoC was validated at commit `3c38cca`. The current
-Verilog SoC completes synthesis, place, route, and bit generation with 7,120
+The earlier all-SpinalHDL SoC was validated at commit `3c38cca`. The subsequent
+Verilog SoC completed synthesis, place, route, and bit generation with 7,120
 LUTs, 1,936 registers, nine DSPs, 13 BRAM32K blocks, and the SiP SDRAM macro.
 TD reports zero setup and zero hold errors, a 27.028 ns minimum period, 7.319 ns
 minimum setup slack, and 0.221 ns minimum hold slack for the 24 MHz clock.

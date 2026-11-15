@@ -15,18 +15,21 @@ decoded as legal instructions. There are no excluded instructions.
 | Area | Status |
 |---|---|
 | SH-2 and J2 decode | 54,521 legal encodings, zero exclusions |
-| Scala CPU and ISA tests | 27 suites passing |
+| Scala CPU, ISA and integration tests | 29 tests passing |
 | Full original CPU test ROM | Passing, 5,779 retired instructions |
 | VHDL simulator cross-reference | Full original ROM and RTE passing |
-| Native UART, SPI/XIP, and SDRAM | Passing direct and loader simulations |
+| Native UART, SPI/XIP, and SDRAM | Passing simulations and hardware UART-loader tests |
 | 32-bit bidirectional GPIO | Native `WishboneGpio` plus 32 EG4 pads |
 | FPGA implementation | Timing-clean at 30 MHz |
-| Tang Primer hardware | JTAG programming succeeds; no UART banner yet |
+| Tang Primer hardware | Boot banner, `Flash ID: ef4014`, SDRAM and XIP tests pass |
 
-The remaining board bring-up issue is unresolved: the current image produces no
-serial transitions, although simulation, ROM initialization, clock constraints,
-and place-and-route all pass. Do not treat earlier hardware results from the
-removed Verilog SoC as validation of this implementation.
+The FPGA-only boot failure is fixed: the PLL now uses VCO feedback for its
+30 MHz divider calculation, power-on reset waits for PLL lock, and SPI uses
+the registered physical interface expected by its controller. The timing gate
+checks every clock domain. The current SpinalHDL SoC has been programmed over
+JTAG and the native application uploaded to the dedicated Winbond flash;
+hardware prints `SDRAM tests passed` and `XIP CPU tests passed`.
+Both the upload path and a fresh JTAG reload booting directly from flash pass.
 
 ## Architecture
 
@@ -87,6 +90,8 @@ The SPI controller is native `Apb3SpiXdrMasterCtrl`. XIP uses fast-read opcode
 assembled in big-endian order and aligned to 32-bit words before the CPU selects
 a byte or halfword lane. ROM and SRAM use synchronous one-cycle reads. FPGA boot
 ROM uses `EG_LOGIC_BRAM` with a generated MIF; simulation uses a native `Mem`.
+Its `toSpi()` adapter registers the SPI output and input signals to match the
+controller's receive pipeline. The raw XDR interface must not drive pins directly.
 
 ## 32-bit GPIO
 
@@ -139,35 +144,40 @@ maintained microcode representation is required.
 ## Verification
 
 ```sh
-make spinal-test            # 27 retained CPU and ISA test suites
+make spinal-test            # 29 CPU, ISA, reset and SPI tests
 make spinal-generate        # CPU and SoC Verilog under build/spinal/verilog
 make spinal-microcode-verif # full ROM, RTE, and interrupt regressions
 make verilog-hw-sim         # native SoC and full legacy CPU test ROM
 make xip-hw-sim             # direct XIP and blank-flash UART loader tests
 make reference-verif        # full ROM and RTE on the VHDL baseline
+make fpga-clock-test        # vendor PLL model; run after FPGA RTL generation
 ```
 
-The XIP regression runs once from preloaded flash and once after a blank-flash
-UART upload. Both paths print `SDRAM tests passed` and `XIP CPU tests passed`.
+The XIP regression covers reset-button and cold startup from preloaded flash,
+plus a cold blank-flash UART upload. All paths print `SDRAM tests passed` and
+`XIP CPU tests passed`. The CPU ROM also runs without a reset-button pulse.
 A timeout without expected UART output fails. Integration pitfalls and their
 fixes are recorded in `docs/microcoded-core-debug.md`.
 
 ## FPGA
 
-The default SoC frequency is 30 MHz using `feedbackDivider=15` and
-`outputDivider=12`. Override generation parameters with:
+The default SoC frequency is 30 MHz using internal VCO feedback,
+`feedbackDivider=15`, and `outputDivider=12` (24 MHz × 15 / 12).
+Override generation parameters with:
 
 ```sh
 J2_CLOCK_HZ=30000000 J2_USE_PLL=1 make verilog-fpga
 ```
 
-`J2_USE_PLL=0` selects the 24 MHz input directly for diagnosis. UART divisors
+`J2_USE_PLL=0 J2_CLOCK_HZ=24000000` selects the 24 MHz input directly for diagnosis.
+Rebuild clock-dependent firmware when changing the frequency. UART divisors
 and simulation baud timing derive from `J2_CLOCK_HZ`; the FPGA SDC is generated
 with the same value. `spinal-fpga` remains a compatibility alias.
 
-The final 30 MHz build reports 9,832 LUTs, 2,151 registers, nine DSPs, 37 9K
-BRAMs, and 10 32K BRAMs. Timing passes with 0.058 ns minimum setup slack and no
-hold violations. The 48 MHz configuration was also tried but failed timing;
+The validated 30 MHz build reports 9,817 LUTs, 2,207 registers, nine DSPs, 37 9K
+BRAMs, and 10 32K BRAMs. Timing passes in both clock domains with 0.509 ns minimum
+setup slack and 0.279 ns minimum hold slack. The 48 MHz configuration was also
+tried but failed timing;
 higher frequencies must be validated rather than assumed.
 
 Program volatile FPGA configuration and listen at 19,200 baud:
@@ -190,6 +200,12 @@ If the ROM is already waiting at `J2 loader`, use:
 ```sh
 tools/xip_image.py upload build/sw/xipapp/flash.bin --no-wait
 ```
+
+The application must match the native UART register map; an image built for
+the removed Verilog/16550 SoC can pass the ROM checksum but fail after the jump.
+The current hardware validation logs are `build/review/boot/upload.log` and
+`build/review/boot/fpga-uart.log`; implementation notes are in
+`docs/microcoded-core-debug.md`.
 
 The free Winbond 25Q80 uses CS=D3, CLK=H4, MOSI=B3, MISO=F4, IO2=F5, and
 IO3=B1. IO2/WP and IO3/HOLD are driven high. The configuration flash on

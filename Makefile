@@ -25,7 +25,7 @@ export PATH := $(PATH):$(CURDIR)/tools/local/bin:$(CURDIR)/tools/local/sh-none-e
 .PHONY: all spinal-test spinal-generate spinal-clean spinal-verif spinal-microcode-verif spinal-hw-sim \
 	reference-verif spinal-fpga spinal-program sw td-vhdl \
 	microcode-data microcode-mif verilog-hw-sim verilog-fpga verilog-program \
-	xip-hw-sim xip-upload
+	xip-hw-sim xip-upload fpga-clock-test
 
 all: spinal-test spinal-generate
 
@@ -87,6 +87,12 @@ reference-verif: $(REF_SIM) $(TESTROM) $(CURDIR)/build/sw/simtests/rte.bin
 	$(REF_SIM) $(CURDIR)/build/sw/simtests/rte.bin --quiet
 
 spinal-fpga: verilog-fpga
+
+# Run after generating FPGA RTL (make verilog-fpga). This uses the vendor PLL
+# model; the normal SoC simulation deliberately bypasses that primitive.
+fpga-clock-test:
+	python3 tools/check_fpga_clock.py --rtl build/spinal/verilog-fpga/j2_tang_primer.v \
+		--td-home "$(TD_HOME)" --clock-hz "$(J2_CLOCK_HZ)"
 
 spinal-program: verilog-program
 
