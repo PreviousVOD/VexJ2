@@ -40,8 +40,12 @@ final class J2TangPrimer(
   io.spiHoldN.setName("spi_hold_n")
   private val clockLocked = Bool()
   private val socClock = if (useEg4Rom && usePll) {
-    require(360000000 % clockHz == 0, "J2_CLOCK_HZ must divide the 360 MHz PLL VCO exactly")
-    val pll = new Eg4Pll(feedbackDivider = 15, outputDivider = 360000000 / clockHz)
+    val vcoHz = if (clockHz == 32000000) 384000000 else 360000000
+    require(vcoHz % clockHz == 0, "J2_CLOCK_HZ must divide the PLL VCO exactly")
+    val pll = new Eg4Pll(
+      feedbackDivider = vcoHz / 24000000,
+      outputDivider = vcoHz / clockHz
+    )
     val buffer = new Eg4Bufg
     pll.refclk := io.clk24
     pll.reset := False
