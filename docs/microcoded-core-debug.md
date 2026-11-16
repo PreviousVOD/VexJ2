@@ -542,3 +542,87 @@ The original VHDL implementation is supported only through `reference-verif`
 on the simulator. Its former FPGA build and timing waivers have been removed.
 The core's debug interface is still a stub; these programs and hardware results
 do not establish debug support or exhaustive ISA correctness.
+
+## Fiber-pipeline review fixes and shared validation (2026-11-16)
+
+Three directed regressions exposed defects missed by the matched refactor traces:
+
+1. TAS/CAS stalled forever when instruction fetch and the atomic operand shared
+   a memory arbiter. The data owner retained LOCK while the CPU waited for an
+   instruction fetch, preventing the microstep that would release the lock.
+   `J2WishboneArbiter` now optionally lets that CPU's instruction port borrow an
+   idle data beat, holding the borrowed route through its complete cycle. The
+   original owner and downstream CYC/LOCK remain reserved. Other masters and
+   other masters' locks cannot use this exception. All four SoC memory arbiters
+   explicitly configure the CPU instruction input; general arbiters retain the
+   original exclusive-lock contract.
+2. A hazard on the first microstep suppressed `startInstruction` both initially
+   and on retry, leaving exception metadata from an earlier instruction. The
+   sequencer now captures metadata on first selection, even when that selection
+   inserts a bubble. A dependent load chain faulting at `0x104` now saves `0x106`
+   rather than `0x102`; padded and unpadded tests cover alignment and bus errors
+   at zero and three wait cycles.
+3. Saturating MAC.L used all 64 accumulator bits. With SR.S set, the accumulator
+   now sign-extends MACH[15:0]:MACL before adding the signed product. SR.S clear
+   still uses the full 64-bit accumulator. Tests cover ignored upper MACH bits,
+   negative accumulators, positive/negative saturation, large products and
+   ordinary 64-bit wraparound. Renesas software manual section 6.1.31 specifies
+   the lower 48-bit saturation accumulator.
+
+The imported `testmul.s` and `testmacl.s` each contained two expectations for
+noncanonical upper MACH bits that encoded the old behavior. Their input vectors
+remain unchanged. For `0007ffff:ffffffff + 1`, the signed lower-48 accumulator
+is -1 and the result is zero. For `fff80000:00000000 - 1`, it is zero and the
+result is -1. The expected results now reflect these rules. The unmodified VHDL
+reference is not an ISA oracle for these two cases; a strict ROM run against it
+may fail at this intentional divergence.
+
+### Application and coverage
+
+The normal native XIP application now includes `sw/xipapp/isa.c` and `isa.S`.
+The identical packed image runs in the full generated SoC simulator and on the
+FPGA. Assembly fixes instruction adjacency so the compiler cannot remove the
+hazards being tested.
+
+| Area | Application checks | Additional RTL checks |
+|---|---|---|
+| Atomics | TAS twice, CAS success/failure, returned old value and T; code and operand share SRAM, then SDRAM | Competing third master, 0/4 wait cycles, existing lock/reset tests |
+| Forwarding | Immediate load-use, ALU/T forwarding, ADDC/SUBC, taken delay slot, PC-relative load in a delay slot, SHAD/SHLD shift by -32 | Pipeline freeze/cancellation and exhaustive decoder tests |
+| MAC | 11 MAC.L vectors and 3 MAC.W vectors; both operand postincrements | Independent arithmetic completion while CPU slots stall |
+| Data exceptions | Misaligned word/long load/store, postincrement load, unmapped read, dependent-load saved PC, suppressed GPR/SR/MACH/MACL writeback | ACK+ERR priority, waits, cancelled younger operations, fault during exception entry |
+| Instruction exceptions | Odd target and unmapped fetch; delay-slot data fault saves branch target | Faulted delay-slot fetch and debug-disabled cores |
+| Events | Masked timer IRQ, delivery after unmasking, rearming, SLEEP wakeup, RTE | Masked SLEEP and bypass-mask wakeup |
+
+The application reserves SRAM `0x9000` for its context, `0xa000` for copied
+atomic code and `0xb000` for its operand. SDRAM atomic code/operand use
+`0x80720000`/`0x80721000`, separate from the existing SDRAM and timer tests.
+Exception handlers record the actual PC/SR/vector before repairing the frame to
+an explicit continuation, allowing a stale PC to report a failure instead of
+repeatedly faulting. Each case checks the recorded frame and exception count.
+
+Run `make isa-sim` for the Scala suite, legacy ISA/RTE/IRQ ROMs and native SoC
+reset/cold/blank-flash-loader boots. Run `make isa-hw` with the vendor tool path
+configured for build/timing/PLL checks, application upload and independent JTAG
+reboot. Hardware validation uses volatile FPGA SRAM and the dedicated Winbond
+application flash; configuration flash is not programmed. Every application
+phase must print its completion marker, and timeout or a failure marker makes
+the runner fail. Logs and SHA-256 provenance are in `build/isa-validation/`.
+
+### Verified results
+
+- `make isa-sim`: all 36 Scala tests pass; legacy CPU ISA, RTE and interrupt
+  ROMs pass; application reset, cold boot and UART-loader boots all pass.
+- `make verilog-hw-sim`: the full legacy ISA ROM prints `CPU tests passed`
+  after normal reset and cold startup of the native SoC.
+- FPGA implementation at 32 MHz: zero setup/hold errors, minimum setup slack
+  2.841 ns and hold slack 0.286 ns; 10,196 LUTs and 2,346 registers. The vendor
+  PLL model measured 31.249950 ns against the expected 31.250000 ns period.
+- The final shared application passes on Tang Primer after UART upload and
+  again after independent JTAG reconfiguration booting the stored flash image.
+  Both runs print every ISA phase marker and `XIP CPU tests passed`.
+- Simulator and hardware reports identify the same final application image:
+  SHA-256 `4f97a97fe17676b00dbc249c30f84de33abe945d6797ef2d8fbc909010e5ff7b`.
+  See `build/isa-validation/{sim,hardware}/results.json` and adjacent UART logs.
+  Detailed build/CPU/PLL/legacy-SoC logs are in `build/review/plugins/`.
+
+The board is left running the expanded native validation application.

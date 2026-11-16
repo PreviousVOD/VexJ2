@@ -55,7 +55,16 @@ timer_value_address:
 _xip_vectors:
   .long _xip_start
   .long 0x0000fffc
-  .rept 62
+  .rept 2
+  .long xip_halt
+  .endr
+  .long _isa_illegal
+  .long xip_halt
+  .long _isa_slot_illegal
+  .long xip_halt
+  .long xip_halt
+  .long _isa_address_error
+  .rept 54
   .long xip_halt
   .endr
   .long _xip_timer_isr

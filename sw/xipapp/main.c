@@ -5,6 +5,7 @@
 #define SDRAM_EXEC_BASE 0x80700000
 
 extern void sdram_test_function(void);
+extern int isa_test(void);
 
 static int sdram_test(void) {
   static const uint32_t offsets[] = {0, 4, 8, 12, 0x400, 0x1000, 0x2000, 0x4000};
@@ -77,6 +78,11 @@ static int timer_test(void) {
   }
   if (TIMER_COUNT != 2 || (TIMER_IRQ & TIMER_IRQ_PENDING)) return 3;
 
+  TIMER_LIMIT = 5000;
+  TIMER_ENABLE = 1;
+  __asm__ volatile("sleep" ::: "memory");
+  if (TIMER_COUNT != 3 || (TIMER_IRQ & TIMER_IRQ_PENDING)) return 4;
+
   timer_set_mask(15);
   TIMER_ENABLE = 0;
   TIMER_IRQ = 0;
@@ -108,6 +114,7 @@ void xip_main(void) {
     }
   }
   uart_puts("Timer tests passed\n");
+  if (!isa_test()) for (;;) {}
   uart_puts("XIP CPU tests passed\n");
   for (;;) {
   }

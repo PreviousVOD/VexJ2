@@ -87,6 +87,31 @@ class J2MultiplySpec extends munit.FunSuite {
       accumulator(0x12345678L, 0x80000000L)
       run(J2MultiplyCommand.MACW, -1, 1, 0x12345679L, 0x80000000L)
 
+      // Only the signed low 48 bits participate in saturating MAC.L.
+      accumulator(0x00010000L, 0)
+      run(J2MultiplyCommand.MACL, 0, 0, 0, 0)
+      accumulator(0x0007ffffL, 0xffffffffL)
+      run(J2MultiplyCommand.MACL, 1, 1, 0, 0)
+      accumulator(0xfff80000L, 0)
+      run(J2MultiplyCommand.MACL, -1, 1, 0xffffffffL, 0xffffffffL)
+      accumulator(0xdeadffffL, 0xffffffffL)
+      run(J2MultiplyCommand.MACL, 0, 0, 0xffffffffL, 0xffffffffL)
+      accumulator(0x12340000L, 5)
+      run(J2MultiplyCommand.MACL, 2, 3, 0, 11)
+      accumulator(0x7fffL, 0xffffffffL)
+      run(J2MultiplyCommand.MACL, 1, 1, 0x7fffL, 0xffffffffL)
+      accumulator(0x8000L, 0)
+      run(J2MultiplyCommand.MACL, -1, 1, 0xffff8000L, 0)
+      accumulator(0, 0)
+      run(J2MultiplyCommand.MACL, -2147483648L, -2147483648L, 0x7fffL, 0xffffffffL)
+      accumulator(0, 0)
+      run(J2MultiplyCommand.MACL, -2147483648L, 2147483647L, 0xffff8000L, 0)
+      dut.io.s #= false
+      accumulator(0x00010000L, 0)
+      run(J2MultiplyCommand.MACL, 0, 0, 0x00010000L, 0)
+      accumulator(0xffffffffL, 0xffffffffL)
+      run(J2MultiplyCommand.MACL, 1, 1, 0, 0)
+
     }
   }
 }

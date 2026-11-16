@@ -87,6 +87,8 @@ elaboration and select through a one-hot mux. Exhaustive testing checks every
   register-file writes prefer the delayed Z2 write over W when both are present.
   The register file keeps its existing two-slot Z buffering.
 - Architectural instruction/resume addresses are separate from speculative PC.
+  Metadata is captured on first selection even if that microstep inserts a
+  hazard bubble; retries use the saved instruction and its saved metadata.
   The EX metadata's resume address is captured with a data request. A delay-slot
   fault resumes at the branch target; fetch errors remain attached to the
   prefetched opcode while preceding work drains.
@@ -107,6 +109,15 @@ Instruction responses retain the existing SoC convention: the selected
 halfword arrives in the low 16 bits. Data lane selection, replicated subword
 stores, and sign extension remain big-endian. Atomic operations hold CYC and
 LOCK across the read/write sequence, including the gap between transfers.
+
+The SoC designates arbiter input 0 as CPU data and input 1 as that same CPU's
+read-only instruction port. During an idle data beat inside a locked cycle,
+the instruction port may borrow the route until its cycle ends. Data ownership
+and downstream CYC/LOCK remain asserted, so other masters cannot interleave.
+Without this exception, an instruction fetch from the atomic operand's memory
+would freeze the CPU before it could finish the atomic operation. The default
+arbiter configuration has no borrowing, and another master's lock never permits
+borrowing. This is not permission for a second CPU or DMA reader to bypass LOCK.
 
 The SoC uses `J2WishboneArbiter` with native one-hot round-robin selection and
 registered grants held until both CYC and LOCK are released. A competing-master

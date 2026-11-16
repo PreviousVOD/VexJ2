@@ -41,8 +41,12 @@ final class J2Multiply extends Component {
     J2MultiplyCommand.MULUW -> unsignedProduct16,
     default -> unsignedProduct
   )
-  private val accumulator = Cat(machReg, maclReg).asUInt
-  private val sum         = accumulator + product
+  private val accumulator = Mux(
+    saturate && commandReg === J2MultiplyCommand.MACL,
+    Cat(machReg(15 downto 0), maclReg).asSInt.resize(64).asUInt,
+    Cat(machReg, maclReg).asUInt
+  )
+  private val sum = accumulator + product
 
   private val macwPositiveOverflow   = !maclReg(31) && !product(31) && sum(31)
   private val macwNegativeOverflow   = maclReg(31) && product(31) && !sum(31)

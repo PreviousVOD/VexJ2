@@ -66,10 +66,10 @@ final class J2Soc(
   private val memoryAccess = romMapping.hit(cpu.io.dbus.ADR) || sramMapping.hit(cpu.io.dbus.ADR) ||
     flashMapping.hit(cpu.io.dbus.ADR) || sdramMapping.hit(cpu.io.dbus.ADR)
 
-  private val romArbiter   = new J2WishboneArbiter(2)
-  private val sramArbiter  = new J2WishboneArbiter(2)
-  private val flashArbiter = new J2WishboneArbiter(2)
-  private val sdramArbiter = new J2WishboneArbiter(2)
+  private val romArbiter   = new J2WishboneArbiter(2, instructionInput = Some(1))
+  private val sramArbiter  = new J2WishboneArbiter(2, instructionInput = Some(1))
+  private val flashArbiter = new J2WishboneArbiter(2, instructionInput = Some(1))
+  private val sdramArbiter = new J2WishboneArbiter(2, instructionInput = Some(1))
   romArbiter.io.inputs(0) <> dRom
   sramArbiter.io.inputs(0) <> dSram
   flashArbiter.io.inputs(0) <> dFlash

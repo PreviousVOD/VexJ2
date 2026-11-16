@@ -355,8 +355,10 @@ _maclmach: ! R6
  .long 0x00007fff
  .long 0xffff8000
 
- .long 0x00007fff
- .long 0xffff8000
+! SH-2 MAC.L with S=1 ignores MACH[31:16] (manual 6.1.31).
+! Low-48 accumulators are -1 and 0; adding +1 and -1 gives 0 and -1.
+ .long 0x00000000
+ .long 0xffffffff
 
 _maclmacl: ! R7
  .long 0x00000000
@@ -387,8 +389,8 @@ _maclmacl: ! R7
  .long 0xffffffff
  .long 0x00000000
 
- .long 0xffffffff
  .long 0x00000000
+ .long 0xffffffff
 
 !-----------------------------
 .align 4

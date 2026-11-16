@@ -105,8 +105,10 @@ final class J2Microsequencer extends Component {
   io.instructionAddress := io.id.instructionAddress
   io.maskInterrupt      := maskInterruptReg
   io.delaySlot          := delaySlotReg
-  io.startInstruction := !idStall && instructionSequenceZero && !io.nextIdStall && !nextOperation.system
-  io.interruptLevel := interruptLevelReg
+  // Capture metadata when selecting the instruction, even if its first
+  // microstep stalls. On retry idStall selects operationReg, not nextOperation.
+  io.startInstruction := !idStall && instructionSequenceZero && !nextOperation.system
+  io.interruptLevel   := interruptLevelReg
   io.eventAck := io.slot &&
     (io.eventAcknowledge || (io.eventValid && io.eventCommand === 2 && io.debug))
 

@@ -42,6 +42,19 @@ export PATH := $(TOOLS_PREFIX)/bin:$(TOOLS_PREFIX)/sh-none-elf/bin:$(PATH)
 
 all: spinal-test spinal-generate
 
+# The normal XIP application includes the ISA/pipeline regression suite.
+# Hardware validation programs volatile FPGA SRAM and dedicated application
+# flash, then verifies both the upload boot and a fresh JTAG reboot.
+.PHONY: isa-sim isa-hw
+isa-sim: spinal-test $(BOOTROM) $(XIP_IMAGE) $(TOOL_VERILATOR)
+	$(MAKE) spinal-microcode-verif
+	$(MAKE) -C verilog xip-sim-build
+	python3 tools/isa_validation.py sim
+
+isa-hw: verilog-fpga
+	$(MAKE) fpga-clock-test
+	python3 tools/isa_validation.py hardware
+
 .PHONY: coremark-build coremark-sim coremark-fpga-build coremark-hw coremark-compare
 coremark-build: $(TOOL_SH_GCC)
 	$(MAKE) -C sw/coremark ITERATIONS=$(COREMARK_ITERATIONS) RUN=performance
@@ -106,7 +119,8 @@ $(MICROCODE_MIF): $(REFSRC) tools/gen_microcode_data.py
 microcode-data: $(MICROCODE_HEX) $(MICROCODE_PREDECODE)
 microcode-mif: $(MICROCODE_MIF)
 
-$(TESTROM): $(REFSRC) sw/testrom/Makefile
+$(TESTROM): $(REFSRC) sw/testrom/Makefile \
+		$(wildcard sw/testrom/original/*.c sw/testrom/original/*.h sw/testrom/original/tests/*.s sw/testrom/original/startup/*.x)
 	$(MAKE) -C sw/testrom
 
 $(TESTROM16550): $(REFSRC) sw/testrom/Makefile sw/testrom/uart16550.c \

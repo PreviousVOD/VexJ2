@@ -182,13 +182,15 @@ or put `td` on `PATH`; no vendor installation path is stored in the project.
 ## Verification
 
 ```sh
-make spinal-test            # 34 CPU, plugin, ISA, reset, SPI and timer tests
+make spinal-test            # 36 CPU, plugin, ISA, reset, SPI and timer tests
 make spinal-generate        # CPU and SoC Verilog under build/spinal/verilog
 make spinal-microcode-verif # full ROM, RTE, and interrupt regressions
 make verilog-hw-sim         # native SoC and full legacy CPU test ROM
 make xip-hw-sim             # direct XIP and blank-flash UART loader tests
 make reference-verif        # full ROM and RTE on the VHDL baseline
 make fpga-clock-test        # vendor PLL model; run after FPGA RTL generation
+make isa-sim                # CPU regressions + legacy ROMs + shared ISA app, three boot modes
+make isa-hw                 # build/timing/PLL + ISA app upload and fresh FPGA boot
 ```
 
 The XIP regression covers reset-button and cold startup from preloaded flash,
@@ -196,6 +198,14 @@ plus a cold blank-flash UART upload. All paths print `SDRAM tests passed`,
 `Timer tests passed`, and `XIP CPU tests passed`. The timer test covers masking,
 vector-`0x40` ISR entry, clearing, and rearming. The CPU ROM also runs without a
 reset-button pulse.
+The timer test also executes `SLEEP` and returns through the timer ISR. The
+shared application in `sw/xipapp/isa.c` and `isa.S` checks same-memory atomics
+from SRAM and SDRAM, forwarding and delay slots, MAC saturation, and exception
+frames after dependent loads. It prints `ISA regression tests passed` before
+the final XIP completion marker. `isa-hw` uses `/dev/ttyACM0` at 19,200 baud,
+programs volatile FPGA configuration SRAM and replaces the dedicated application
+flash image. Set `TD_HOME` or `TD_BIN` as for the existing FPGA targets.
+Logs and image/source hashes are recorded under `build/isa-validation/`.
 A timeout without expected UART output fails. Integration pitfalls and their
 fixes are recorded in `docs/microcoded-core-debug.md`.
 

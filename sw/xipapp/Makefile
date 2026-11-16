@@ -7,7 +7,7 @@ J2_CLOCK_HZ ?= 32000000
 CFLAGS := -m2 $(ENDIAN) -Os -Wall -ffreestanding -fno-builtin -nostdlib \
 	-I$(ROOT)/sw/xiprom -DJ2_CLOCK_HZ=$(J2_CLOCK_HZ)
 LDFLAGS := -m2 $(ENDIAN) -nostdlib -T app.x -Wl,-Map,$(OUT)/main.map
-OBJS := $(addprefix $(OUT)/,entry.o main.o uart.o)
+OBJS := $(addprefix $(OUT)/,entry.o main.o uart.o isa.o isa_asm.o)
 
 all: $(OUT)/main.bin $(OUT)/main.lst
 
@@ -15,6 +15,12 @@ $(OUT)/entry.o: entry.S Makefile
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OUT)/main.o: main.c Makefile
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -c $< -o $@
+$(OUT)/isa.o: isa.c Makefile
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -c $< -o $@
+$(OUT)/isa_asm.o: isa.S Makefile
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OUT)/uart.o: $(ROOT)/sw/xiprom/uart.c Makefile
