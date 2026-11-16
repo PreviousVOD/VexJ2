@@ -236,11 +236,11 @@ object J2Isa {
 
     opcode.map { _ =>
       Fields(
-        n = value('n'),
-        m = value('m'),
-        disp4 = value('d') & 0xf,
-        disp8 = value('d') & 0xff,
-        disp12 = value('d') & 0xfff,
+        n          = value('n'),
+        m          = value('m'),
+        disp4      = value('d') & 0xf,
+        disp8      = value('d') & 0xff,
+        disp12     = value('d') & 0xfff,
         immediate8 = value('i')
       )
     }

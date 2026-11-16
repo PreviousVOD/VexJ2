@@ -40,7 +40,8 @@ def read_until(fd, markers, timeout, output):
     return output
 
 
-def upload(image_path, device, wait_for_banner=True):
+def upload(image_path, device, wait_for_banner=True, success_marker=b"XIP CPU tests passed",
+           result_timeout=120):
     image = image_path.read_bytes()
     if len(image) < 20:
         raise ValueError("image is too short")
@@ -72,8 +73,8 @@ def upload(image_path, device, wait_for_banner=True):
             marker = f"Page {offset:06x}".encode()
             read_until(fd, [marker, b"Verify error"], 120, output)
             offset += count
-        read_until(fd, [b"XIP CPU tests passed", b"Verify error", b"checksum error"], 120, output)
-        if b"XIP CPU tests passed" not in output:
+        read_until(fd, [success_marker, b"Verify error", b"checksum error"], result_timeout, output)
+        if success_marker not in output:
             raise RuntimeError("upload or XIP boot failed")
     finally:
         os.close(fd)

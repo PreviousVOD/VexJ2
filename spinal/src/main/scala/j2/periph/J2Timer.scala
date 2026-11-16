@@ -11,15 +11,15 @@ final class J2Timer(clockHz: Int, tickHz: Int = 1000000, width: Int = 32) extend
   require(width > 0)
 
   val io = new Bundle {
-    val bus = slave(J2Wishbone())
+    val bus       = slave(J2Wishbone())
     val interrupt = out Bool ()
   }
 
   private val wordBus = J2Wishbone()
   J2Wishbone.connectToWordAddressed(io.bus, wordBus, io.bus.ADR(11 downto 0))
-  private val factory = WishboneSlaveFactory(wordBus)
-  private val timer = new Timer(width)
-  private val limitHit = timer.io.value === timer.io.limit
+  private val factory    = WishboneSlaveFactory(wordBus)
+  private val timer      = new Timer(width)
+  private val limitHit   = timer.io.value === timer.io.limit
   private val tickEnable = factory.createReadAndWrite(Bits(1 bits), 0x00, 0) init (0)
   factory.driveAndRead(timer.io.limit, 0x04)
   factory.read(timer.io.value, 0x08)
@@ -27,23 +27,23 @@ final class J2Timer(clockHz: Int, tickHz: Int = 1000000, width: Int = 32) extend
   factory.read(limitHit, 0x0c, 8)
 
   private val busClearing = factory.isWriting(0x04) || factory.isWriting(0x08)
-  private val divider = clockHz / tickHz
+  private val divider     = clockHz / tickHz
   private val tick = if (divider == 1) {
     True
   } else {
     val prescaler = RegInit(U(0, log2Up(divider) bits))
-    val pulse = Bool()
+    val pulse     = Bool()
     pulse := False
     when(prescaler === divider - 1) {
       prescaler := 0
-      pulse := True
+      pulse     := True
     } otherwise {
       prescaler := prescaler + 1
     }
     pulse
   }
 
-  timer.io.tick := tick && tickEnable(0)
+  timer.io.tick  := tick && tickEnable(0)
   timer.io.clear := busClearing || ClockDomain.current.isResetActive
-  io.interrupt := interruptEnable(0) && limitHit
+  io.interrupt   := interruptEnable(0) && limitHit
 }

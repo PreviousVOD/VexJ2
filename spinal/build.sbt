@@ -14,6 +14,6 @@ lazy val root = (project in file("."))
       "org.scalameta" %% "munit" % "1.0.4" % Test
     ),
     scalacOptions ++= Seq("-deprecation", "-feature", "-unchecked"),
-    Test / fork := true,
+    Test / fork              := true,
     Test / parallelExecution := false
   )

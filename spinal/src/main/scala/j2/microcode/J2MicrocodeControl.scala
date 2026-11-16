@@ -6,11 +6,11 @@ import spinal.lib._
 
 final class J2MicrocodeTable extends Component {
   val io = new Bundle {
-    val line = in UInt (72 bits)
-    val opcode = in UInt (16 bits)
-    val tBcc = in Bool ()
+    val line        = in UInt (72 bits)
+    val opcode      = in UInt (16 bits)
+    val tBcc        = in Bool ()
     val nextIdStall = in Bool ()
-    val control = out(new J2MicrocodeControl)
+    val control     = out(new J2MicrocodeControl)
   }
 
   private def select[T <: Data](selector: UInt, default: T, choices: (Int, T)*): T = {
@@ -35,8 +35,8 @@ final class J2MicrocodeTable extends Component {
     select(selector, default(), outputs: _*)
   }
 
-  private val line = io.line
-  private val opcode = io.opcode
+  private val line    = io.line
+  private val opcode  = io.opcode
   private val control = io.control
 
   control.exStall.pcWriteZ := select(
@@ -47,8 +47,8 @@ final class J2MicrocodeTable extends Component {
     5 -> !io.tBcc,
     6 -> io.tBcc
   )
-  control.exStall.srWriteZ := line(2 downto 0) === 3
-  control.wbStall.srWriteW := line(2 downto 0) === 1
+  control.exStall.srWriteZ  := line(2 downto 0) === 3
+  control.wbStall.srWriteW  := line(2 downto 0) === 1
   control.exStall.prWritePc := line(2 downto 0) === 4
 
   control.wbStall.machWrite := line(6 downto 3) === 4
@@ -275,7 +275,7 @@ final class J2MicrocodeTable extends Component {
   )
   control.exStall.regWriteZ := line(33)
   control.wbStall.regWriteW := line(34)
-  control.sleep := line(35)
+  control.sleep             := line(35)
 
   control.ex.regZ := select(
     line(38 downto 36),
@@ -323,16 +323,16 @@ final class J2MicrocodeTable extends Component {
     2 -> J2MemAddrSelect.YBUS
   )
   control.maskInterruptNext := line(49)
-  control.macStallSense := line(50)
-  control.macSLatch := line(51)
+  control.macStallSense     := line(50)
+  control.macSLatch         := line(51)
 
   control.ex.macBusy := (line(53 downto 52) === 2) && !io.nextIdStall
   control.wb.macBusy := (line(53 downto 52) === 3) ||
     ((line(53 downto 52) === 1) && !io.nextIdStall)
   control.id.incrementPc := line(54)
 
-  private val immediate8Signed = opcode(7 downto 0).asSInt.resize(32).asUInt
-  private val immediate8ShiftSigned = (opcode(7 downto 0).asSInt << 1).resize(32).asUInt
+  private val immediate8Signed       = opcode(7 downto 0).asSInt.resize(32).asUInt
+  private val immediate8ShiftSigned  = (opcode(7 downto 0).asSInt << 1).resize(32).asUInt
   private val immediate12ShiftSigned = (opcode(11 downto 0).asSInt << 1).resize(32).asUInt
   control.ex.immediate := select(
     line(59 downto 55),
@@ -374,8 +374,8 @@ final class J2MicrocodeTable extends Component {
     2 -> io.tBcc,
     3 -> !io.tBcc
   )
-  control.delayJump := line(67)
-  control.debug := line(68)
+  control.delayJump     := line(67)
+  control.debug         := line(68)
   control.ex.arithCarry := line(69)
   control.ex.aluX := select(
     line(71 downto 70),

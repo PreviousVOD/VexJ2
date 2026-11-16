@@ -31,7 +31,7 @@ class J2AluSpec extends munit.FunSuite {
 
   test("carry and overflow flags") {
     import AluKind._
-    val max = BigInt("ffffffff", 16)
+    val max       = BigInt("ffffffff", 16)
     val signedMax = BigInt("7fffffff", 16)
     assertEquals(J2AluModel.eval(ADDC, max, BigInt(0), true).t, true)
     assertEquals(J2AluModel.eval(ADDV, signedMax, BigInt(1), false).t, true)

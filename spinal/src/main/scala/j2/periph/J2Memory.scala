@@ -21,24 +21,24 @@ object J2RomData {
 }
 
 final class Eg4Bram32 extends BlackBox {
-  val dia = in Bits (32 bits)
-  val dib = in Bits (32 bits)
+  val dia   = in Bits (32 bits)
+  val dib   = in Bits (32 bits)
   val addra = in UInt (13 bits)
   val addrb = in UInt (13 bits)
-  val cea = in Bool ()
-  val ceb = in Bool ()
-  val ocea = in Bool ()
-  val oceb = in Bool ()
-  val clka = in Bool ()
-  val clkb = in Bool ()
-  val wea = in Bool ()
-  val web = in Bool ()
-  val rsta = in Bool ()
-  val rstb = in Bool ()
-  val bea = in Bool ()
-  val beb = in Bool ()
-  val doa = out Bits (32 bits)
-  val dob = out Bits (32 bits)
+  val cea   = in Bool ()
+  val ceb   = in Bool ()
+  val ocea  = in Bool ()
+  val oceb  = in Bool ()
+  val clka  = in Bool ()
+  val clkb  = in Bool ()
+  val wea   = in Bool ()
+  val web   = in Bool ()
+  val rsta  = in Bool ()
+  val rstb  = in Bool ()
+  val bea   = in Bool ()
+  val beb   = in Bool ()
+  val doa   = out Bits (32 bits)
+  val dob   = out Bits (32 bits)
   setDefinitionName("EG_LOGIC_BRAM")
   addGeneric("DATA_WIDTH_A", 32)
   addGeneric("DATA_WIDTH_B", 32)
@@ -67,22 +67,22 @@ final class J2Rom(useEg4Rom: Boolean = false) extends Component {
   private val pending = RegInit(False)
   private val readData = if (useEg4Rom) {
     val memory = new Eg4Bram32
-    memory.dia := 0
-    memory.dib := 0
+    memory.dia   := 0
+    memory.dib   := 0
     memory.addra := io.bus.ADR(14 downto 2)
     memory.addrb := 0
-    memory.cea := True
-    memory.ceb := False
-    memory.ocea := False
-    memory.oceb := False
-    memory.clka := ClockDomain.current.readClockWire
-    memory.clkb := False
-    memory.wea := False
-    memory.web := False
-    memory.rsta := False
-    memory.rstb := False
-    memory.bea := False
-    memory.beb := False
+    memory.cea   := True
+    memory.ceb   := False
+    memory.ocea  := False
+    memory.oceb  := False
+    memory.clka  := ClockDomain.current.readClockWire
+    memory.clkb  := False
+    memory.wea   := False
+    memory.web   := False
+    memory.rsta  := False
+    memory.rstb  := False
+    memory.bea   := False
+    memory.beb   := False
     memory.doa
   } else {
     val memory = Mem(UInt(32 bits), 8192)
@@ -95,9 +95,9 @@ final class J2Rom(useEg4Rom: Boolean = false) extends Component {
   } otherwise {
     pending := False
   }
-  io.bus.ACK := pending
+  io.bus.ACK      := pending
   io.bus.DAT_MISO := readData
-  io.bus.ERR := False
+  io.bus.ERR      := False
 }
 
 final class J2Sram extends Component {
@@ -114,7 +114,7 @@ final class J2Sram extends Component {
     banks(0).readSync(io.bus.ADR(14 downto 2))
   )
   private val request = io.bus.CYC && io.bus.STB
-  private val start = request && !pending
+  private val start   = request && !pending
 
   when(request) {
     pending := !pending
@@ -125,7 +125,7 @@ final class J2Sram extends Component {
     when(start && io.bus.WE && io.bus.SEL(index)) {
       banks(index).write(io.bus.ADR(14 downto 2), io.bus.DAT_MOSI(index * 8 + 7 downto index * 8))
     }
-  io.bus.ACK := pending
+  io.bus.ACK      := pending
   io.bus.DAT_MISO := readData
-  io.bus.ERR := False
+  io.bus.ERR      := False
 }

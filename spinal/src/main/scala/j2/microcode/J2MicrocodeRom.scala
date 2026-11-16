@@ -24,9 +24,9 @@ object J2MicrocodeData {
 }
 
 final class J2MicrocodeRomIo extends Bundle {
-  val clk = in Bool ()
+  val clk     = in Bool ()
   val address = in UInt (8 bits)
-  val line = out UInt (72 bits)
+  val line    = out UInt (72 bits)
 }
 
 trait J2MicrocodeRomPort {

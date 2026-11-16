@@ -3,10 +3,10 @@ package j2.core
 import spinal.core._
 
 final class J2Status extends Bundle {
-  val t = Bool()
-  val s = Bool()
-  val q = Bool()
-  val m = Bool()
+  val t             = Bool()
+  val s             = Bool()
+  val q             = Bool()
+  val m             = Bool()
   val interruptMask = UInt(4 bits)
 
   def asUInt: UInt = {
@@ -26,41 +26,41 @@ final class J2Status extends Bundle {
 object J2Status {
   def fromUInt(value: UInt): J2Status = {
     val status = new J2Status
-    status.t := value(0)
-    status.s := value(1)
+    status.t             := value(0)
+    status.s             := value(1)
     status.interruptMask := value(7 downto 4)
-    status.q := value(8)
-    status.m := value(9)
+    status.q             := value(8)
+    status.m             := value(9)
     status
   }
 }
 
 final class J2Datapath extends Component {
   val io = new Bundle {
-    val ex = in(new J2ExControl)
-    val exStall = in(new J2ExStallControl)
-    val regX = in UInt (32 bits)
-    val regY = in UInt (32 bits)
-    val reg0 = in UInt (32 bits)
-    val pc = in UInt (32 bits)
-    val sr = in(new J2Status)
-    val mach = in UInt (32 bits)
-    val macl = in UInt (32 bits)
-    val wbus = in UInt (32 bits)
+    val ex              = in(new J2ExControl)
+    val exStall         = in(new J2ExStallControl)
+    val regX            = in UInt (32 bits)
+    val regY            = in UInt (32 bits)
+    val reg0            = in UInt (32 bits)
+    val pc              = in UInt (32 bits)
+    val sr              = in(new J2Status)
+    val mach            = in UInt (32 bits)
+    val macl            = in UInt (32 bits)
+    val wbus            = in UInt (32 bits)
     val yOverrideEnable = in Bool ()
-    val yOverride = in UInt (32 bits)
+    val yOverride       = in UInt (32 bits)
 
-    val xbus = out UInt (32 bits)
-    val ybus = out UInt (32 bits)
-    val zbus = out UInt (32 bits)
-    val memoryAddress = out UInt (32 bits)
-    val memoryWriteData = out UInt (32 bits)
+    val xbus             = out UInt (32 bits)
+    val ybus             = out UInt (32 bits)
+    val zbus             = out UInt (32 bits)
+    val memoryAddress    = out UInt (32 bits)
+    val memoryWriteData  = out UInt (32 bits)
     val arithmeticResult = out UInt (33 bits)
-    val logicResult = out UInt (32 bits)
-    val shiftResult = out UInt (32 bits)
-    val shiftT = out Bool ()
-    val arithmeticSr = out(new J2Status)
-    val logicSr = out(new J2Status)
+    val logicResult      = out UInt (32 bits)
+    val shiftResult      = out UInt (32 bits)
+    val shiftT           = out Bool ()
+    val arithmeticSr     = out(new J2Status)
+    val logicSr          = out(new J2Status)
   }
 
   io.xbus := io.ex.xSelect.mux(
@@ -95,9 +95,9 @@ final class J2Datapath extends Component {
     io.sr.q === io.sr.m,
     io.ex.arithFunc === J2ArithFunc.SUB
   )
-  private val arithmeticB = aluY ^ Mux(subtract, U(0xffffffffL, 32 bits), U(0, 32 bits))
+  private val arithmeticB     = aluY ^ Mux(subtract, U(0xffffffffL, 32 bits), U(0, 32 bits))
   private val arithmeticCarry = subtract ^ (io.ex.arithCarry && io.sr.t)
-  private val arithmeticWide = aluX.resize(33) + arithmeticB.resize(33) + arithmeticCarry.asUInt
+  private val arithmeticWide  = aluX.resize(33) + arithmeticB.resize(33) + arithmeticCarry.asUInt
   private val arithmeticWithBorrow = Cat(arithmeticWide(32) ^ subtract, arithmeticWide(31 downto 0))
   io.arithmeticResult := arithmeticWithBorrow.asUInt
 
@@ -127,7 +127,7 @@ final class J2Datapath extends Component {
   private val shiftMagnitude =
     Mux(shiftLeft, io.ybus(4 downto 0), (U(0, 6 bits) - io.ybus(4 downto 0)).resize(5))
   private val shiftRightZero = shiftMagnitude === 0
-  private val shiftLogical = Mux(shiftRightZero, U(0, 32 bits), io.xbus >> shiftMagnitude)
+  private val shiftLogical   = Mux(shiftRightZero, U(0, 32 bits), io.xbus >> shiftMagnitude)
   private val shiftArithmetic = Mux(
     shiftRightZero,
     Mux(io.xbus(31), U(0xffffffffL, 32 bits), U(0, 32 bits)),
@@ -137,9 +137,9 @@ final class J2Datapath extends Component {
     (io.xbus >> (32 - shiftMagnitude)).resize(32)
   private val rotatePlainRight = (io.xbus >> shiftMagnitude).resize(32) |
     (io.xbus << (32 - shiftMagnitude)).resize(32)
-  private val rotateThroughLeft = Cat(io.xbus(30 downto 0), io.sr.t).asUInt
+  private val rotateThroughLeft  = Cat(io.xbus(30 downto 0), io.sr.t).asUInt
   private val rotateThroughRight = Cat(io.sr.t, io.xbus(31 downto 1)).asUInt
-  private val shiftResult = UInt(32 bits)
+  private val shiftResult        = UInt(32 bits)
   shiftResult := io.xbus
   when(!shiftLeft) {
     shiftResult := io.exStall.shift.mux(
@@ -156,7 +156,7 @@ final class J2Datapath extends Component {
     shiftResult := (io.xbus << shiftMagnitude).resize(32)
   }
   io.shiftResult := shiftResult
-  io.shiftT := Mux(shiftLeft, io.xbus(31), io.xbus(0))
+  io.shiftT      := Mux(shiftLeft, io.xbus(31), io.xbus(0))
 
   io.zbus := io.exStall.zSelect.mux(
     J2ZBusSelect.ARITH -> arithmeticWithBorrow(31 downto 0).asUInt,
@@ -180,12 +180,12 @@ final class J2Datapath extends Component {
   private val arithmeticSr = new J2Status
   arithmeticSr := io.sr
   private val valueZero = arithmeticWithBorrow(31 downto 0).asUInt === 0
-  private val aMsb = io.xbus(31)
-  private val bMsb = io.ybus(31)
-  private val valueMsb = arithmeticWithBorrow(31)
+  private val aMsb      = io.xbus(31)
+  private val bMsb      = io.ybus(31)
+  private val valueMsb  = arithmeticWithBorrow(31)
   private val commonGreaterEqual =
     (!aMsb && !bMsb && !valueMsb) || (aMsb && bMsb && !valueMsb)
-  private val signedGreaterEqual = commonGreaterEqual || (!aMsb && bMsb)
+  private val signedGreaterEqual   = commonGreaterEqual || (!aMsb && bMsb)
   private val unsignedGreaterEqual = commonGreaterEqual || (aMsb && !bMsb)
   switch(io.ex.arithSr) {
     is(J2ArithSrFunc.ZERO) {

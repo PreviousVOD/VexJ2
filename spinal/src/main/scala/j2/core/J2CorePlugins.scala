@@ -1,0 +1,48 @@
+package j2.core
+
+import j2.fetch._
+import j2.decode._
+import j2.execute._
+import j2.regfile._
+import j2.schedule._
+import j2.misc._
+import spinal.lib.misc.plugin._
+import scala.reflect.ClassTag
+
+object J2CorePlugins {
+  def apply(config: J2CoreConfig): Seq[FiberPlugin] = Seq(
+    new J2FetchPlugin,
+    new J2MemoryPlugin,
+    new J2DecodePlugin(config.useEg4Rom),
+    new J2SchedulePlugin,
+    new J2RegisterPlugin,
+    new J2ExecutePlugin,
+    new J2MultiplyPlugin,
+    new J2ArchitecturalPlugin,
+    new J2TrapPlugin,
+    new J2ObservationPlugin(config.exposeDebug),
+    new J2PipelineBuilderPlugin
+  )
+
+  def validate(plugins: Seq[FiberPlugin]): Unit = {
+    def exactlyOne[T: ClassTag](): Unit = {
+      val tag   = implicitly[ClassTag[T]]
+      val count = plugins.count(p => p.pluginEnabled && tag.runtimeClass.isInstance(p))
+      require(count == 1, s"expected exactly one ${tag.runtimeClass.getSimpleName}, found $count")
+    }
+    exactlyOne[J2ExternalService]()
+    exactlyOne[J2FetchService]()
+    exactlyOne[J2MemoryService]()
+    exactlyOne[J2DecodeService]()
+    exactlyOne[J2ScheduleService]()
+    exactlyOne[J2RegisterService]()
+    exactlyOne[J2ExecuteService]()
+    exactlyOne[J2MultiplyService]()
+    exactlyOne[J2ArchitecturalService]()
+    exactlyOne[J2TrapService]()
+    exactlyOne[J2PipelineService]()
+    exactlyOne[J2PipelineBuilderPlugin]()
+  }
+}
+
+final class J2ExternalPlugin(val external: J2CoreIo) extends FiberPlugin with J2ExternalService

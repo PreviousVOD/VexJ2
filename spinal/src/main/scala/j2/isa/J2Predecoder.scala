@@ -3,6 +3,7 @@ package j2.isa
 import j2.microcode.J2MicrocodeData
 
 import spinal.core._
+import spinal.lib._
 
 final case class J2PredecodeEntry(pattern: String, address: Int, name: String) {
   require(pattern.length == 16 && pattern.forall("01nmdi".contains(_)))
@@ -29,6 +30,17 @@ object J2PredecodeEntry {
       }
     }
 
+  // Address selection is one-hot. Reject ambiguous additions rather than
+  // silently depending on table order or building a priority encoder.
+  entries.combinations(2).foreach { pair =>
+    val a = pair(0)
+    val b = pair(1)
+    require(
+      ((a.value ^ b.value) & a.mask & b.mask) != 0,
+      s"overlapping predecode patterns: ${a.name} and ${b.name}"
+    )
+  }
+
   def find(instruction: Int): Option[J2PredecodeEntry] = entries.find(_.matches(instruction))
 
   def isDelaySlotIllegal(instruction: Int): Boolean = {
@@ -43,9 +55,9 @@ object J2PredecodeEntry {
 
 final class J2Predecoder extends Component {
   val io = new Bundle {
-    val instruction = in UInt (16 bits)
-    val address = out UInt (8 bits)
-    val legal = out Bool ()
+    val instruction      = in UInt (16 bits)
+    val address          = out UInt (8 bits)
+    val legal            = out Bool ()
     val delaySlotIllegal = out Bool ()
   }
 
@@ -53,13 +65,9 @@ final class J2Predecoder extends Component {
     entry -> ((io.instruction & U(entry.mask, 16 bits)) === U(entry.value, 16 bits))
   }
 
-  io.address := 0
-  io.legal := matches.map(_._2).reduce(_ || _)
-  matches.foreach { case (entry, matched) =>
-    when(matched) {
-      io.address := entry.address
-    }
-  }
+  private val selected = Vec(matches.map(_._2))
+  io.address := MuxOH(selected, Vec(matches.map { case (entry, _) => U(entry.address, 8 bits) }))
+  io.legal   := selected.asBits.orR
   io.delaySlotIllegal :=
     ((io.instruction(15 downto 12) === 0) && (io.instruction(3 downto 2) === 0) && io.instruction(
       0

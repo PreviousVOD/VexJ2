@@ -6,7 +6,7 @@ import spinal.core.sim._
 class J2MicrocodeTableSpec extends munit.FunSuite {
   test("all ROM lines decode direct controls and conditional dispatch") {
     SimConfig.withVerilator.compile(new J2MicrocodeTable).doSim { dut =>
-      dut.io.opcode #= 0
+      dut.io.opcode      #= 0
       dut.io.nextIdStall #= false
 
       for ((line, address) <- J2MicrocodeData.entries.zipWithIndex) {
@@ -54,9 +54,9 @@ class J2MicrocodeTableSpec extends munit.FunSuite {
 
   test("MOV immediate selects the opcode register and signed value") {
     SimConfig.withVerilator.compile(new J2MicrocodeTable).doSim { dut =>
-      dut.io.line #= J2MicrocodeData.entries(200)
-      dut.io.opcode #= 0xe17f
-      dut.io.tBcc #= false
+      dut.io.line        #= J2MicrocodeData.entries(200)
+      dut.io.opcode      #= 0xe17f
+      dut.io.tBcc        #= false
       dut.io.nextIdStall #= false
       sleep(1)
 

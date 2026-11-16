@@ -6,12 +6,12 @@ import spinal.core.sim._
 class J2MultiplySpec extends munit.FunSuite {
   test("multiply and MAC commands produce signed, unsigned, and accumulated results") {
     SimConfig.withVerilator.compile(new J2Multiply).doSim { dut =>
-      dut.io.slot #= true
-      dut.io.command #= J2MultiplyCommand.NOP
-      dut.io.in1 #= 0
-      dut.io.in2 #= 0
-      dut.io.s #= false
-      dut.io.writeM1 #= false
+      dut.io.slot      #= true
+      dut.io.command   #= J2MultiplyCommand.NOP
+      dut.io.in1       #= 0
+      dut.io.in2       #= 0
+      dut.io.s         #= false
+      dut.io.writeM1   #= false
       dut.io.writeMach #= false
       dut.io.writeMacl #= false
       dut.clockDomain.forkStimulus(10)
@@ -27,19 +27,19 @@ class J2MultiplySpec extends munit.FunSuite {
           expectedMach: BigInt,
           expectedMacl: BigInt
       ): Unit = {
-        dut.io.in1 #= (a & 0xffffffffL)
-        dut.io.in2 #= (b & 0xffffffffL)
+        dut.io.in1     #= (a & 0xffffffffL)
+        dut.io.in2     #= (b & 0xffffffffL)
         dut.io.writeM1 #= true
         dut.io.command #= J2MultiplyCommand.NOP
         dut.clockDomain.waitSampling()
         sleep(1)
         dut.io.writeM1 #= false
-        dut.io.in1 #= 0xdeadbeefL // The first operand must survive until command.
+        dut.io.in1     #= 0xdeadbeefL // The first operand must survive until command.
         dut.io.command #= command
         dut.clockDomain.waitSampling()
         sleep(1)
         dut.io.command #= J2MultiplyCommand.NOP
-        dut.io.slot #= false // Arithmetic must progress during bus stalls.
+        dut.io.slot    #= false // Arithmetic must progress during bus stalls.
         var cycles = 0
         while (dut.io.busy.toBoolean && cycles < 8) {
           dut.clockDomain.waitSampling()
@@ -61,8 +61,8 @@ class J2MultiplySpec extends munit.FunSuite {
 
       dut.io.writeMach #= true
       dut.io.writeMacl #= true
-      dut.io.in1 #= 0
-      dut.io.in2 #= 5
+      dut.io.in1       #= 0
+      dut.io.in2       #= 5
       dut.clockDomain.waitSampling()
       dut.io.writeMach #= false
       dut.io.writeMacl #= false
@@ -72,8 +72,8 @@ class J2MultiplySpec extends munit.FunSuite {
       def accumulator(high: Long, low: Long): Unit = {
         dut.io.writeMach #= true
         dut.io.writeMacl #= true
-        dut.io.in1 #= high
-        dut.io.in2 #= low
+        dut.io.in1       #= high
+        dut.io.in2       #= low
         dut.clockDomain.waitSampling()
         sleep(1)
         dut.io.writeMach #= false

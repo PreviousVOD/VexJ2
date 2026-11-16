@@ -8,24 +8,24 @@ class J2SpiFlashSpec extends munit.FunSuite {
   test("mode-0 flash changes MISO on falling edges without shifting JEDEC ID") {
     SimConfig.withVerilator.compile(new J2SpiFlash).doSim { dut =>
       for (bus <- Seq(dut.io.control, dut.io.xip)) {
-        bus.CYC #= false
-        bus.STB #= false
-        bus.WE #= false
-        bus.ADR #= 0
+        bus.CYC      #= false
+        bus.STB      #= false
+        bus.WE       #= false
+        bus.ADR      #= 0
         bus.DAT_MOSI #= 0
-        bus.SEL #= 15
-        bus.LOCK #= false
+        bus.SEL      #= 15
+        bus.LOCK     #= false
       }
-      dut.io.spi.miso #= true
+      dut.io.spi.miso          #= true
       dut.clockDomain.clockSim #= false
       var previousClock = false
-      var bits = 0
-      var command = 0
-      val commands = ArrayBuffer.empty[Int]
+      var bits          = 0
+      var command       = 0
+      val commands      = ArrayBuffer.empty[Int]
       def flashPins(): Unit = {
         val clk = dut.io.spi.clk.toBoolean
         if (dut.io.spi.cs.toBoolean) {
-          bits = 0
+          bits    = 0
           command = 0
           dut.io.spi.miso #= true
         } else if (!previousClock && clk) {
@@ -54,9 +54,9 @@ class J2SpiFlashSpec extends munit.FunSuite {
       tick()
 
       def access(write: Boolean, value: Int = 0): Long = {
-        dut.io.control.CYC #= true
-        dut.io.control.STB #= true
-        dut.io.control.WE #= write
+        dut.io.control.CYC      #= true
+        dut.io.control.STB      #= true
+        dut.io.control.WE       #= write
         dut.io.control.DAT_MOSI #= value
         sleep(1)
         var waitCycles = 0

@@ -24,42 +24,42 @@ class J2SleepFaultSpec extends munit.FunSuite {
     val scenarios = Seq(
       Scenario(
         "valid byte load",
-        instruction = 0x6010,
-        address = 0x301,
+        instruction  = 0x6010,
+        address      = 0x301,
         healthyValue = Some(0x34L)
       ),
       Scenario(
         "valid word load",
-        instruction = 0x6011,
-        address = 0x302,
+        instruction  = 0x6011,
+        address      = 0x302,
         healthyValue = Some(0x5678L)
       ),
       Scenario("valid long load", address = 0x300, healthyValue = Some(0x12345678L)),
       Scenario("fault before delayed branch", youngerBranch = true),
       Scenario("unaligned long load"),
-      Scenario("halfword-aligned long load", address = 0x302),
-      Scenario("fault during exception entry", entryError = true),
-      Scenario("unaligned word load", instruction = 0x6011),
-      Scenario("unaligned long store", instruction = 0x2102),
-      Scenario("unaligned word store", instruction = 0x2101),
+      Scenario("halfword-aligned long load", address       = 0x302),
+      Scenario("fault during exception entry", entryError  = true),
+      Scenario("unaligned word load", instruction          = 0x6011),
+      Scenario("unaligned long store", instruction         = 0x2102),
+      Scenario("unaligned word store", instruction         = 0x2101),
       Scenario("unaligned postincrement load", instruction = 0x6016),
-      Scenario("failed SR load", instruction = 0x4107),
-      Scenario("failed MACH load", instruction = 0x4106),
-      Scenario("SR load ERR", instruction = 0x4107, address = 0x300, dataError = true),
-      Scenario("MACH load ERR", instruction = 0x4106, address = 0x300, dataError = true),
-      Scenario("MACL load ERR", instruction = 0x4116, address = 0x300, dataError = true),
-      Scenario("store ERR without ACK", instruction = 0x2102, address = 0x300, dataError = true),
-      Scenario("odd instruction target", oddFetch = true),
-      Scenario("data ERR without ACK", address = 0x300, dataError = true),
+      Scenario("failed SR load", instruction               = 0x4107),
+      Scenario("failed MACH load", instruction             = 0x4106),
+      Scenario("SR load ERR", instruction           = 0x4107, address  = 0x300, dataError = true),
+      Scenario("MACH load ERR", instruction         = 0x4106, address  = 0x300, dataError = true),
+      Scenario("MACL load ERR", instruction         = 0x4116, address  = 0x300, dataError = true),
+      Scenario("store ERR without ACK", instruction = 0x2102, address  = 0x300, dataError = true),
+      Scenario("odd instruction target", oddFetch   = true),
+      Scenario("data ERR without ACK", address      = 0x300, dataError = true),
       Scenario(
         "ERR takes priority over ACK",
-        address = 0x300,
-        dataError = true,
+        address     = 0x300,
+        dataError   = true,
         ackAndError = true
       ),
       Scenario("instruction ERR without ACK", instruction = 0x0009, fetchError = true),
-      Scenario("delay slot data fault", delaySlot = true),
-      Scenario("delay slot fetch fault", instruction = 9, fetchError = true, delaySlot = true),
+      Scenario("delay slot data fault", delaySlot         = true),
+      Scenario("delay slot fetch fault", instruction      = 9, fetchError = true, delaySlot = true),
       Scenario("SLEEP and masked IRQ then NMI", sleepTest = true),
       Scenario("SLEEP and unmasked IRQ", sleepTest = true, irqSleep = true)
     )
@@ -136,16 +136,16 @@ class J2SleepFaultSpec extends munit.FunSuite {
             0x244L -> 0x110L,
             0x300L -> 0x12345678L
           )
-          dut.io.ibus.ACK #= false
-          dut.io.ibus.ERR #= false
-          dut.io.ibus.DAT_MISO #= 0
-          dut.io.dbus.ACK #= false
-          dut.io.dbus.ERR #= false
-          dut.io.dbus.DAT_MISO #= 0
-          dut.io.event.valid #= false
-          dut.io.event.payload.command #= 0
-          dut.io.event.payload.vector #= 11
-          dut.io.event.payload.level #= 1 // masked by reset SR.I=15
+          dut.io.ibus.ACK                 #= false
+          dut.io.ibus.ERR                 #= false
+          dut.io.ibus.DAT_MISO            #= 0
+          dut.io.dbus.ACK                 #= false
+          dut.io.dbus.ERR                 #= false
+          dut.io.dbus.DAT_MISO            #= 0
+          dut.io.event.valid              #= false
+          dut.io.event.payload.command    #= 0
+          dut.io.event.payload.vector     #= 11
+          dut.io.event.payload.level      #= 1 // masked by reset SR.I=15
           dut.io.event.payload.bypassMask #= false
           def tick(): Unit = {
             dut.clockDomain.clockSim #= false
@@ -160,17 +160,17 @@ class J2SleepFaultSpec extends munit.FunSuite {
           for (_ <- 0 until 4) tick()
           dut.clockDomain.deassertReset()
           sleep(1)
-          var iw = 0
-          var dw = 0
-          var sleepCycles = 0
-          var eventAcks = 0
-          var eventSent = false
-          var faultInjected = false
+          var iw                 = 0
+          var dw                 = 0
+          var sleepCycles        = 0
+          var eventAcks          = 0
+          var eventSent          = false
+          var faultInjected      = false
           var entryErrorInjected = false
-          var quietCycles = 0
-          val reads = mutable.ArrayBuffer.empty[Long]
-          val writes = mutable.ArrayBuffer.empty[Long]
-          var cycles = 0
+          var quietCycles        = 0
+          val reads              = mutable.ArrayBuffer.empty[Long]
+          val writes             = mutable.ArrayBuffer.empty[Long]
+          var cycles             = 0
           while (!memory.contains(0x400L) && cycles < 1500) {
             dut.io.ibus.ACK #= false
             dut.io.ibus.ERR #= false
@@ -198,10 +198,10 @@ class J2SleepFaultSpec extends munit.FunSuite {
                                                             else 0x106) && !faultInjected
                 if (!scenario.sleepTest && addr == 0x106) dut.io.event.valid #= true
                 dut.io.ibus.DAT_MISO #= code.getOrElse(addr, 0x0009).toLong
-                dut.io.ibus.ERR #= error
-                dut.io.ibus.ACK #= !error
+                dut.io.ibus.ERR      #= error
+                dut.io.ibus.ACK      #= !error
                 if (error) faultInjected = true
-                iw = 0
+                iw                       = 0
               } else iw += 1
             }
             if (dut.io.dbus.STB.toBoolean) {

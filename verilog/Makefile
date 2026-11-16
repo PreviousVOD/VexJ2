@@ -15,14 +15,18 @@ XIP_ROM := $(ROOT)/build/verilog/xip/j2_validation_rom.hex
 FLASHSIM_DIR := $(ROOT)/third_party/qspiflash/bench/cpp
 SDRAM_SIM := $(ROOT)/verilog/verif/j2_sdram_model.v
 GPIO_PAD_SIM := $(ROOT)/verilog/verif/j2_gpio_pad_model.v
-SCALA_SRC := $(wildcard $(ROOT)/spinal/src/main/scala/j2/*.scala) \
-	$(wildcard $(ROOT)/spinal/src/main/scala/j2/*/*.scala)
+SCALA_SRC := $(shell find $(ROOT)/spinal/src/main/scala -name '*.scala' -type f)
+SPINAL_RESOURCES := $(shell find $(ROOT)/spinal/src/main/resources -type f)
+SPINAL_BUILD := $(ROOT)/spinal/build.sbt $(ROOT)/spinal/project/build.properties \
+	$(ROOT)/spinal/project/plugins.sbt
 SOC_SRC := $(TOP) $(SDRAM_SIM) $(GPIO_PAD_SIM)
 TEST_SOC_SRC := $(TEST_TOP) $(SDRAM_SIM) $(GPIO_PAD_SIM)
 
-.PHONY: all test xip-test clean
+.PHONY: all test xip-test xip-sim-build clean
 
 all: test
+
+xip-sim-build: $(XIP_BUILD)/Vj2_tang_primer
 
 test: $(BUILD)/Vj2_tang_primer
 	cd $(BUILD) && ./Vj2_tang_primer
@@ -57,10 +61,10 @@ $(XIP_BUILD)/Vj2_tang_primer: Makefile verif/j2_xip_sim.cpp $(TOP) $(XIP_ROM) $(
 		$(SOC_SRC) $(ROOT)/verilog/verif/j2_xip_sim.cpp \
 		$(FLASHSIM_DIR)/flashsim.cpp
 
-$(TEST_TOP): $(SCALA_SRC) $(ROOT)/spinal/build.sbt $(ROM)
+$(TEST_TOP): $(SCALA_SRC) $(SPINAL_RESOURCES) $(SPINAL_BUILD) $(ROM)
 	J2_ROM_HEX=$(ROM) J2_SPINAL_OUT=../build/spinal/verilog-test $(MAKE) -C $(ROOT) spinal-generate
 
-$(TOP): $(SCALA_SRC) $(ROOT)/spinal/build.sbt $(XIP_ROM)
+$(TOP): $(SCALA_SRC) $(SPINAL_RESOURCES) $(SPINAL_BUILD) $(XIP_ROM)
 	$(MAKE) -C $(ROOT) spinal-generate
 
 $(ROM): $(TESTROM) $(ROOT)/tools/gen_verilog_rom.py

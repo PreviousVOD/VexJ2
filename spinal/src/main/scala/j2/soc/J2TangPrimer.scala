@@ -15,16 +15,16 @@ final class J2TangPrimer(
   )
   setDefinitionName("j2_tang_primer")
   val io = new Bundle {
-    val clk24 = in Bool ()
-    val rstN = in Bool ()
-    val uartRx = in Bool ()
-    val uartTx = out Bool ()
-    val gpio = inout(Analog(Bits(32 bits)))
-    val spiClk = out Bool ()
-    val spiCs = out Bool ()
-    val spiMosi = out Bool ()
-    val spiMiso = in Bool ()
-    val spiWpN = out Bool ()
+    val clk24    = in Bool ()
+    val rstN     = in Bool ()
+    val uartRx   = in Bool ()
+    val uartTx   = out Bool ()
+    val gpio     = inout(Analog(Bits(32 bits)))
+    val spiClk   = out Bool ()
+    val spiCs    = out Bool ()
+    val spiMosi  = out Bool ()
+    val spiMiso  = in Bool ()
+    val spiWpN   = out Bool ()
     val spiHoldN = out Bool ()
   }
   io.clk24.setName("clk24")
@@ -44,25 +44,25 @@ final class J2TangPrimer(
     require(vcoHz % clockHz == 0, "J2_CLOCK_HZ must divide the PLL VCO exactly")
     val pll = new Eg4Pll(
       feedbackDivider = vcoHz / 24000000,
-      outputDivider = vcoHz / clockHz
+      outputDivider   = vcoHz / clockHz
     )
     val buffer = new Eg4Bufg
-    pll.refclk := io.clk24
-    pll.reset := False
+    pll.refclk   := io.clk24
+    pll.reset    := False
     pll.load_reg := False
-    pll.stdby := False
-    pll.fbclk := False // Internal VCO feedback; external feedback is unused.
-    pll.psclk := False
-    pll.psdown := False
-    pll.psstep := False
+    pll.stdby    := False
+    pll.fbclk    := False // Internal VCO feedback; external feedback is unused.
+    pll.psclk    := False
+    pll.psdown   := False
+    pll.psstep   := False
     pll.psclksel := 0
-    pll.dclk := False
-    pll.dcs := False
-    pll.dwe := False
-    pll.di := 0
-    pll.daddr := 0
-    buffer.i := pll.clkc(0)
-    clockLocked := pll.extlock
+    pll.dclk     := False
+    pll.dcs      := False
+    pll.dwe      := False
+    pll.di       := 0
+    pll.daddr    := 0
+    buffer.i     := pll.clkc(0)
+    clockLocked  := pll.extlock
     buffer.o
   } else {
     clockLocked := True
@@ -70,35 +70,35 @@ final class J2TangPrimer(
   }
   private val resetController = new J2ResetController
   resetController.io.referenceClock := io.clk24
-  resetController.io.systemClock := socClock
-  resetController.io.resetN := io.rstN
-  resetController.io.clockLocked := clockLocked
+  resetController.io.systemClock    := socClock
+  resetController.io.resetN         := io.rstN
+  resetController.io.clockLocked    := clockLocked
   private val soc = ClockDomain(
-    clock = socClock,
-    reset = resetController.io.reset,
+    clock     = socClock,
+    reset     = resetController.io.reset,
     frequency = FixedFrequency(clockHz Hz)
   )(new J2Soc(useEg4Rom, clockHz))
   soc.io.uartRx := io.uartRx
-  io.uartTx := soc.io.uartTx
+  io.uartTx     := soc.io.uartTx
   private val gpioPads = Seq.fill(32)(new Eg4GpioPad)
   for (bit <- 0 until 32) {
     val pad = gpioPads(bit)
-    pad.ipad := False
-    pad.rst := False
-    pad.ce := True
-    pad.isclk := False
-    pad.ipclk := False
-    pad.osclk := False
-    pad.opclk := False
-    pad.ts := !soc.io.gpio.writeEnable(bit)
+    pad.ipad   := False
+    pad.rst    := False
+    pad.ce     := True
+    pad.isclk  := False
+    pad.ipclk  := False
+    pad.osclk  := False
+    pad.opclk  := False
+    pad.ts     := !soc.io.gpio.writeEnable(bit)
     pad.doData := soc.io.gpio.write(bit).asBits.resize(4)
     pad.bpad <> io.gpio(bit)
     soc.io.gpio.read(bit) := pad.di
   }
-  io.spiClk := soc.io.spiClk
-  io.spiCs := soc.io.spiCs
-  io.spiMosi := soc.io.spiMosi
+  io.spiClk      := soc.io.spiClk
+  io.spiCs       := soc.io.spiCs
+  io.spiMosi     := soc.io.spiMosi
   soc.io.spiMiso := io.spiMiso
-  io.spiWpN := soc.io.spiWpN
-  io.spiHoldN := soc.io.spiHoldN
+  io.spiWpN      := soc.io.spiWpN
+  io.spiHoldN    := soc.io.spiHoldN
 }

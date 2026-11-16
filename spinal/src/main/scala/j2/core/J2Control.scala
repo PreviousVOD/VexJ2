@@ -4,9 +4,9 @@ import spinal.core._
 import spinal.lib._
 
 final class J2Event extends Bundle {
-  val command = UInt(2 bits)
-  val vector = UInt(8 bits)
-  val level = UInt(4 bits)
+  val command    = UInt(2 bits)
+  val vector     = UInt(8 bits)
+  val level      = UInt(4 bits)
   val bypassMask = Bool()
 }
 
@@ -88,81 +88,81 @@ object J2MultiplyCommand extends SpinalEnum {
 }
 
 final class J2ExControl extends Bundle {
-  val immediate = UInt(32 bits)
-  val xSelect = J2XBusSelect()
-  val ySelect = J2YBusSelect()
-  val regZ = UInt(5 bits)
-  val regX = UInt(5 bits)
-  val regY = UInt(5 bits)
-  val manip = J2AluManip()
-  val aluX = J2AluXSelect()
-  val aluY = J2AluYSelect()
-  val arithFunc = J2ArithFunc()
-  val arithCarry = Bool()
-  val arithSr = J2ArithSrFunc()
-  val logicFunc = J2LogicFunc()
-  val logicSr = J2LogicSrFunc()
-  val macBusy = Bool()
+  val immediate   = UInt(32 bits)
+  val xSelect     = J2XBusSelect()
+  val ySelect     = J2YBusSelect()
+  val regZ        = UInt(5 bits)
+  val regX        = UInt(5 bits)
+  val regY        = UInt(5 bits)
+  val manip       = J2AluManip()
+  val aluX        = J2AluXSelect()
+  val aluY        = J2AluYSelect()
+  val arithFunc   = J2ArithFunc()
+  val arithCarry  = Bool()
+  val arithSr     = J2ArithSrFunc()
+  val logicFunc   = J2LogicFunc()
+  val logicSr     = J2LogicSrFunc()
+  val macBusy     = Bool()
   val memoryWrite = Bool()
-  val memoryLock = Bool()
-  val memorySize = J2MemSize()
+  val memoryLock  = Bool()
+  val memorySize  = J2MemSize()
 }
 
 final class J2ExStallControl extends Bundle {
-  val pcWriteZ = Bool()
-  val srWriteZ = Bool()
-  val memoryIssue = Bool()
-  val prWritePc = Bool()
-  val zSelect = J2ZBusSelect()
-  val srSelect = J2SrSelect()
-  val tSelect = J2TSelect()
-  val memoryAddress = J2MemAddrSelect()
+  val pcWriteZ        = Bool()
+  val srWriteZ        = Bool()
+  val memoryIssue     = Bool()
+  val prWritePc       = Bool()
+  val zSelect         = J2ZBusSelect()
+  val srSelect        = J2SrSelect()
+  val tSelect         = J2TSelect()
+  val memoryAddress   = J2MemAddrSelect()
   val memoryWriteData = J2MemWdataSelect()
-  val regWriteZ = Bool()
-  val machWrite = Bool()
-  val maclWrite = Bool()
-  val shift = J2ShiftFunc()
-  val multiplyStart = Bool()
+  val regWriteZ       = Bool()
+  val machWrite       = Bool()
+  val maclWrite       = Bool()
+  val shift           = J2ShiftFunc()
+  val multiplyStart   = Bool()
   val multiplyCommand = J2MultiplyCommand()
-  val macSelect1 = J2MacSelect1()
-  val macSelect2 = J2MacSelect2()
+  val macSelect1      = J2MacSelect1()
+  val macSelect2      = J2MacSelect2()
 }
 
 final class J2WbControl extends Bundle {
-  val regW = UInt(5 bits)
+  val regW    = UInt(5 bits)
   val macBusy = Bool()
 }
 
 final class J2WbStallControl extends Bundle {
-  val multiplyStart = Bool()
-  val machWrite = Bool()
-  val maclWrite = Bool()
-  val regWriteW = Bool()
-  val srWriteW = Bool()
-  val macSelect1 = J2MacSelect1()
-  val macSelect2 = J2MacSelect2()
+  val multiplyStart   = Bool()
+  val machWrite       = Bool()
+  val maclWrite       = Bool()
+  val regWriteW       = Bool()
+  val srWriteW        = Bool()
+  val macSelect1      = J2MacSelect1()
+  val macSelect2      = J2MacSelect2()
   val multiplyCommand = J2MultiplyCommand()
 }
 
 final class J2IdControl extends Bundle {
-  val incrementPc = Bool()
-  val instructionIssue = Bool()
+  val incrementPc        = Bool()
+  val instructionIssue   = Bool()
   val instructionAddress = Bool()
 }
 
 final class J2MicrocodeControl extends Bundle {
-  val ex = new J2ExControl
-  val exStall = new J2ExStallControl
-  val wb = new J2WbControl
-  val wbStall = new J2WbStallControl
-  val id = new J2IdControl
-  val sleep = Bool()
-  val maskInterruptNext = Bool()
-  val macStallSense = Bool()
-  val macSLatch = Bool()
+  val ex                    = new J2ExControl
+  val exStall               = new J2ExStallControl
+  val wb                    = new J2WbControl
+  val wbStall               = new J2WbStallControl
+  val id                    = new J2IdControl
+  val sleep                 = Bool()
+  val maskInterruptNext     = Bool()
+  val macStallSense         = Bool()
+  val macSLatch             = Bool()
   val interruptLevelCapture = Bool()
-  val eventAcknowledge = Bool()
-  val dispatch = Bool()
-  val delayJump = Bool()
-  val debug = Bool()
+  val eventAcknowledge      = Bool()
+  val dispatch              = Bool()
+  val delayJump             = Bool()
+  val debug                 = Bool()
 }

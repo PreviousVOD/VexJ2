@@ -6,13 +6,13 @@ class J2TimerSpec extends munit.FunSuite {
   test("Wishbone timer counts, stops, interrupts, clears, and rearms") {
     SimConfig.withVerilator.compile(new J2Timer(clockHz = 4, tickHz = 1, width = 8)).doSim { dut =>
       val bus = dut.io.bus
-      bus.CYC #= false
-      bus.STB #= false
-      bus.WE #= false
-      bus.ADR #= 0
-      bus.DAT_MOSI #= 0
-      bus.SEL #= 15
-      bus.LOCK #= false
+      bus.CYC                  #= false
+      bus.STB                  #= false
+      bus.WE                   #= false
+      bus.ADR                  #= 0
+      bus.DAT_MOSI             #= 0
+      bus.SEL                  #= 15
+      bus.LOCK                 #= false
       dut.clockDomain.clockSim #= false
 
       def tick(): Unit = {
@@ -23,10 +23,10 @@ class J2TimerSpec extends munit.FunSuite {
       }
 
       def access(write: Boolean, address: Long, value: Long = 0): Long = {
-        bus.CYC #= true
-        bus.STB #= true
-        bus.WE #= write
-        bus.ADR #= address
+        bus.CYC      #= true
+        bus.STB      #= true
+        bus.WE       #= write
+        bus.ADR      #= address
         bus.DAT_MOSI #= value
         sleep(1)
         var waitCycles = 0
@@ -44,7 +44,7 @@ class J2TimerSpec extends munit.FunSuite {
       }
 
       def write(address: Long, value: Long): Unit = access(true, address, value)
-      def read(address: Long): Long = access(false, address)
+      def read(address: Long): Long               = access(false, address)
 
       dut.clockDomain.assertReset()
       for (_ <- 0 until 4) tick()

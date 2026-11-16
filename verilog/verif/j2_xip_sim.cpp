@@ -3,6 +3,7 @@
 #include "flashsim.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -12,9 +13,16 @@ int main(int argc, char **argv) {
   const char *image_path = argc > 1 ? argv[1] : "flash.bin";
   bool loader = false;
   bool cold_boot = false;
+  std::string expected = "XIP CPU tests passed";
+  uint64_t cycle_limit = 0;
   for (int index = 2; index < argc; ++index) {
-    loader |= std::string(argv[index]) == "--loader";
-    cold_boot |= std::string(argv[index]) == "--cold-boot";
+    std::string option = argv[index];
+    if (option == "--loader") loader = true;
+    else if (option == "--cold-boot") cold_boot = true;
+    else if (option == "--expect" && index + 1 < argc) expected = argv[++index];
+    else if (option == "--max-cycles" && index + 1 < argc)
+      cycle_limit = std::strtoull(argv[++index], nullptr, 0);
+    else { std::fprintf(stderr, "unknown/incomplete option: %s\n", argv[index]); return 1; }
   }
   std::ifstream stream(image_path, std::ios::binary);
   std::vector<uint8_t> image((std::istreambuf_iterator<char>(stream)),
@@ -64,8 +72,9 @@ int main(int argc, char **argv) {
   bool program_started = false;
 
   uint64_t max_cycles = loader ? 100000000 : 30000000;
+  if (cycle_limit) max_cycles = cycle_limit;
   for (uint64_t cycle = 0; cycle < max_cycles &&
-       output.find("XIP CPU tests passed") == std::string::npos; ++cycle) {
+       output.find(expected) == std::string::npos; ++cycle) {
     top.clk24 = 1;
     top.eval();
     update_flash();
@@ -88,6 +97,10 @@ int main(int argc, char **argv) {
           return 1;
         }
         output.push_back(char(shift));
+        if (expected != "XIP CPU tests passed") {
+          std::putchar(char(shift));
+          std::fflush(stdout);
+        }
         state = -1;
       }
     }
@@ -148,8 +161,9 @@ int main(int argc, char **argv) {
 
   std::printf("[xip-soc] upload index=%zu limit=%zu pages=%zu total=%zu\n",
               upload_index, upload_limit, upload_pages, upload.size());
-  std::printf("[xip-soc] UART output:\n%s\n", output.c_str());
-  bool ok = output.find("XIP CPU tests passed") != std::string::npos;
+  if (expected == "XIP CPU tests passed")
+    std::printf("[xip-soc] UART output:\n%s\n", output.c_str());
+  bool ok = !expected.empty() && output.find(expected) != std::string::npos;
   std::printf("[xip-soc] %s\n", ok ? "PASS" : "FAIL");
   return ok ? 0 : 1;
 }

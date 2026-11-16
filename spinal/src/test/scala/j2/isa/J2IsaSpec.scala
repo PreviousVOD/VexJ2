@@ -48,9 +48,9 @@ class J2IsaSpec extends munit.FunSuite {
   }
 
   test("all 16-bit encodings are classified") {
-    var legal = 0
+    var legal      = 0
     var excludedJ2 = 0
-    var illegal = 0
+    var illegal    = 0
     for (instruction <- 0 to 0xffff)
       J2Isa.decode(instruction) match {
         case _: J2DecodeResult.Legal      => legal += 1

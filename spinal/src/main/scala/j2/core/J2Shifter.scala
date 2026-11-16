@@ -5,8 +5,8 @@ import spinal.core._
 object J2ShiftOp extends SpinalEnum {
   val SHLL, SHLL2, SHLL8, SHLL16 = newElement()
   val SHLR, SHLR2, SHLR8, SHLR16 = newElement()
-  val SHAL, SHAR = newElement()
-  val ROTL, ROTR, ROTCL, ROTCR = newElement()
+  val SHAL, SHAR                 = newElement()
+  val ROTL, ROTR, ROTCL, ROTCR   = newElement()
 }
 
 sealed trait ShiftKind
@@ -48,11 +48,11 @@ final class J2Shifter extends Component {
   import J2ShiftOp._
 
   val io = new Bundle {
-    val op = in(J2ShiftOp())
-    val value = in UInt (32 bits)
-    val tIn = in Bool ()
+    val op     = in(J2ShiftOp())
+    val value  = in UInt (32 bits)
+    val tIn    = in Bool ()
     val result = out UInt (32 bits)
-    val t = out Bool ()
+    val t      = out Bool ()
   }
 
   io.result := Mux(
@@ -64,7 +64,7 @@ final class J2Shifter extends Component {
   switch(io.op) {
     is(SHLL) {
       io.result := (io.value(30 downto 0) ## B"0").asUInt
-      io.t := io.value(31)
+      io.t      := io.value(31)
     }
     is(SHLL2) {
       io.result := (io.value(29 downto 0) ## B"00").asUInt
@@ -77,7 +77,7 @@ final class J2Shifter extends Component {
     }
     is(SHLR) {
       io.result := (B"0" ## io.value(31 downto 1)).asUInt
-      io.t := io.value(0)
+      io.t      := io.value(0)
     }
     is(SHLR2) {
       io.result := (B"00" ## io.value(31 downto 2)).asUInt
@@ -90,23 +90,23 @@ final class J2Shifter extends Component {
     }
     is(SHAL) {
       io.result := (io.value(30 downto 0) ## B"0").asUInt
-      io.t := io.value(31)
+      io.t      := io.value(31)
     }
     is(SHAR) {
       io.result := (io.value(31) ## io.value(31 downto 1)).asUInt
-      io.t := io.value(0)
+      io.t      := io.value(0)
     }
     is(ROTL) {
       io.result := (io.value(30 downto 0) ## io.value(31)).asUInt
-      io.t := io.value(31)
+      io.t      := io.value(31)
     }
     is(ROTR) {
       io.result := (io.value(0) ## io.value(31 downto 1)).asUInt
-      io.t := io.value(0)
+      io.t      := io.value(0)
     }
     is(ROTCL) {
       io.result := (io.value(30 downto 0) ## io.tIn).asUInt
-      io.t := io.value(31)
+      io.t      := io.value(31)
     }
   }
 }
@@ -117,8 +117,8 @@ object J2ShiftModel {
   private def u32(v: BigInt): BigInt = v & 0xffffffffL
 
   def eval(op: ShiftKind, value: BigInt, tIn: Boolean): Result = {
-    val v = u32(value)
-    def left(amount: Int): Result = Result(u32(v << amount), tIn)
+    val v                                 = u32(value)
+    def left(amount: Int): Result         = Result(u32(v << amount), tIn)
     def logicalRight(amount: Int): Result = Result(u32(v >> amount), tIn)
     op match {
       case SHLL | SHAL => Result(u32(v << 1), v.testBit(31))

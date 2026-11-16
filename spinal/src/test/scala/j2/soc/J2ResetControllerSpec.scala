@@ -7,9 +7,9 @@ class J2ResetControllerSpec extends munit.FunSuite {
   test("cold boot, PLL lock loss and button reset release only on system clock edges") {
     SimConfig.withVerilator.compile(new J2ResetController(powerOnBits = 3)).doSim { dut =>
       dut.io.referenceClock #= false
-      dut.io.systemClock #= false
-      dut.io.resetN #= true // Never assert the button during power-up.
-      dut.io.clockLocked #= true
+      dut.io.systemClock    #= false
+      dut.io.resetN         #= true // Never assert the button during power-up.
+      dut.io.clockLocked    #= true
       sleep(2)
 
       def systemTick(): Unit = {

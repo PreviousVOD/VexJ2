@@ -8,7 +8,7 @@ import spinal.lib.io.TriStateArray
 
 final class J2Pio extends Component {
   val io = new Bundle {
-    val bus = slave(J2Wishbone())
+    val bus  = slave(J2Wishbone())
     val gpio = master(TriStateArray(32))
   }
   private val controller = new WishboneGpio(J2Wishbone.config, 32)
@@ -17,19 +17,19 @@ final class J2Pio extends Component {
 }
 
 final class Eg4GpioPad extends BlackBox {
-  val ipad = in Bool ()
-  val opad = out Bool ()
-  val bpad = inout(Analog(Bool()))
-  val rst = in Bool ()
-  val ce = in Bool ()
-  val isclk = in Bool ()
-  val ipclk = in Bool ()
-  val osclk = in Bool ()
-  val opclk = in Bool ()
-  val ts = in Bool ()
+  val ipad   = in Bool ()
+  val opad   = out Bool ()
+  val bpad   = inout(Analog(Bool()))
+  val rst    = in Bool ()
+  val ce     = in Bool ()
+  val isclk  = in Bool ()
+  val ipclk  = in Bool ()
+  val osclk  = in Bool ()
+  val opclk  = in Bool ()
+  val ts     = in Bool ()
   val doData = in Bits (4 bits)
   doData.setName("do")
-  val di = out Bool ()
+  val di  = out Bool ()
   val diq = out Bits (4 bits)
   setDefinitionName("EG_PHY_PAD")
   addGeneric("MODE", "BI")

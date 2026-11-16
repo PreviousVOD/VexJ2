@@ -7,8 +7,8 @@ SPINAL_GENERATED := $(MICRO_VERILOG)
 MICRO_BUILD := $(ROOT)/build/spinal/verif/microcoded
 TESTROM := $(ROOT)/build/sw/testrom/main.bin
 SIMTESTS := $(ROOT)/build/sw/simtests/rte.bin $(ROOT)/build/sw/simtests/interrupts.bin
-SCALA_SRC := $(wildcard $(SPINAL_DIR)/src/main/scala/j2/*.scala) \
-	$(wildcard $(SPINAL_DIR)/src/main/scala/j2/*/*.scala)
+SCALA_SRC := $(shell find $(SPINAL_DIR)/src/main/scala -name '*.scala' -type f)
+SPINAL_RESOURCES := $(shell find $(SPINAL_DIR)/src/main/resources -type f)
 SPINAL_BUILD := $(SPINAL_DIR)/build.sbt $(SPINAL_DIR)/project/build.properties \
 	$(SPINAL_DIR)/project/plugins.sbt
 HARNESS_HEADERS := $(REF_COMMON)/sysmodel.h $(REF_COMMON)/wbslave.h
@@ -29,7 +29,7 @@ microcode-test: $(MICRO_BUILD)/VJ2MicrocodedCore $(TESTROM) $(SIMTESTS)
 
 generate: $(SPINAL_GENERATED)
 
-$(SPINAL_GENERATED) &: $(SCALA_SRC) $(SPINAL_BUILD) $(TESTROM)
+$(SPINAL_GENERATED) &: $(SCALA_SRC) $(SPINAL_RESOURCES) $(SPINAL_BUILD) $(TESTROM)
 	J2_ROM="$(TESTROM)" $(MAKE) -C $(ROOT) spinal-generate
 
 $(MICRO_BUILD)/VJ2MicrocodedCore: cpp/sh2sim.cpp $(MICRO_VERILOG) $(HARNESS_HEADERS)

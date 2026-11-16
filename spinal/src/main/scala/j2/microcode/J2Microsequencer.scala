@@ -4,69 +4,69 @@ import j2.core.J2IdControl
 import spinal.core._
 
 final class J2Operation extends Bundle {
-  val system = Bool()
-  val code = UInt(16 bits)
+  val system  = Bool()
+  val code    = UInt(16 bits)
   val address = UInt(8 bits)
 }
 
 final class J2Microsequencer extends Component {
   val io = new Bundle {
-    val slot = in Bool ()
-    val dispatch = in Bool ()
-    val delayJump = in Bool ()
-    val eventAcknowledge = in Bool ()
-    val instruction = in UInt (16 bits)
-    val predecodeAddress = in UInt (8 bits)
-    val illegalInstruction = in Bool ()
-    val illegalDelaySlot = in Bool ()
-    val instructionStall = in Bool ()
-    val registerConflict = in Bool ()
-    val macStall = in Bool ()
-    val interruptBits = in UInt (4 bits)
+    val slot                  = in Bool ()
+    val dispatch              = in Bool ()
+    val delayJump             = in Bool ()
+    val eventAcknowledge      = in Bool ()
+    val instruction           = in UInt (16 bits)
+    val predecodeAddress      = in UInt (8 bits)
+    val illegalInstruction    = in Bool ()
+    val illegalDelaySlot      = in Bool ()
+    val instructionStall      = in Bool ()
+    val registerConflict      = in Bool ()
+    val macStall              = in Bool ()
+    val interruptBits         = in UInt (4 bits)
     val interruptLevelCapture = in Bool ()
-    val maskInterruptNext = in Bool ()
-    val enterDebug = in Bool ()
-    val debug = in Bool ()
-    val eventValid = in Bool ()
-    val eventCommand = in UInt (2 bits)
-    val eventVector = in UInt (8 bits)
-    val eventLevel = in UInt (4 bits)
-    val eventBypassMask = in Bool ()
-    val id = in(new J2IdControl)
+    val maskInterruptNext     = in Bool ()
+    val enterDebug            = in Bool ()
+    val debug                 = in Bool ()
+    val eventValid            = in Bool ()
+    val eventCommand          = in UInt (2 bits)
+    val eventVector           = in UInt (8 bits)
+    val eventLevel            = in UInt (4 bits)
+    val eventBypassMask       = in Bool ()
+    val id                    = in(new J2IdControl)
 
-    val operation = out(new J2Operation)
-    val eventAck = out Bool ()
-    val instructionIssue = out Bool ()
+    val operation          = out(new J2Operation)
+    val eventAck           = out Bool ()
+    val instructionIssue   = out Bool ()
     val instructionAddress = out Bool ()
-    val interruptLevel = out UInt (4 bits)
-    val incrementPc = out Bool ()
-    val nextIdStall = out Bool ()
-    val maskInterrupt = out Bool ()
-    val delaySlot = out Bool ()
-    val startInstruction = out Bool ()
+    val interruptLevel     = out UInt (4 bits)
+    val incrementPc        = out Bool ()
+    val nextIdStall        = out Bool ()
+    val maskInterrupt      = out Bool ()
+    val delaySlot          = out Bool ()
+    val startInstruction   = out Bool ()
   }
 
-  private val maskInterruptReg = RegInit(False)
-  private val delaySlotReg = RegInit(False)
-  private val idStall = RegInit(False)
+  private val maskInterruptReg        = RegInit(False)
+  private val delaySlotReg            = RegInit(False)
+  private val idStall                 = RegInit(False)
   private val instructionSequenceZero = RegInit(False)
-  private val interruptLevelReg = RegInit(U(0, 4 bits))
-  private val operationReg = Reg(new J2Operation)
+  private val interruptLevelReg       = RegInit(U(0, 4 bits))
+  private val operationReg            = Reg(new J2Operation)
   operationReg.system init True
   operationReg.code init 0x0300
   operationReg.address init 0xda
 
   private val normalOperation = new J2Operation
-  normalOperation.system := False
-  normalOperation.code := io.instruction
+  normalOperation.system  := False
+  normalOperation.code    := io.instruction
   normalOperation.address := io.predecodeAddress
 
   private val nextOperation = new J2Operation
   nextOperation := normalOperation
 
   private def setSystemOperation(code: UInt, address: UInt): Unit = {
-    nextOperation.system := True
-    nextOperation.code := code.resize(16)
+    nextOperation.system  := True
+    nextOperation.code    := code.resize(16)
     nextOperation.address := address
   }
 
@@ -99,12 +99,12 @@ final class J2Microsequencer extends Component {
     setSystemOperation(0x0200, 0xf2)
   }
 
-  io.nextIdStall := io.registerConflict || io.instructionStall || io.macStall
-  io.incrementPc := io.id.incrementPc && !io.nextIdStall
-  io.instructionIssue := io.id.instructionIssue && !io.registerConflict && !io.macStall
+  io.nextIdStall        := io.registerConflict || io.instructionStall || io.macStall
+  io.incrementPc        := io.id.incrementPc && !io.nextIdStall
+  io.instructionIssue   := io.id.instructionIssue && !io.registerConflict && !io.macStall
   io.instructionAddress := io.id.instructionAddress
-  io.maskInterrupt := maskInterruptReg
-  io.delaySlot := delaySlotReg
+  io.maskInterrupt      := maskInterruptReg
+  io.delaySlot          := delaySlotReg
   io.startInstruction := !idStall && instructionSequenceZero && !io.nextIdStall && !nextOperation.system
   io.interruptLevel := interruptLevelReg
   io.eventAck := io.slot &&
@@ -128,9 +128,9 @@ final class J2Microsequencer extends Component {
       interruptLevelReg := io.eventLevel
     }
     operationReg := advancedOperation
-    idStall := io.nextIdStall
+    idStall      := io.nextIdStall
     when(!io.nextIdStall) {
-      delaySlotReg := io.delayJump
+      delaySlotReg            := io.delayJump
       instructionSequenceZero := io.dispatch
     }
   }
@@ -142,13 +142,13 @@ final class J2Microsequencer extends Component {
   }
 
   when(ClockDomain.current.isResetActive) {
-    maskInterruptReg := False
-    delaySlotReg := False
-    idStall := False
+    maskInterruptReg        := False
+    delaySlotReg            := False
+    idStall                 := False
     instructionSequenceZero := False
-    interruptLevelReg := 0
-    operationReg.system := True
-    operationReg.code := 0x0300
-    operationReg.address := 0xda
+    interruptLevelReg       := 0
+    operationReg.system     := True
+    operationReg.code       := 0x0300
+    operationReg.address    := 0xda
   }
 }

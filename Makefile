@@ -16,6 +16,9 @@ BOOTROM := $(CURDIR)/build/sw/xiprom/main.bin
 XIP_ROM := $(CURDIR)/build/verilog/xip/j2_validation_rom.hex
 XIPAPP := $(CURDIR)/build/sw/xipapp/main.bin
 XIP_IMAGE := $(CURDIR)/build/sw/xipapp/flash.bin
+COREMARK_ITERATIONS ?= 1
+COREMARK_LABEL ?= refactored
+COREMARK_RESULTS ?= build/coremark/$(COREMARK_LABEL)
 SIMTESTS := $(CURDIR)/build/sw/simtests/rte.bin $(CURDIR)/build/sw/simtests/interrupts.bin
 REFSRC := reference/soc_top/components/cpu/cpu2j0_pkg.vhd
 REF_BUILD := $(CURDIR)/build/ref_microcode
@@ -38,6 +41,25 @@ export PATH := $(TOOLS_PREFIX)/bin:$(TOOLS_PREFIX)/sh-none-elf/bin:$(PATH)
 	xip-hw-sim xip-upload fpga-clock-test
 
 all: spinal-test spinal-generate
+
+.PHONY: coremark-build coremark-sim coremark-fpga-build coremark-hw coremark-compare
+coremark-build: $(TOOL_SH_GCC)
+	$(MAKE) -C sw/coremark ITERATIONS=$(COREMARK_ITERATIONS) RUN=performance
+	$(MAKE) -C sw/coremark ITERATIONS=$(COREMARK_ITERATIONS) RUN=validation
+
+coremark-sim: coremark-build $(BOOTROM) $(XIP_IMAGE) $(TOOL_VERILATOR)
+	$(MAKE) -C verilog xip-sim-build
+	python3 tools/coremark.py sim --iterations $(COREMARK_ITERATIONS) --output $(COREMARK_RESULTS)/simulation
+
+coremark-fpga-build: coremark-build verilog-fpga
+	$(MAKE) fpga-clock-test
+
+coremark-hw: COREMARK_ITERATIONS = 10
+coremark-hw: coremark-build
+	python3 tools/coremark.py hardware --iterations $(COREMARK_ITERATIONS) --output $(COREMARK_RESULTS)/hardware
+
+coremark-compare:
+	python3 tools/coremark.py compare $(COREMARK_BASELINE) $(COREMARK_CANDIDATE)
 
 toolchain: toolchain-sbt toolchain-verilator toolchain-sh
 toolchain-sbt: $(TOOL_SBT)

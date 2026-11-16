@@ -15,8 +15,8 @@ decoded as legal instructions. There are no excluded instructions.
 | Area | Status |
 |---|---|
 | SH-2 and J2 decode | 54,521 legal encodings, zero exclusions |
-| Scala CPU, ISA and integration tests | 30 tests passing |
-| Full original CPU test ROM | Passing, 5,779 retired instructions |
+| Scala CPU, ISA and integration tests | 34 tests passing |
+| Full original CPU test ROM | Passing, 5,768 retired instructions |
 | VHDL simulator cross-reference | Full original ROM and RTE passing |
 | Native UART, SPI/XIP, and SDRAM | Passing simulations and hardware UART-loader tests |
 | 32-bit bidirectional GPIO | Native `WishboneGpio` plus 32 EG4 pads |
@@ -24,7 +24,7 @@ decoded as legal instructions. There are no excluded instructions.
 | Tang Primer hardware | Boot banner, `Flash ID: ef4014`, SDRAM, timer and XIP tests pass |
 
 The FPGA-only boot failure is fixed: the PLL now uses VCO feedback for its
-30 MHz divider calculation, power-on reset waits for PLL lock, and SPI uses
+32 MHz divider calculation with a 384 MHz VCO, power-on reset waits for PLL lock, and SPI uses
 the registered physical interface expected by its controller. The timing gate
 checks every clock domain. The current SpinalHDL SoC has been programmed over
 JTAG and the native application uploaded to the dedicated Winbond flash;
@@ -33,6 +33,11 @@ hardware prints `SDRAM tests passed`, `Timer tests passed`, and
 directly from flash pass.
 
 ## Architecture
+
+The CPU is composed from native SpinalHDL FiberPlugins with typed services and
+a generic, collectively stalled microstep pipeline. `J2CoreConfig` selects ROM
+and debug options while preserving the existing CPU IO. See
+[CPU ownership, timing contracts, and extension guide](docs/cpu-architecture.md).
 
 ```text
                               +-------------------+
@@ -69,7 +74,7 @@ directly from flash pass.
                          D-bus memory select -+
 ```
 
-Each memory has its own native `WishboneArbiter`: data master 0, instruction
+Each memory has its own cycle-locking `J2WishboneArbiter`: data master 0, instruction
 master 1. The instruction side has no peripheral path. GPIO and UART are
 peripheral-only. Unmapped instruction, memory, or peripheral accesses return a
 Wishbone error.
@@ -131,7 +136,8 @@ stops at the programmable limit. The interrupt is a level request on vector
 
 ## Project layout
 
-- `spinal/src/main/scala/j2/core/`: CPU, datapath, pipeline, register file, MAC.
+- `spinal/src/main/scala/j2/core/`: CPU composition, service types, reusable datapath/pipeline units.
+- `spinal/src/main/scala/j2/{fetch,decode,execute,regfile,schedule,misc}/`: subsystem plugins.
 - `spinal/src/main/scala/j2/isa/`: ISA definitions and microcode predecoder.
 - `spinal/src/main/scala/j2/microcode/`: ROM data, control decoding, sequencing.
 - `spinal/src/main/scala/j2/bus/`: byte-addressed CPU Wishbone and native adapters.
@@ -174,7 +180,7 @@ or put `td` on `PATH`; no vendor installation path is stored in the project.
 ## Verification
 
 ```sh
-make spinal-test            # 30 CPU, ISA, reset, SPI and timer tests
+make spinal-test            # 34 CPU, plugin, ISA, reset, SPI and timer tests
 make spinal-generate        # CPU and SoC Verilog under build/spinal/verilog
 make spinal-microcode-verif # full ROM, RTE, and interrupt regressions
 make verilog-hw-sim         # native SoC and full legacy CPU test ROM
@@ -191,6 +197,72 @@ reset-button pulse.
 A timeout without expected UART output fails. Integration pitfalls and their
 fixes are recorded in `docs/microcoded-core-debug.md`.
 
+## CoreMark baseline
+
+CoreMark's unmodified algorithms are vendored from EEMBC revision
+`1f483d5b8316753a742cbf5590caf5bd0a4e4777`; `third_party/coremark/UPSTREAM.json`
+pins their SHA-256 hashes. The J2 port uses SH-2 big-endian GCC with `-O2`, no
+LTO, one context, volatile seeds, and a 2,000-byte static buffer. Code and
+read-only data execute from SPI XIP flash; writable data and an 8 KiB stack use
+internal SRAM. Startup copies initialized data from flash and clears BSS.
+The upstream legacy `coremark.md5` contains a stale digest for `coremark.h`;
+the build checks the pinned SHA-256 hashes of all vendored files instead.
+
+The architecture timer measures the benchmark at 1 MHz with interrupts disabled.
+Its limit is set to `0xffffffff`; zero or saturated readings fail validation.
+UART reporting is outside the timed region. Scores describe this XIP memory
+configuration, including flash access latency.
+
+```sh
+. tools/env.sh
+export J2_CLOCK_HZ=32000000
+make coremark-build             # both standard seed sets; one iteration
+make coremark-sim               # full SoC/XIP simulation; both seed sets
+export TD_HOME=/path/to/TD_4.6.7_Linux
+make coremark-fpga-build        # timer-enabled FPGA, timing and PLL checks
+make coremark-hw                # ttyACM0 at 19200 baud; ten iterations per seed set
+```
+
+`coremark-hw` reloads FPGA SRAM and replaces the dedicated application flash
+image through the UART loader for each seed set. It leaves the validation
+workload installed. Configuration flash is untouched. Set `COREMARK_ITERATIONS`
+to override the count; hardware measurements must last at least ten seconds.
+One-iteration simulations are CRC regressions and are marked as short runs,
+following [CoreMark's run rules](https://github.com/eembc/coremark#run-rules).
+
+New results default to `build/coremark/refactored/{simulation,hardware}/`, with
+logs, firmware binaries, compiler settings, CRCs, elapsed microsecond ticks,
+precise host-calculated iterations/second and CoreMark/MHz, RTL, and hardware
+bitstream/timing reports. Both performance and validation seed sets must pass.
+The integer-only firmware report truncates rates below one iteration/second;
+use the JSON rate computed from the raw timer ticks for comparisons.
+Completion markers alone do not establish a pass: the runner checks expected
+CRCs, timer readings, iteration counts, and upstream error output.
+
+The original results are preserved under `build/coremark/baseline/` and in
+`build/coremark/baseline-2cfc302.tar.gz`. Set `COREMARK_LABEL` to choose a separate
+destination for another candidate, using the same iteration counts. Compare
+matching result files with:
+
+```sh
+make coremark-compare \
+  COREMARK_BASELINE=build/coremark/baseline/hardware/results.json \
+  COREMARK_CANDIDATE=build/coremark/refactored/hardware/results.json
+python3 -m unittest discover -s tools -p test_coremark.py -v
+```
+
+Comparison rejects mismatched firmware hashes, compiler settings, seed sets,
+iteration counts, clock frequencies, and execution environments. Reuse the
+saved firmware binaries when testing CPU changes.
+
+The pre-refactor CPU at `2cfc302` passed both one-iteration simulations and
+ten-iteration FPGA runs at 32 MHz. The hardware performance-seed run measured
+40,252,267 microsecond ticks: **0.248433 iterations/second**, or
+**0.00776354 CoreMark/MHz**, executing from XIP flash. The validation-seed run
+measured 40,312,476 ticks. Both passed the upstream CRC checks and minimum
+duration requirement. The timer-enabled FPGA passed timing with 0.384 ns setup
+and 0.104 ns hold slack. Logs and binaries are under `build/coremark/baseline/`.
+
 ## FPGA
 
 The default SoC frequency is 32 MHz using internal VCO feedback,
@@ -206,11 +278,19 @@ Rebuild clock-dependent firmware when changing the frequency. UART divisors
 and simulation baud timing derive from `J2_CLOCK_HZ`; the FPGA SDC is generated
 with the same value. `spinal-fpga` remains a compatibility alias.
 
-The validated 32 MHz build reports 10,364 LUTs, 2,295 registers, nine DSPs, 37
+The pre-refactor 32 MHz baseline reports 10,364 LUTs, 2,295 registers, nine DSPs, 37
 9K BRAMs, and 10 32K BRAMs. Timing passes in both clock domains with 0.384 ns
 minimum setup slack and 0.104 ns minimum hold slack. The 48 MHz configuration
 was also tried but failed timing; higher frequencies must be validated rather
 than assumed.
+
+The refactored CPU and corrected cycle-locking arbiters pass at 32 MHz with
+**10,000 LUTs**, **2,303 registers**, **2.327 ns setup slack**, and **0.148 ns
+hold slack**. DSP and BRAM counts are unchanged. Both CoreMark seed sets pass
+with the saved baseline binaries: performance differs by one microsecond over
+40 seconds, and validation timing matches exactly. SDRAM, timer interrupts, and
+XIP pass on hardware after upload and a fresh JTAG reload. Full details and
+contracts are in [the CPU architecture guide](docs/cpu-architecture.md).
 
 Program volatile FPGA configuration and listen at 19,200 baud:
 

@@ -9,10 +9,10 @@ final class J2ResetController(powerOnBits: Int = 8, releaseCycles: Int = 3) exte
   require(powerOnBits > 0 && releaseCycles >= 2)
   val io = new Bundle {
     val referenceClock = in Bool ()
-    val systemClock = in Bool ()
-    val resetN = in Bool ()
-    val clockLocked = in Bool ()
-    val reset = out Bool ()
+    val systemClock    = in Bool ()
+    val resetN         = in Bool ()
+    val clockLocked    = in Bool ()
+    val reset          = out Bool ()
   }
 
   // BOOT emits an FPGA configuration initial value. RegInit in an ASYNC
@@ -23,7 +23,7 @@ final class J2ResetController(powerOnBits: Int = 8, releaseCycles: Int = 3) exte
       config = ClockDomainConfig(resetKind = BOOT)
     )
   ) {
-    val count = Reg(UInt(powerOnBits bits)) init 0
+    val count  = Reg(UInt(powerOnBits bits)) init 0
     when(!count.andR)(count := count + 1)
     val active = !count.andR
   }
