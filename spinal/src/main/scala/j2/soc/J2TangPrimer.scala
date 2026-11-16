@@ -15,17 +15,15 @@ final class J2TangPrimer(
   )
   setDefinitionName("j2_tang_primer")
   val io = new Bundle {
-    val clk24    = in Bool ()
-    val rstN     = in Bool ()
-    val uartRx   = in Bool ()
-    val uartTx   = out Bool ()
-    val gpio     = inout(Analog(Bits(32 bits)))
-    val spiClk   = out Bool ()
-    val spiCs    = out Bool ()
-    val spiMosi  = out Bool ()
-    val spiMiso  = in Bool ()
-    val spiWpN   = out Bool ()
-    val spiHoldN = out Bool ()
+    val clk24         = in Bool ()
+    val rstN          = in Bool ()
+    val uartRx        = in Bool ()
+    val uartTx        = out Bool ()
+    val gpio          = inout(Analog(Bits(32 bits)))
+    val spiClk        = out Bool ()
+    val spiCs         = out Bool ()
+    val spiData       = inout(Analog(Bits(4 bits)))
+    val spiDataEnable = if (!useEg4Rom) out Bits (4 bits) else null
   }
   io.clk24.setName("clk24")
   io.rstN.setName("rst_n")
@@ -34,10 +32,8 @@ final class J2TangPrimer(
   io.gpio.setName("gpio")
   io.spiClk.setName("spi_clk")
   io.spiCs.setName("spi_cs")
-  io.spiMosi.setName("spi_mosi")
-  io.spiMiso.setName("spi_miso")
-  io.spiWpN.setName("spi_wp_n")
-  io.spiHoldN.setName("spi_hold_n")
+  io.spiData.setName("spi_data")
+  if (!useEg4Rom) io.spiDataEnable.setName("spi_data_enable")
   private val clockLocked = Bool()
   private val socClock = if (useEg4Rom && usePll) {
     val vcoHz = if (clockHz == 32000000) 384000000 else 360000000
@@ -95,10 +91,22 @@ final class J2TangPrimer(
     pad.bpad <> io.gpio(bit)
     soc.io.gpio.read(bit) := pad.di
   }
-  io.spiClk      := soc.io.spiClk
-  io.spiCs       := soc.io.spiCs
-  io.spiMosi     := soc.io.spiMosi
-  soc.io.spiMiso := io.spiMiso
-  io.spiWpN      := soc.io.spiWpN
-  io.spiHoldN    := soc.io.spiHoldN
+  io.spiClk                        := soc.io.spiClk
+  io.spiCs                         := soc.io.spiCs
+  if (!useEg4Rom) io.spiDataEnable := soc.io.spiData.writeEnable
+  private val spiPads = Seq.fill(4)(new Eg4GpioPad)
+  for (bit <- 0 until 4) {
+    val pad = spiPads(bit)
+    pad.ipad   := False
+    pad.rst    := False
+    pad.ce     := True
+    pad.isclk  := False
+    pad.ipclk  := False
+    pad.osclk  := False
+    pad.opclk  := False
+    pad.ts     := !soc.io.spiData.writeEnable(bit)
+    pad.doData := soc.io.spiData.write(bit).asBits.resize(4)
+    pad.bpad <> io.spiData(bit)
+    soc.io.spiData.read(bit) := pad.di
+  }
 }

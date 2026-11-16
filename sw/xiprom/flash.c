@@ -13,6 +13,8 @@ static void spi_init(void) {
   FLASH_REG(10) = 1;
   FLASH_REG(11) = 1;
   FLASH_REG(12) = 0;
+  FLASH_REG(17) = 0x02ff01eb;
+  FLASH_REG(18) = 0x01010100;
 }
 
 static void flash_end(void) {
@@ -54,6 +56,14 @@ void flash_reset(void) {
   for (index = 0; index < 16; ++index)
     flash_transfer(0xff);
   flash_end();
+
+  flash_write_enable();
+  flash_begin();
+  flash_transfer(0x01);
+  flash_transfer(0x00);
+  flash_transfer(0x02);
+  flash_end();
+  flash_wait();
 }
 
 uint32_t flash_read_id(void) {

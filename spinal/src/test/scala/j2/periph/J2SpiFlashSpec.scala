@@ -16,7 +16,7 @@ class J2SpiFlashSpec extends munit.FunSuite {
         bus.SEL      #= 15
         bus.LOCK     #= false
       }
-      dut.io.spi.miso          #= true
+      dut.io.spi.data.read     #= 0xf
       dut.clockDomain.clockSim #= false
       var previousClock = false
       var bits          = 0
@@ -24,19 +24,21 @@ class J2SpiFlashSpec extends munit.FunSuite {
       val commands      = ArrayBuffer.empty[Int]
       def flashPins(): Unit = {
         val clk = dut.io.spi.clk.toBoolean
+
         if (dut.io.spi.cs.toBoolean) {
           bits    = 0
           command = 0
-          dut.io.spi.miso #= true
+          dut.io.spi.data.read #= 0xf
         } else if (!previousClock && clk) {
-          command = ((command << 1) | (if (dut.io.spi.mosi.toBoolean) 1 else 0)) & 255
+          command = ((command << 1) | (if ((dut.io.spi.data.write.toInt & 1) != 0) 1 else 0)) & 255
           bits += 1
           if (bits % 8 == 0) commands += command
         } else if (previousClock && !clk && bits >= 8) {
           // Real mode-0 flash launches bit 23 just after the command's final
           // falling edge, before the first rising edge of the response byte.
           val index = bits - 8
-          dut.io.spi.miso #= (index < 24 && ((0xef4014 >> (23 - index)) & 1) != 0)
+          dut.io.spi.data.read #= (if (index < 24 && ((0xef4014 >> (23 - index)) & 1) != 0) 0xf
+                                   else 0xd)
         }
         previousClock = clk
       }

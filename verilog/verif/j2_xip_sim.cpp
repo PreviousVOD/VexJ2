@@ -33,17 +33,19 @@ int main(int argc, char **argv) {
   }
 
   Vj2_tang_primer top;
-  FLASHSIM flash(22);
+  FLASHSIM flash(22, false, 0, 4);
   if (!loader) flash.load(image_path);
   top.clk24 = 0;
   top.rst_n = cold_boot ? 1 : 0;
   top.uart_rx = 1;
-  top.spi_miso = 1;
+  top.spi_data = 0x0f;
   top.eval();
 
   auto update_flash = [&]() {
-    int mosi = top.spi_mosi;
-    top.spi_miso = (flash(top.spi_cs, !top.spi_clk, mosi) >> 1) & 1;
+    int input = top.spi_data;
+    int response = flash(top.spi_cs, !top.spi_clk, input);
+    int enable = top.spi_data_enable & 0x0f;
+    top.spi_data = (input & enable) | (response & ~enable & 0x0f);
   };
 
   for (int cycle = 0; cycle < 8; ++cycle) {
@@ -78,6 +80,7 @@ int main(int argc, char **argv) {
     top.clk24 = 1;
     top.eval();
     update_flash();
+
     bool tx = top.uart_tx;
     if (state < 0) {
       if (previous_tx && !tx) {

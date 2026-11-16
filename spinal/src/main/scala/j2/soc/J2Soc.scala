@@ -16,15 +16,12 @@ final class J2Soc(
     timerTickHz: Int = 1000000
 ) extends Component {
   val io = new Bundle {
-    val uartRx   = in Bool ()
-    val uartTx   = out Bool ()
-    val gpio     = master(TriStateArray(32))
-    val spiCs    = out Bool ()
-    val spiClk   = out Bool ()
-    val spiMosi  = out Bool ()
-    val spiMiso  = in Bool ()
-    val spiWpN   = out Bool ()
-    val spiHoldN = out Bool ()
+    val uartRx  = in Bool ()
+    val uartTx  = out Bool ()
+    val gpio    = master(TriStateArray(32))
+    val spiCs   = out Bool ()
+    val spiClk  = out Bool ()
+    val spiData = master(TriStateArray(4))
   }
   private val romMapping          = SizeMapping(0x00000000L, 0x00008000L)
   private val sramMapping         = SizeMapping(0x00008000L, 0x00008000L)
@@ -227,10 +224,7 @@ final class J2Soc(
   uart.io.uart.rxd := io.uartRx
   io.uartTx        := uart.io.uart.txd
   io.gpio <> pio.io.gpio
-  io.spiCs          := flash.io.spi.cs
-  io.spiClk         := flash.io.spi.clk
-  io.spiMosi        := flash.io.spi.mosi
-  flash.io.spi.miso := io.spiMiso
-  io.spiWpN         := True
-  io.spiHoldN       := True
+  io.spiCs  := flash.io.spi.cs
+  io.spiClk := flash.io.spi.clk
+  io.spiData <> flash.io.spi.data
 }

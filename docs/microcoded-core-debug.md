@@ -225,11 +225,14 @@ RX occupancy in status bits 29:24 instead of consuming data for readiness. The
 UART divider is derived from `J2_CLOCK_HZ`, not fixed for one board frequency.
 
 The SPI flash model and native PHY use opposite clock-edge conventions, so the
-simulation harness passes an inverted clock to `flashsim`. Native XIP emits one
-dummy byte even with `dummyCount = 0`; fast-read opcode `0x0b` is required,
-while opcode `0x03` discards the first payload byte. Assemble XIP response bytes
-in big-endian order and align each command to a 32-bit word. Exact-byte reads
-produce shifted windows and fail the application checksum.
+simulation harness passes an inverted clock to `flashsim`. Native XIP always
+emits at least one dummy byte; `dummyCount = 2` emits three, providing the 8-bit
+mode byte and four dummy clocks required by quad-I/O opcode `0xeb`. The simulator
+uses `NDUMMY = 4` to match the Winbond timing. The BootROM must also set the QE
+status bit before XIP; real hardware otherwise ignores quad transfers even when
+simulation succeeds. Assemble XIP response bytes in big-endian order and align
+each command to a 32-bit word. Exact-byte reads produce shifted windows and fail
+the application checksum.
 
 The raw `SpiXdrMasterCtrl.io.spi` interface must pass through `toSpi()` before
 connecting to physical pins. At `ioRate=1`, that adapter registers SCLK, CS,

@@ -38,7 +38,7 @@ set_pin_assignment {uart_rx}    { LOCATION = H13; IOSTANDARD = LVCMOS33; }
 set_pin_assignment {uart_tx}    { LOCATION = J13; IOSTANDARD = LVCMOS33; }
 set_pin_assignment {spi_clk}    { LOCATION = H4;  IOSTANDARD = LVCMOS33; }
 set_pin_assignment {spi_cs}     { LOCATION = D3;  IOSTANDARD = LVCMOS33; }
-set_pin_assignment {spi_mosi}   { LOCATION = B3;  IOSTANDARD = LVCMOS33; }
-set_pin_assignment {spi_miso}   { LOCATION = F4;  IOSTANDARD = LVCMOS33; }
-set_pin_assignment {spi_wp_n}   { LOCATION = F5;  IOSTANDARD = LVCMOS33; }
-set_pin_assignment {spi_hold_n} { LOCATION = B1;  IOSTANDARD = LVCMOS33; }
+set_pin_assignment {spi_data[0]} { LOCATION = B3; IOSTANDARD = LVCMOS33; }
+set_pin_assignment {spi_data[1]} { LOCATION = F4; IOSTANDARD = LVCMOS33; }
+set_pin_assignment {spi_data[2]} { LOCATION = F5; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }
+set_pin_assignment {spi_data[3]} { LOCATION = B1; IOSTANDARD = LVCMOS33; PULLTYPE = PULLUP; }

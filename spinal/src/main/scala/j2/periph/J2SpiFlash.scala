@@ -6,6 +6,7 @@ import spinal.lib._
 import spinal.lib.bus.amba3.apb.{Apb3, Apb3Config}
 import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib.com.spi.ddr.{Apb3SpiXdrMasterCtrl, SpiXdrMasterCtrl, SpiXdrParameter}
+import spinal.lib.io.TriStateArray
 
 final class J2WishboneToPipelinedMemory extends Component {
   val io = new Bundle {
@@ -58,8 +59,7 @@ final class J2SpiFlash extends Component {
     val spi = new Bundle {
       val cs   = out Bool ()
       val clk  = out Bool ()
-      val mosi = out Bool ()
-      val miso = in Bool ()
+      val data = master(TriStateArray(4))
     }
   }
   private val parameters = SpiXdrMasterCtrl.MemoryMappingParameters(
@@ -67,17 +67,21 @@ final class J2SpiFlash extends Component {
       .Parameters(
         dataWidth  = 8,
         timerWidth = 12,
-        spi        = SpiXdrParameter(dataWidth = 2, ioRate = 1, ssWidth = 1)
+        spi        = SpiXdrParameter(dataWidth = 4, ioRate = 1, ssWidth = 1)
       )
-      .addFullDuplex(id = 0),
+      .addFullDuplex(id = 0)
+      .addHalfDuplex(id = 1, rate = 1, ddr = false, spiWidth = 4),
     cmdFifoDepth   = 32,
     rspFifoDepth   = 32,
     sclkToggleInit = 1,
     xip            = SpiXdrMasterCtrl.XipBusParameters(addressWidth = 24, lengthWidth = 2),
     xipEnableInit  = true,
     xipInstructionEnableInit = true,
-    xipInstructionDataInit   = 0x0b,
-    xipDummyCountInit        = 0
+    xipInstructionDataInit   = 0xeb,
+    xipDummyCountInit        = 2,
+    xipAddressModInit        = 1,
+    xipDummyModInit          = 1,
+    xipPayloadModInit        = 1
   )
   private val controller = Apb3SpiXdrMasterCtrl(parameters)
   private val apbBridge  = new J2WishboneToApb(Apb3SpiXdrMasterCtrl.getApb3Config)
@@ -111,9 +115,12 @@ final class J2SpiFlash extends Component {
   // and one input-register cycle. Driving its raw PHY signals straight onto
   // pins samples the next bit on a real mode-0 flash (JEDEC ID shifts left).
   private val spiPins = controller.io.spi.toSpi()
-  io.spi.cs            := spiPins.ss(0)
-  io.spi.clk           := spiPins.sclk
-  io.spi.mosi          := spiPins.data.write(0)
-  spiPins.data.read(0) := False
-  spiPins.data.read(1) := io.spi.miso
+  io.spi.cs  := spiPins.ss(0)
+  io.spi.clk := spiPins.sclk
+  for (pin <- 0 until 4) {
+    io.spi.data.write(pin)       := spiPins.data.write(pin)
+    io.spi.data.writeEnable(pin) := spiPins.data.writeEnable(pin)
+    spiPins.data.read(pin)       := io.spi.data.read(pin)
+  }
+
 }

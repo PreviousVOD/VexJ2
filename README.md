@@ -92,10 +92,12 @@ Wishbone error.
 | SPI flash control | `0xff002000` |
 | Architecture timer | `0xff003000` |
 
-The SPI controller is native `Apb3SpiXdrMasterCtrl`. XIP uses fast-read opcode
-`0x0b`, which matches the controller's mandatory dummy byte. Responses are
-assembled in big-endian order and aligned to 32-bit words before the CPU selects
-a byte or halfword lane. ROM and SRAM use synchronous one-cycle reads. FPGA boot
+The SPI controller is native `Apb3SpiXdrMasterCtrl`. XIP uses quad-I/O fast-read
+opcode `0xeb`: a single-bit instruction, quad address, an 8-bit mode byte, four
+dummy clocks, and quad data. Responses are assembled in big-endian order and
+aligned to 32-bit words before the CPU selects a byte or halfword lane. The
+BootROM sets Winbond's QE status bit before enabling XIP. IO2/WP# and IO3/HOLD#
+use the flash chip's internal pull-ups outside quad transfers. ROM and SRAM use synchronous one-cycle reads. FPGA boot
 ROM uses `EG_LOGIC_BRAM` with a generated MIF; simulation uses a native `Mem`.
 Its `toSpi()` adapter registers the SPI output and input signals to match the
 controller's receive pipeline. The raw XDR interface must not drive pins directly.
@@ -285,12 +287,12 @@ was also tried but failed timing; higher frequencies must be validated rather
 than assumed.
 
 The refactored CPU and corrected cycle-locking arbiters pass at 32 MHz with
-**10,000 LUTs**, **2,303 registers**, **2.327 ns setup slack**, and **0.148 ns
-hold slack**. DSP and BRAM counts are unchanged. Both CoreMark seed sets pass
-with the saved baseline binaries: performance differs by one microsecond over
-40 seconds, and validation timing matches exactly. SDRAM, timer interrupts, and
-XIP pass on hardware after upload and a fresh JTAG reload. Full details and
-contracts are in [the CPU architecture guide](docs/cpu-architecture.md).
+**10,138 LUTs**, **2,328 registers**, **1.819 ns setup slack**, and **0.276 ns
+hold slack**, including quad-I/O XIP. DSP and BRAM counts are unchanged. Both
+CoreMark seed sets pass with the saved baseline binaries: performance differs by
+one microsecond over 40 seconds, and validation timing matches exactly. SDRAM,
+timer interrupts, and quad-XIP boot pass on hardware after upload and a fresh
+JTAG reload. Full details and contracts are in [the CPU architecture guide](docs/cpu-architecture.md).
 
 Program volatile FPGA configuration and listen at 19,200 baud:
 
@@ -319,7 +321,7 @@ The current hardware validation logs are `build/review/boot/upload.log` and
 `build/review/boot/fpga-uart.log`; implementation notes are in
 `docs/microcoded-core-debug.md`.
 
-The free Winbond 25Q80 uses CS=D3, CLK=H4, MOSI=B3, MISO=F4, IO2=F5, and
-IO3=B1. IO2/WP and IO3/HOLD are driven high. The configuration flash on
-CSO/CCLK is never targeted. Generated output and logs stay under ignored
+The free Winbond 25Q80 uses CS=D3, CLK=H4, IO0=B3, IO1=F4, IO2=F5, and
+IO3=B1. IO2/WP# and IO3/HOLD# use the flash chip's internal pull-ups outside
+quad transfers. The configuration flash on CSO/CCLK is never targeted. Generated output and logs stay under ignored
 `build/` directories; Verilog TD logs are under `build/logs/td_verilog`.
