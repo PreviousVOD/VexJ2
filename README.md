@@ -39,39 +39,39 @@ a generic, collectively stalled microstep pipeline. `J2CoreConfig` selects ROM
 and debug options while preserving the existing CPU IO. See
 [CPU ownership, timing contracts, and extension guide](docs/cpu-architecture.md).
 
-```text
-                              +-------------------+
- clk24 ---------------------->| EG4 PLL + BUFG    |--> 32 MHz SoC clock/reset
-                              +-------------------+
-                                        |
-                 +----------------------+----------------------+
-                 |             J2MicrocodedCore                 |
-                 |  I-bus                              D-bus   |
-                 +---+----------------+---------------------+--+
-                     |                |                     |
-                     |                |                     +----------------+
-                     |                |                                      |
-               WishboneDecoder        |                             WishboneDecoder
-                 (iMux)               |                                  (dMux)
-                     |                |                                      |
-        +------------+-----------+    |                         +------------+-----------+
-        |                        |    |                         |                        |
-   +----+----+            +------+----+-+--+             +------+------+          +------+------+
-   | ROM     |            | SRAM       |    |            | GPIO 32-bit|          | UART       |
-   | arbiter |            | arbiter    |    |            | 0xff000000 |          | 0xff001000 |
-   +----+----+            +------+-----+    |            +------+-----+          +------+-----+
-        |                        |          |                   |                       |
-   +----+----+            +------+-----+    |            +------+-----+                 |
-   | Flash   |            | SDRAM    |      |            | EG_PHY_PAD |                 |
-   | arbiter |            | arbiter  |      |            | x32        |                 |
-   +----+----+            +------+---+      |            +------------+                 |
-        |                        |          |
-   +----+----+            +------+-----+    |
-   | SPI XDR |            | BmbSdramCtrl|   |
-   | APB/XIP |            | EG4 SDRAM   |   |
-   +---------+            +-------------+   |
-                                              |
-                         D-bus memory select -+
+```mermaid
+flowchart LR
+  CLK[24 MHz input] --> PLL[EG4 PLL and BUFG]
+  PLL --> RESET[PLL-lock reset controller<br/>32 MHz SoC clock]
+  RESET --> CPU[J2MicrocodedCore]
+
+  CPU -->|I-bus| IMUX[iMux<br/>WishboneDecoder]
+  CPU -->|D-bus: memory| DMEM[Memory select<br/>and response mux]
+  CPU -->|D-bus: peripherals| DMUX[dMux<br/>WishboneDecoder]
+
+  IMUX -->|instruction master| RA[ROM arbiter]
+  IMUX -->|instruction master| SA[SRAM arbiter]
+  IMUX -->|instruction master| FA[Flash arbiter]
+  IMUX -->|instruction master| DA[SDRAM arbiter]
+  DMEM -->|data master| RA
+  DMEM -->|data master| SA
+  DMEM -->|data master| FA
+  DMEM -->|data master| DA
+
+  RA --> ROM[Internal ROM<br/>32 KiB]
+  SA --> SRAM[Internal SRAM<br/>32 KiB]
+  FA --> CACHE[J2ReadCache<br/>4 KiB, two-way, 32-byte lines]
+  CACHE -->|line refill| XIP[J2SpiFlash XIP<br/>Apb3SpiXdrMasterCtrl]
+  XIP --> FLASH[Winbond 25Q80<br/>quad-SPI flash]
+  DA --> SDRAM[BmbSdramCtrl<br/>8 MiB SiP SDRAM]
+
+  DMUX --> GPIO[32-bit GPIO<br/>0xff000000]
+  DMUX --> UART[UART<br/>0xff001000]
+  DMUX -->|flash control| CTRL[J2SpiFlash control<br/>0xff002000]
+  DMUX --> TIMER[Architecture timer<br/>0xff003000]
+  DMUX -->|cache control| CACHE
+  CTRL -->|APB| XIP
+  CTRL -. invalidate and refill hold .-> CACHE
 ```
 
 Each memory has its own cycle-locking `J2WishboneArbiter`: data master 0, instruction
