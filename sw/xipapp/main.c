@@ -3,9 +3,36 @@
 
 #define SDRAM_BASE 0x80000000
 #define SDRAM_EXEC_BASE 0x80700000
+#define XIP_CACHE_CONTROL (*(volatile uint32_t *)0xff004000)
 
 extern void sdram_test_function(void);
 extern int isa_test(void);
+
+static int cache_test(void) {
+  static const uint32_t words[16] __attribute__((aligned(32))) = {
+      0x10203040, 0x11213141, 0x12223242, 0x13233343,
+      0x14243444, 0x15253545, 0x16263646, 0x17273747,
+      0x18283848, 0x19293949, 0x1a2a3a4a, 0x1b2b3b4b,
+      0x1c2c3c4c, 0x1d2d3d4d, 0x1e2e3e4e, 0x1f2f3f4f};
+  unsigned pass, index;
+  for (pass = 0; pass < 4; ++pass) {
+    for (index = 0; index < 16; ++index) {
+      uint32_t expected = 0x10203040U + index * 0x01010101U;
+      const volatile uint32_t *word = words + index;
+      /* Execute this store from XIP, exercising a concurrent instruction read.
+       * The invalidate command self-clears; only the busy bit may read as one.
+       */
+      XIP_CACHE_CONTROL = 1;
+      if (XIP_CACHE_CONTROL & ~2U) return 0;
+      if (*word != expected) return 0;
+      if (*(const volatile uint8_t *)word != (expected >> 24)) return 0;
+      if (*((const volatile uint16_t *)word + 1) != (expected & 0xffff)) return 0;
+      XIP_CACHE_CONTROL = 0; /* Writing zero does not invalidate. */
+      if (*word != expected) return 0;
+    }
+  }
+  return 1;
+}
 
 static int sdram_test(void) {
   static const uint32_t offsets[] = {0, 4, 8, 12, 0x400, 0x1000, 0x2000, 0x4000};
@@ -93,6 +120,11 @@ static int timer_test(void) {
 void xip_main(void) {
   int timer_result;
   uart_init();
+  if (!cache_test()) {
+    uart_puts("XIP cache tests failed\n");
+    for (;;) {}
+  }
+  uart_puts("XIP cache tests passed\n");
   if (!sdram_test()) {
     uart_puts("SDRAM tests failed\n");
     for (;;) {

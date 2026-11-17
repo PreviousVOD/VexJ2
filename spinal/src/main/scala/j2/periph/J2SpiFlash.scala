@@ -1,34 +1,11 @@
 package j2.periph
 
-import j2.bus.J2Wishbone
+import j2.bus.{J2Wishbone, J2ReadBurst}
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.amba3.apb.{Apb3, Apb3Config}
-import spinal.lib.bus.simple.{PipelinedMemoryBus, PipelinedMemoryBusConfig}
 import spinal.lib.com.spi.ddr.{Apb3SpiXdrMasterCtrl, SpiXdrMasterCtrl, SpiXdrParameter}
 import spinal.lib.io.TriStateArray
-
-final class J2WishboneToPipelinedMemory extends Component {
-  val io = new Bundle {
-    val input  = slave(J2Wishbone())
-    val output = master(PipelinedMemoryBus(PipelinedMemoryBusConfig(24, 32)))
-  }
-  private val fired = RegInit(False)
-  io.output.cmd.valid   := io.input.CYC && io.input.STB && !fired
-  io.output.cmd.write   := False
-  io.output.cmd.address := (io.input.ADR(23 downto 2) ## U(0, 2 bits)).asUInt
-  io.output.cmd.data    := 0
-  io.output.cmd.mask    := B"1111"
-  when(io.output.cmd.fire) {
-    fired := True
-  }
-  io.input.ACK      := io.output.rsp.valid
-  io.input.DAT_MISO := io.output.rsp.data
-  io.input.ERR      := False
-  when(io.output.rsp.valid) {
-    fired := False
-  }
-}
 
 final class J2WishboneToApb(config: Apb3Config) extends Component {
   val io = new Bundle {
@@ -52,10 +29,13 @@ final class J2WishboneToApb(config: Apb3Config) extends Component {
   io.input.ERR      := False
 }
 
-final class J2SpiFlash extends Component {
+final class J2SpiFlash(lineBytes: Int = 32) extends Component {
+  require(isPow2(lineBytes) && lineBytes >= 8)
   val io = new Bundle {
-    val control = slave(J2Wishbone())
-    val xip     = slave(J2Wishbone())
+    val control              = slave(J2Wishbone())
+    val xip                  = slave(J2ReadBurst(log2Up(lineBytes / 4)))
+    val readBusy             = in Bool ()
+    val readHold, invalidate = out Bool ()
     val spi = new Bundle {
       val cs   = out Bool ()
       val clk  = out Bool ()
@@ -74,8 +54,8 @@ final class J2SpiFlash extends Component {
     cmdFifoDepth   = 32,
     rspFifoDepth   = 32,
     sclkToggleInit = 1,
-    xip            = SpiXdrMasterCtrl.XipBusParameters(addressWidth = 24, lengthWidth = 2),
-    xipEnableInit  = true,
+    xip = SpiXdrMasterCtrl.XipBusParameters(addressWidth = 24, lengthWidth = log2Up(lineBytes)),
+    xipEnableInit            = true,
     xipInstructionEnableInit = true,
     xipInstructionDataInit   = 0xeb,
     xipDummyCountInit        = 2,
@@ -85,37 +65,60 @@ final class J2SpiFlash extends Component {
   )
   private val controller = Apb3SpiXdrMasterCtrl(parameters)
   private val apbBridge  = new J2WishboneToApb(Apb3SpiXdrMasterCtrl.getApb3Config)
-  apbBridge.io.input <> io.control
-  apbBridge.io.output <> controller.io.apb
-
-  private val xipAdapter = new J2WishboneToPipelinedMemory
-  xipAdapter.io.input <> io.xip
-  private val pmb    = xipAdapter.io.output
-  private val xipBus = controller.io.xip
-  xipBus.cmd.valid   := pmb.cmd.valid && !pmb.cmd.write
-  xipBus.cmd.address := pmb.cmd.address
-  xipBus.cmd.length  := 3
-  pmb.cmd.ready      := xipBus.cmd.ready
-
-  private val responseBuffer  = Reg(Bits(24 bits)) init 0
-  private val responseCounter = Reg(UInt(2 bits)) init 0
-  pmb.rsp.valid    := False
-  pmb.rsp.data     := responseBuffer ## xipBus.rsp.fragment
-  xipBus.rsp.ready := True
-  when(xipBus.rsp.fire) {
-    responseCounter := responseCounter + 1
-    when(responseCounter =/= 3) {
-      responseBuffer := responseBuffer(15 downto 0) ## xipBus.rsp.fragment
-    } otherwise {
-      pmb.rsp.valid := True
+  // Keep byte ordering and SPI-specific command timing outside the generic cache.
+  controller.io.xip.cmd.valid   := io.xip.cmd.valid
+  controller.io.xip.cmd.address := io.xip.cmd.address(23 downto 0)
+  controller.io.xip.cmd.length  := (io.xip.cmd.length ## U(3, 2 bits)).asUInt
+  io.xip.cmd.ready              := controller.io.xip.cmd.ready
+  private val byteIndex                   = Reg(UInt(2 bits)) init 0
+  private val assembly                    = Reg(Bits(24 bits)) init 0
+  private val responseValid               = RegInit(False)
+  private val responseData                = Reg(Bits(32 bits)) init 0
+  private val responseLast, responseError = RegInit(False)
+  io.xip.rsp.valid            := responseValid
+  io.xip.rsp.fragment.data    := responseData
+  io.xip.rsp.fragment.error   := responseError
+  io.xip.rsp.last             := responseLast
+  controller.io.xip.rsp.ready := !responseValid || io.xip.rsp.ready
+  when(io.xip.rsp.fire)(responseValid := False)
+  when(controller.io.xip.rsp.fire) {
+    assembly  := assembly(15 downto 0) ## controller.io.xip.rsp.fragment
+    byteIndex := byteIndex + 1
+    when(byteIndex === 3 || controller.io.xip.rsp.last) {
+      responseValid := True
+      responseData  := assembly ## controller.io.xip.rsp.fragment
+      responseLast  := controller.io.xip.rsp.last
+      responseError := byteIndex =/= 3
     }
+    when(controller.io.xip.rsp.last)(byteIndex := 0)
   }
+
+  // Control accesses take priority over admission of new cache requests.
+  // Finish any existing refill, including the controller's trailing CS release,
+  // before changing SPI configuration or accessing its shared command/RX FIFOs.
+  private val draining       = RegInit(False)
+  private val controlAllowed = !io.readBusy && !draining
+  io.readHold                 := io.control.CYC && io.control.STB
+  apbBridge.io.input.CYC      := io.control.CYC && controlAllowed
+  apbBridge.io.input.STB      := io.control.STB && controlAllowed
+  apbBridge.io.input.WE       := io.control.WE
+  apbBridge.io.input.ADR      := io.control.ADR
+  apbBridge.io.input.DAT_MOSI := io.control.DAT_MOSI
+  apbBridge.io.input.SEL      := io.control.SEL
+  apbBridge.io.input.LOCK     := io.control.LOCK
+  io.control.ACK              := apbBridge.io.input.ACK
+  io.control.ERR              := apbBridge.io.input.ERR
+  io.control.DAT_MISO         := apbBridge.io.input.DAT_MISO
+  apbBridge.io.output <> controller.io.apb
+  io.invalidate := io.control.CYC && io.control.STB && io.control.WE && io.control.ACK
 
   // The XDR controller's receive pipeline assumes one output-register cycle
   // and one input-register cycle. Driving its raw PHY signals straight onto
   // pins samples the next bit on a real mode-0 flash (JEDEC ID shifts left).
   private val spiPins = controller.io.spi.toSpi()
-  io.spi.cs  := spiPins.ss(0)
+  when(!io.readBusy && spiPins.ss(0))(draining := False)
+  when(io.xip.cmd.fire)(draining               := True)
+  io.spi.cs := spiPins.ss(0)
   io.spi.clk := spiPins.sclk
   for (pin <- 0 until 4) {
     io.spi.data.write(pin)       := spiPins.data.write(pin)

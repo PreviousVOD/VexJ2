@@ -91,6 +91,7 @@ Wishbone error.
 | UART | `0xff001000` |
 | SPI flash control | `0xff002000` |
 | Architecture timer | `0xff003000` |
+| XIP cache control | `0xff004000` |
 
 The SPI controller is native `Apb3SpiXdrMasterCtrl`. XIP uses quad-I/O fast-read
 opcode `0xeb`: a single-bit instruction, quad address, an 8-bit mode byte, four
@@ -101,6 +102,16 @@ use the flash chip's internal pull-ups outside quad transfers. ROM and SRAM use 
 ROM uses `EG_LOGIC_BRAM` with a generated MIF; simulation uses a native `Mem`.
 Its `toSpi()` adapter registers the SPI output and input signals to match the
 controller's receive pipeline. The raw XDR interface must not drive pins directly.
+
+A shared 4 KiB, two-way XIP read cache uses 64 sets, 32-byte lines and exact LRU
+replacement. The reusable `J2ReadCache` module sits between the flash arbiter and
+the SPI controller, using a generic word-burst refill interface.
+`J2ReadCacheConfig` sets capacity, line size, base address and mapped range; the
+SoC derives its XIP mapping from the same configuration. Misses refill a complete line in one quad-SPI transaction; hits
+serve both instruction and data reads from synchronous RAM. Reset and accepted
+flash-control writes invalidate all lines. Control accesses wait for an active
+refill and CS release. Writing `1` to `0xff004000` explicitly invalidates both
+ways; reads return busy in bit 1 and zero in other bits. See the [cache architecture and validation](docs/cpu-architecture.md#two-way-xip-read-cache-2026-11-17).
 
 ## 32-bit GPIO
 
@@ -182,7 +193,7 @@ or put `td` on `PATH`; no vendor installation path is stored in the project.
 ## Verification
 
 ```sh
-make spinal-test            # 36 CPU, plugin, ISA, reset, SPI and timer tests
+make spinal-test            # 44 CPU, plugin, ISA, reset, SPI/cache and timer tests
 make spinal-generate        # CPU and SoC Verilog under build/spinal/verilog
 make spinal-microcode-verif # full ROM, RTE, and interrupt regressions
 make verilog-hw-sim         # native SoC and full legacy CPU test ROM
@@ -303,6 +314,20 @@ CoreMark seed sets pass with the saved baseline binaries: performance differs by
 one microsecond over 40 seconds, and validation timing matches exactly. SDRAM,
 timer interrupts, and quad-XIP boot pass on hardware after upload and a fresh
 JTAG reload. Full details and contracts are in [the CPU architecture guide](docs/cpu-architecture.md).
+
+The generic two-way XIP cache build passes at 32 MHz with 11,438 LUTs, 2,702
+registers, 51 9K BRAMs, and 10 32K BRAMs. Minimum setup/hold slack is
+2.978/0.201 ns. Both CoreMark seed sets run about 22.2 times faster than the
+uncached FPGA using identical ten-iteration binaries and matching CRCs; these
+short runs are regression measurements. Cache invalidation, ISA, SDRAM and
+timer tests pass after UART upload and an independent reboot. Because cached
+runs are shorter than CoreMark's ten-second reporting minimum, use the existing
+regression-only option when running them directly:
+
+```sh
+python3 tools/coremark.py hardware --iterations 10 \
+  --output build/coremark/cached/hardware --allow-short
+```
 
 Program volatile FPGA configuration and listen at 19,200 baud:
 

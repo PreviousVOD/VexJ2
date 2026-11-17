@@ -43,6 +43,7 @@ int main(int argc, char **argv) {
   uint64_t cyc = 0;
   bool done = false;
   for (; cyc < max_cycles && !done; cyc++) {
+    sys.timer_tick();
     t.clk = 1; t.eval();
     uint32_t idata = 0, ddata = 0;
     t.inst_ack = ibus.step(t.inst_en, [&] {

@@ -61,6 +61,35 @@ struct SysBus {
   //   000/001 INTERRUPT (000 maskable, else msk=1), 01x ERROR, 100 BREAK,
   //   other RESET_CPU.  info[11:8] = level, info[7:0] = vector.
   unsigned event_req = 7, event_info = 0;
+  uint32_t timer_enable = 0, timer_limit = 0, timer_value = 0, timer_irq = 0;
+  unsigned timer_prescaler = 0;
+
+  void timer_tick() {
+    if (!timer_enable || timer_value == timer_limit) return;
+    if (++timer_prescaler == 32) {
+      timer_prescaler = 0;
+      ++timer_value;
+    }
+  }
+
+  uint32_t timer_access(uint32_t a, bool wr, uint32_t d) {
+    switch (a & 0xf) {
+      case 0:
+        if (wr) timer_enable = d & 1;
+        return timer_enable;
+      case 4:
+        if (wr) { timer_limit = d; timer_value = 0; }
+        return timer_limit;
+      case 8:
+        if (wr) timer_value = 0;
+        return timer_value;
+      case 0xc:
+        if (wr) timer_irq = d & 1;
+        return timer_irq | (timer_value == timer_limit ? 0x100 : 0);
+      default:
+        return 0;
+    }
+  }
 
   static constexpr uint32_t PIO_BASE = 0xabcd0000, UART_BASE = 0xabcd0100;
   static constexpr uint32_t MAGIC_BASE = 0xbcde0000;
@@ -97,6 +126,22 @@ struct SysBus {
       }
       return 0x04;  // STATUS: TX FIFO empty, RX empty
     }
+    if ((a & 0xfffff000u) == 0xff001000u) {
+      switch (a & 0xf) {
+        case 0:
+          if (wr) {
+            char c = (char)(d & 0xff);
+            uart_out.push_back(c);
+            if (echo_uart) { fputc(c, stdout); fflush(stdout); }
+          }
+          return 0;
+        case 4:
+          return 0x00010000;  // TX FIFO has space, RX FIFO empty
+        default:
+          return 0;
+      }
+    }
+    if ((a & 0xfffff000u) == 0xff003000u) return timer_access(a, wr, d);
     if ((a & 0xffff0000u) == MAGIC_BASE) {
       if (wr && a == TEST_RESULT) {
         test_result = (int)d;

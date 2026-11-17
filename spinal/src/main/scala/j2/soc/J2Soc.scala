@@ -1,6 +1,6 @@
 package j2.soc
 
-import j2.bus.{J2Wishbone, J2WishboneArbiter}
+import j2.bus.{J2Wishbone, J2WishboneArbiter, J2ReadCache, J2ReadCacheConfig}
 import j2.core.{J2CoreConfig, J2MicrocodedCore}
 import j2.periph._
 import spinal.core._
@@ -23,22 +23,31 @@ final class J2Soc(
     val spiClk  = out Bool ()
     val spiData = master(TriStateArray(4))
   }
+  private val xipConfig = J2ReadCacheConfig(
+    cacheBytes  = 4096,
+    lineBytes   = 32,
+    baseAddress = 0x10000000L,
+    rangeBytes  = 0x00100000L
+  )
   private val romMapping          = SizeMapping(0x00000000L, 0x00008000L)
   private val sramMapping         = SizeMapping(0x00008000L, 0x00008000L)
-  private val flashMapping        = SizeMapping(0x10000000L, 0x00100000L)
+  private val flashMapping        = SizeMapping(xipConfig.baseAddress, xipConfig.rangeBytes)
   private val sdramMapping        = SizeMapping(0x80000000L, 0x00800000L)
   private val pioMapping          = SizeMapping(0xff000000L, 0x1000)
   private val uartMapping         = SizeMapping(0xff001000L, 0x1000)
   private val flashControlMapping = SizeMapping(0xff002000L, 0x1000)
   private val timerMapping        = SizeMapping(0xff003000L, 0x1000)
 
-  private val cpu   = new J2MicrocodedCore(J2CoreConfig(useEg4Rom, exposeDebug = false))
-  private val rom   = new J2Rom(useEg4Rom)
-  private val sram  = new J2Sram
-  private val flash = new J2SpiFlash
-  private val sdram = new J2Sdram
-  private val pio   = new J2Pio
-  private val timer = new J2Timer(clockHz, timerTickHz)
+  private val cacheControlMapping = SizeMapping(0xff004000L, 0x1000)
+
+  private val xipCache = new J2ReadCache(xipConfig)
+  private val cpu      = new J2MicrocodedCore(J2CoreConfig(useEg4Rom, exposeDebug = false))
+  private val rom      = new J2Rom(useEg4Rom)
+  private val sram     = new J2Sram
+  private val flash    = new J2SpiFlash(xipConfig.lineBytes)
+  private val sdram    = new J2Sdram
+  private val pio      = new J2Pio
+  private val timer    = new J2Timer(clockHz, timerTickHz)
   private val uart = new WishboneUartCtrl(
     UartCtrlMemoryMappedConfig(19200, txFifoDepth = 32, rxFifoDepth = 32)
   )
@@ -76,7 +85,17 @@ final class J2Soc(
   sdramArbiter.io.inputs(0) <> dSdram
   romArbiter.io.output <> rom.io.bus
   sramArbiter.io.output <> sram.io.bus
-  flashArbiter.io.output <> flash.io.xip
+  flashArbiter.io.output <> xipCache.io.bus
+  // Cache tags/refill commands use absolute addresses. Only the backend adapter
+  // translates the mapped window to flash offsets, so relocation is explicit.
+  flash.io.xip.cmd.valid       := xipCache.io.refill.cmd.valid
+  flash.io.xip.cmd.address     := xipCache.io.refill.cmd.address - U(xipConfig.baseAddress, 32 bits)
+  flash.io.xip.cmd.length      := xipCache.io.refill.cmd.length
+  xipCache.io.refill.cmd.ready := flash.io.xip.cmd.ready
+  xipCache.io.refill.rsp <> flash.io.xip.rsp
+  xipCache.io.hold       := flash.io.readHold
+  xipCache.io.invalidate := flash.io.invalidate
+  flash.io.readBusy      := xipCache.io.busy
   sdramArbiter.io.output <> sdram.io.bus
 
   private val instructionUnmapped =
@@ -116,7 +135,8 @@ final class J2Soc(
 
   private val peripheralAccess =
     pioMapping.hit(cpu.io.dbus.ADR) || uartMapping.hit(cpu.io.dbus.ADR) ||
-      flashControlMapping.hit(cpu.io.dbus.ADR) || timerMapping.hit(cpu.io.dbus.ADR)
+      flashControlMapping.hit(cpu.io.dbus.ADR) || timerMapping.hit(cpu.io.dbus.ADR) ||
+      cacheControlMapping.hit(cpu.io.dbus.ADR)
   private val peripheralUnmapped = !memoryAccess && !peripheralAccess
   private val sdramPhy           = new Eg4SdramPhy
   sdramPhy.clk   := ClockDomain.current.readClockWire
@@ -160,7 +180,8 @@ final class J2Soc(
       pio.io.bus -> pioMapping,
       uartBus -> uartMapping,
       flash.io.control -> flashControlMapping,
-      timer.io.bus -> timerMapping
+      timer.io.bus -> timerMapping,
+      xipCache.io.control -> cacheControlMapping
     ),
     byteAddressedDecodings = false
   )

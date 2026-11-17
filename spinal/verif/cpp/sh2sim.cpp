@@ -100,6 +100,7 @@ int main(int argc, char **argv) {
   bool saw_stop_pc = false;
 
   while (cycles < max_cycles && !done) {
+    sys.timer_tick();
     top.clk = 1;
     top.eval();
 
