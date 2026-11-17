@@ -457,22 +457,34 @@ Probe sources, raw traces, logs and JSON results are under
   registers and 37 9K BRAMs. TD confirms both data RAMs and both tag RAMs infer
   BRAM; the reported physical memory cost exceeds the logical 4 KiB data size.
 
-Measured target elapsed times at 32 MHz (firmware images unchanged per row):
+Normalized CoreMark results at 32 MHz (firmware images unchanged per row).
+CoreMark/MHz is iterations per second divided by clock frequency in MHz:
 
-| Environment | Seed | Iterations | Uncached | Generic cache | Speedup |
+| Environment | Seed | Iterations | Uncached CM/MHz | Cached CM/MHz | Cache speedup |
 |---|---|---:|---:|---:|---:|
-| Full native SoC simulation | Performance | 1 | 1,657,183 us | 75,562 us | 21.93x |
-| Tang Primer FPGA | Performance | 10 | 16,573,992 us | 747,884 us | 22.16x |
-| Tang Primer FPGA | Validation | 10 | 16,598,901 us | 749,453 us | 22.15x |
+| Full native SoC simulation | Performance | 1 | 0.018857 | 0.413568 | 21.93x |
+| Tang Primer FPGA | Performance | 10 | 0.018855 | 0.417846 | 22.16x |
+| Tang Primer FPGA | Validation | 10 | 0.018827 | 0.416971 | 22.15x |
 
-The cached simulation validation seed also passes at 75,679 us. Both seed sets
+The cached simulation validation seed scores 0.412928 CM/MHz. Both seed sets
 pass all CoreMark CRC checks in simulation and hardware. Hardware comparisons
 check identical firmware SHA-256 hashes, compiler flags, seeds, iteration counts,
 CRCs and clocks against the saved uncached build. These are short regression
 measurements, not reportable CoreMark scores; cached runs are below ten seconds.
 Use `tools/coremark.py hardware --allow-short` for these regression runs; the
-reportable-score path intentionally rejects them. Simulation numbers measure
-target time, not host simulator execution time.
+reportable-score path intentionally rejects them. Rates use target timer ticks,
+not host simulator execution time.
+
+The matched VHDL/SpinalHDL comparison uses ten iterations at 32 MHz:
+
+| Seed | VHDL reference, zero-wait RAM simulation | SpinalHDL, cached XIP FPGA |
+|---|---:|---:|
+| Performance | 1.885426 CM/MHz | 0.417846 CM/MHz |
+| Validation | 1.880480 CM/MHz | 0.416971 CM/MHz |
+
+These runs have matching algorithm CRCs but different memory systems, so they
+compare complete implementations rather than isolated CPU pipelines. They are
+also short, non-reportable regression runs.
 
 An independent rerun reproduced all 44 Scala tests, full-SoC reset/cold/loader
 validation, cached CoreMark simulation, FPGA upload/reboot, timing and resource

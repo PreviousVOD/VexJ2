@@ -254,13 +254,28 @@ One-iteration simulations are CRC regressions and are marked as short runs,
 following [CoreMark's run rules](https://github.com/eembc/coremark#run-rules).
 
 New results default to `build/coremark/refactored/{simulation,hardware}/`, with
-logs, firmware binaries, compiler settings, CRCs, elapsed microsecond ticks,
-precise host-calculated iterations/second and CoreMark/MHz, RTL, and hardware
-bitstream/timing reports. Both performance and validation seed sets must pass.
-The integer-only firmware report truncates rates below one iteration/second;
-use the JSON rate computed from the raw timer ticks for comparisons.
-Completion markers alone do not establish a pass: the runner checks expected
-CRCs, timer readings, iteration counts, and upstream error output.
+logs, firmware binaries, compiler settings, CRCs, raw timer ticks, derived
+iterations/second and CoreMark/MHz, RTL, and hardware bitstream/timing reports.
+Both performance and validation seed sets must pass. The integer-only firmware
+report truncates rates below one iteration/second; use the JSON rate computed
+from the raw timer ticks for comparisons. Completion markers alone do not
+establish a pass: the runner checks expected CRCs, timer readings, iteration
+counts, and upstream error output.
+
+**CoreMark/MHz = (iterations / elapsed seconds) / clock frequency in MHz.**
+The matched ten-iteration, 32 MHz regression results are:
+
+| Seed set | VHDL reference simulator, zero-wait RAM | SpinalHDL FPGA, cached XIP |
+|---|---:|---:|
+| Performance | **1.885426 CM/MHz** | **0.417846 CM/MHz** |
+| Validation | **1.880480 CM/MHz** | **0.416971 CM/MHz** |
+
+Both implementations pass all algorithm CRC checks. The VHDL run executes code
+from zero-wait-state RAM, while the SpinalHDL run executes through the two-way
+XIP cache, so this is a system-level comparison rather than an isolated CPU-core
+benchmark. Both runs are shorter than ten seconds and are not reportable
+CoreMark scores. Sources are `build/coremark/vhdl-independent/results.json` and
+`build/coremark/spinal-cache-independent/hardware/results.json`.
 
 The original results are preserved under `build/coremark/baseline/` and in
 `build/coremark/baseline-2cfc302.tar.gz`. Set `COREMARK_LABEL` to choose a separate
@@ -279,12 +294,11 @@ iteration counts, clock frequencies, and execution environments. Reuse the
 saved firmware binaries when testing CPU changes.
 
 The pre-refactor CPU at `2cfc302` passed both one-iteration simulations and
-ten-iteration FPGA runs at 32 MHz. The hardware performance-seed run measured
-40,252,267 microsecond ticks: **0.248433 iterations/second**, or
-**0.00776354 CoreMark/MHz**, executing from XIP flash. The validation-seed run
-measured 40,312,476 ticks. Both passed the upstream CRC checks and minimum
-duration requirement. The timer-enabled FPGA passed timing with 0.384 ns setup
-and 0.104 ns hold slack. Logs and binaries are under `build/coremark/baseline/`.
+ten-iteration FPGA runs at 32 MHz. Its XIP performance and validation results
+were **0.007764 CM/MHz** and **0.007752 CM/MHz**, respectively. Both passed the
+upstream CRC checks and minimum duration requirement. The timer-enabled FPGA
+passed timing with 0.384 ns setup and 0.104 ns hold slack. Logs and binaries
+are under `build/coremark/baseline/`.
 
 ## FPGA
 
