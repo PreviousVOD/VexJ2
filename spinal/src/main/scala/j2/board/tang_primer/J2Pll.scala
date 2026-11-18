@@ -1,4 +1,4 @@
-package j2.soc
+package j2.board.tang_primer
 
 import spinal.core._
 

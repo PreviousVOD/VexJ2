@@ -48,14 +48,3 @@ final class J2MicrocodeRom extends Component with J2MicrocodeRomPort {
   io.line := readArea.line
   io.line.addTag(crossClockDomain)
 }
-
-final class Eg4MicrocodeRom(
-    initFile: String = "../../microcode/j2_microcode.mif"
-) extends BlackBox
-    with J2MicrocodeRomPort {
-  val io = new J2MicrocodeRomIo
-
-  setDefinitionName("j2_microcode_rom")
-  noIoPrefix()
-  addGeneric("INIT_FILE", initFile)
-}

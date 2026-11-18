@@ -1,6 +1,6 @@
-package j2.soc
+package j2.board.tang_primer
 
-import j2.periph.Eg4GpioPad
+import j2.soc.{J2ResetController, J2Soc}
 import spinal.core._
 
 final class J2TangPrimer(
@@ -109,4 +109,24 @@ final class J2TangPrimer(
     pad.bpad <> io.spiData(bit)
     soc.io.spiData.read(bit) := pad.di
   }
+
+  private val sdramPhy = new Eg4SdramPhy
+  sdramPhy.clk   := socClock
+  sdramPhy.ras_n := soc.sdramInterface.RASn
+  sdramPhy.cas_n := soc.sdramInterface.CASn
+  sdramPhy.we_n  := soc.sdramInterface.WEn
+  sdramPhy.addr  := soc.sdramInterface.ADDR
+  sdramPhy.ba    := soc.sdramInterface.BA
+  sdramPhy.cs_n  := soc.sdramInterface.CSn
+  sdramPhy.dm0   := soc.sdramInterface.DQM(0)
+  sdramPhy.dm1   := soc.sdramInterface.DQM(1)
+  sdramPhy.dm2   := soc.sdramInterface.DQM(2)
+  sdramPhy.dm3   := soc.sdramInterface.DQM(3)
+  sdramPhy.cke   := soc.sdramInterface.CKE
+  private val sdramDq = Analog(Bits(32 bits))
+  sdramPhy.dq <> sdramDq
+  when(soc.sdramInterface.DQ.writeEnable(0)) {
+    sdramDq := soc.sdramInterface.DQ.write
+  }
+  soc.sdramInterface.DQ.read := sdramDq
 }

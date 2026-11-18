@@ -1,6 +1,7 @@
 package j2.decode
 
 import j2.microcode._
+import j2.board.tang_primer.Eg4MicrocodeRom
 import j2.core._
 import spinal.core._
 import spinal.lib.misc.plugin.FiberPlugin

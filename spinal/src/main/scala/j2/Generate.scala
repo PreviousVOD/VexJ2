@@ -4,6 +4,7 @@ import j2.isa._
 import j2.microcode._
 import j2.core._
 import j2.soc._
+import j2.board.tang_primer._
 import spinal.core._
 
 object Generate extends App {

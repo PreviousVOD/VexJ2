@@ -178,7 +178,8 @@ stops at the programmable limit. The interrupt is a level request on vector
 - `spinal/src/main/scala/j2/microcode/`: ROM data, control decoding, sequencing.
 - `spinal/src/main/scala/j2/bus/`: byte-addressed CPU Wishbone and native adapters.
 - `spinal/src/main/scala/j2/periph/`: ROM/SRAM, GPIO, SPI/XIP, SDRAM peripherals.
-- `spinal/src/main/scala/j2/soc/`: SoC interconnect, PLL/reset, board top.
+- `spinal/src/main/scala/j2/soc/`: board-independent SoC, interconnect and reset control.
+- `spinal/src/main/scala/j2/board/tang_primer/`: Tang Primer top, EG4 PLL/pads, SDRAM PHY and memory wrappers.
 - `sw/xiprom/`: resident boot ROM, flash driver, and UART loader.
 - `sw/xipapp/`: XIP application and SDRAM read/write/execute tests.
 - `tools/xip_image.py`: application packager and host-side UART uploader.

@@ -1,6 +1,7 @@
 package j2.periph
 
 import j2.bus.J2Wishbone
+import j2.board.tang_primer.Eg4Bram32
 import spinal.core._
 import spinal.lib._
 import scala.io.Source
@@ -20,52 +21,12 @@ object J2RomData {
   }
 }
 
-final class Eg4Bram32 extends BlackBox {
-  val dia   = in Bits (32 bits)
-  val dib   = in Bits (32 bits)
-  val addra = in UInt (13 bits)
-  val addrb = in UInt (13 bits)
-  val cea   = in Bool ()
-  val ceb   = in Bool ()
-  val ocea  = in Bool ()
-  val oceb  = in Bool ()
-  val clka  = in Bool ()
-  val clkb  = in Bool ()
-  val wea   = in Bool ()
-  val web   = in Bool ()
-  val rsta  = in Bool ()
-  val rstb  = in Bool ()
-  val bea   = in Bool ()
-  val beb   = in Bool ()
-  val doa   = out Bits (32 bits)
-  val dob   = out Bits (32 bits)
-  setDefinitionName("EG_LOGIC_BRAM")
-  addGeneric("DATA_WIDTH_A", 32)
-  addGeneric("DATA_WIDTH_B", 32)
-  addGeneric("ADDR_WIDTH_A", 13)
-  addGeneric("ADDR_WIDTH_B", 13)
-  addGeneric("DATA_DEPTH_A", 8192)
-  addGeneric("DATA_DEPTH_B", 8192)
-  addGeneric("BYTE_ENABLE", 0)
-  addGeneric("BYTE_A", 1)
-  addGeneric("BYTE_B", 1)
-  addGeneric("MODE", "SP")
-  addGeneric("REGMODE_A", "NOREG")
-  addGeneric("REGMODE_B", "NOREG")
-  addGeneric("WRITEMODE_A", "NORMAL")
-  addGeneric("WRITEMODE_B", "NORMAL")
-  addGeneric("RESETMODE", "SYNC")
-  addGeneric("IMPLEMENT", "32K")
-  addGeneric("INIT_FILE", "j2_validation_rom.mif")
-  addGeneric("FILL_ALL", "NONE")
-}
-
-final class J2Rom(useEg4Rom: Boolean = false) extends Component {
+final class J2Rom(useBramRom: Boolean = false) extends Component {
   val io = new Bundle {
     val bus = slave(J2Wishbone())
   }
   private val pending = RegInit(False)
-  private val readData = if (useEg4Rom) {
+  private val readData = if (useBramRom) {
     val memory = new Eg4Bram32
     memory.dia   := 0
     memory.dib   := 0

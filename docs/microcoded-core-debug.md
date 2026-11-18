@@ -204,15 +204,18 @@ startup behavior in testing; do not use that stimulus as a hardware reset model.
 
 ### Native SpinalHDL SoC integration (current)
 
-The current SoC is entirely under `spinal/src/main/scala/j2/soc` and
-`spinal/src/main/scala/j2/periph`. It uses native Wishbone arbiters/decoders,
+Board-independent SoC and peripheral logic lives under
+`spinal/src/main/scala/j2/soc` and `j2/periph`. The Tang Primer top and EG4
+PLL, pad, SDRAM and memory wrappers are under
+`spinal/src/main/scala/j2/board/tang_primer`. The design uses
 `WishboneUartCtrl`, `WishboneGpio`, `Apb3SpiXdrMasterCtrl`, and `BmbSdramCtrl`.
 The handwritten Verilog SoC, UART16550, `llqspi`, and third-party Wishbone
 interconnect have been removed.
 
-The instruction bus feeds `iMux`; the data bus feeds each memory arbiter and
-`dMux`. ROM, SRAM, SPI flash, and SDRAM each have an independent two-master
-arbiter. Peripherals are data-only. CPU addresses remain byte addresses, while
+`J2WishboneIntercon` generates a decoder per master and a J2 atomic-safe arbiter
+per shared slave. The data bus reaches all slaves; the instruction bus reaches
+only memories and can borrow idle beats from its paired data master. CPU
+addresses remain byte addresses, while
 several native Wishbone slaves expect word addresses. Use
 `J2Wishbone.connectToWordAddressed` at those boundaries, and supply a local
 address for small peripherals. Setting `byteAddressedDecodings = true` shifted

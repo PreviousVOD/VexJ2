@@ -8,9 +8,10 @@ import spinal.lib._
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.com.uart.{UartCtrlMemoryMappedConfig, WishboneUartCtrl}
 import spinal.lib.io.TriStateArray
+import spinal.lib.memory.sdram.sdr.{EG4S20, SdramInterface}
 
 final class J2Soc(
-    useEg4Rom: Boolean = false,
+    useBramRom: Boolean = false,
     clockHz: Int = 32000000,
     timerTickHz: Int = 1000000
 ) extends Component {
@@ -39,8 +40,8 @@ final class J2Soc(
   private val cacheControlMapping = SizeMapping(0xff004000L, 0x1000)
 
   private val xipCache = new J2ReadCache(xipConfig)
-  private val cpu      = new J2MicrocodedCore(J2CoreConfig(useEg4Rom, exposeDebug = false))
-  private val rom      = new J2Rom(useEg4Rom)
+  private val cpu      = new J2MicrocodedCore(J2CoreConfig(useBramRom, exposeDebug = false))
+  private val rom      = new J2Rom(useBramRom)
   private val sram     = new J2Sram
   private val flash    = new J2SpiFlash(xipConfig.lineBytes)
   private val sdram    = new J2Sdram
@@ -49,7 +50,8 @@ final class J2Soc(
   private val uart = new WishboneUartCtrl(
     UartCtrlMemoryMappedConfig(19200, txFifoDepth = 32, rxFifoDepth = 32)
   )
-  val sdramInterface = sdram.io.sdram
+  val sdramInterface = master(SdramInterface(EG4S20.layout))
+  sdramInterface <> sdram.io.sdram
 
   // Cache tags/refill commands use absolute addresses. Only the backend adapter
   // translates the mapped window to flash offsets, so relocation is explicit.
@@ -148,26 +150,6 @@ final class J2Soc(
   cpu.io.dbus.ACK      := Mux(dataUnmapped, False, dataBus.ACK)
   cpu.io.dbus.ERR      := Mux(dataUnmapped, dataError, dataBus.ERR)
   cpu.io.dbus.DAT_MISO := dataBus.DAT_MISO
-
-  private val sdramPhy = new Eg4SdramPhy
-  sdramPhy.clk   := ClockDomain.current.readClockWire
-  sdramPhy.ras_n := sdramInterface.RASn
-  sdramPhy.cas_n := sdramInterface.CASn
-  sdramPhy.we_n  := sdramInterface.WEn
-  sdramPhy.addr  := sdramInterface.ADDR
-  sdramPhy.ba    := sdramInterface.BA
-  sdramPhy.cs_n  := sdramInterface.CSn
-  sdramPhy.dm0   := sdramInterface.DQM(0)
-  sdramPhy.dm1   := sdramInterface.DQM(1)
-  sdramPhy.dm2   := sdramInterface.DQM(2)
-  sdramPhy.dm3   := sdramInterface.DQM(3)
-  sdramPhy.cke   := sdramInterface.CKE
-  private val sdramDq = Analog(Bits(32 bits))
-  sdramPhy.dq <> sdramDq
-  when(sdramInterface.DQ.writeEnable(0)) {
-    sdramDq := sdramInterface.DQ.write
-  }
-  sdramInterface.DQ.read := sdramDq
 
   cpu.io.event.valid              := timer.io.interrupt
   cpu.io.event.payload.command    := 0
