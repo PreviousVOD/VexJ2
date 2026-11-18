@@ -225,3 +225,26 @@ verilog-fpga: $(BOOTROM) $(XIP_IMAGE)
 
 verilog-program: verilog-fpga
 	TD_HOME="$(TD_HOME)" tools/program_tang_primer_verilog_td.sh
+
+.PHONY: wukong-mig wukong-ddr-generate wukong-ddr-sim wukong-ddr-bitstream
+wukong-mig:
+	mkdir -p build/wukong-v1/ddr
+	rm -f build/wukong-v1/ddr/generation.pass build/wukong-v1/ddr/implementation.pass
+	cd build/wukong-v1/ddr && VIVADO_HOME="$(VIVADO_HOME)" bash "$(CURDIR)/tools/run_vivado.sh" -mode batch -notrace \
+		-source "$(CURDIR)/tools/generate_wukong_mig.tcl" -log generate.log -journal generate.jou
+	test -s build/wukong-v1/ddr/generation.pass
+
+wukong-ddr-generate: $(TOOL_SBT)
+	cd $(SPINAL_DIR) && $(SBT) -batch "runMain j2.GenerateWukongDdr"
+
+wukong-ddr-sim: $(TOOL_SBT) $(TOOL_VERILATOR)
+	cd $(SPINAL_DIR) && $(SBT) -batch "testOnly j2.board.WukongDdrBistSpec"
+
+wukong-ddr-bitstream: wukong-mig wukong-ddr-generate
+	cd build/wukong-v1/ddr && VIVADO_HOME="$(VIVADO_HOME)" bash "$(CURDIR)/tools/run_vivado.sh" -mode batch -notrace \
+		-source "$(CURDIR)/tools/build_wukong_ddr.tcl" -log implementation.log -journal implementation.jou
+	test -s build/wukong-v1/ddr/implementation.pass
+
+.PHONY: wukong-ddr-uart
+wukong-ddr-uart:
+	VIVADO_HOME="$(VIVADO_HOME)" python3 tools/check_wukong_uart.py --ddr

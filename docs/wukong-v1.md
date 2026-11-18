@@ -217,9 +217,85 @@ raw hardware logs and the programmed bitstream hash are in
 `build/wukong-v1/hardware/`. Quad identification and cached data reads are validated. Application loading,
 flash programming, executing code from SF3 and DDR operation remain pending.
 
+## Step 2: standalone DDR3 qualification
+
+`fpga/wukong-v1/mig.prj` is derived from the supplied QMTECH DDR3 example's
+pin map and memory settings. MIG 4.2 is regenerated with Vivado 2025.2 for
+**XC7A100T-FGG676-2**, with stale A75T metadata corrected and debug probes disabled.
+The memory is MT41K128M16, 256 MiB, 1.35 V, 16 bits, BL8, 333.333 MHz DDR clock
+(666.667 MT/s). Its native UI is 128 bits at 83.333 MHz. UI addresses count
+16-bit DDR words; one 16-byte transfer advances the address by eight.
+
+The board's 50 MHz clock feeds an MMCM with a 1 GHz VCO. Separate BUFG outputs
+provide **166.667 MHz system input** and **200 MHz IDELAY reference** to MIG.
+The supplied example called its 166.667 MHz signal `sys_clk_200m` and reused it
+as a delay reference; the new design supplies the reference frequency explicitly.
+The existing 32 MHz PLL and `proc_sys_reset` drive an independent UART/status
+domain so a calibration timeout can be reported without a working MIG UI.
+
+```mermaid
+flowchart LR
+  O[50 MHz oscillator] --> M[MMCM / BUFGs]
+  M -->|166.667 MHz system| D[MIG 4.2]
+  M -->|200 MHz reference| D
+  D <--> R[256 MiB DDR3L]
+  D <-->|128-bit native UI / 83.333 MHz| B[SpinalHDL traffic test]
+  O --> P[32 MHz PLL / proc_sys_reset]
+  B --> C[Status synchronizers]
+  D --> C
+  C --> U[UART report]
+  P --> U
+```
+
+`WukongDdrBist` tests 1,024 unique 16-byte locations: 512 consecutive bursts,
+511 locations spaced by 512 KiB, and the final burst of memory. It writes all
+locations before reading them back to expose address aliasing. It then inverts
+even byte lanes using a masked write and verifies both changed and preserved
+bytes. That is 2,048 write bursts and 2,048 read bursts, sampling **16 KiB across
+the address range**, not a full-capacity memory test. Command and write-data
+handshakes are independent. A complete data burst is accepted before its write
+command is issued, satisfying MIG’s write-data timing limit even under
+backpressure ([UG586 command path](https://docs.amd.com/r/en-US/ug586_7Series_MIS/Command-Path)).
+Error and timeout indications are sticky.
+
+The independent test image leaves both flash CS signals high. It reports a
+calibration wait banner followed by PASS, FAIL, or a calibration timeout over
+UART. LED0 indicates calibration and LED1 a completed successful test.
+
+```sh
+make wukong-mig            # regenerate IP from versioned board settings
+make wukong-ddr-sim        # native-interface model, backpressure + corruption
+make wukong-ddr-bitstream  # standalone top, synthesis, routing and timing checks
+make wukong-ddr-uart       # volatile JTAG and UART result capture
+```
+
+Generation and both native-interface simulations pass: normal full/masked
+readback and detection of an injected read-data error. The simulations also
+assert data-before-command ordering under independent backpressure.
+
+The routed standalone image meets constrained timing: **1.275 ns setup slack,
+0.071 ns hold slack**, with no failing endpoints. It uses 4,430 LUTs and 3,555
+registers. CDC reports no unsafe crossings; its two missing-ASYNC_REG warnings
+are in vendor reset paths. User status crossings have two-stage synchronizers,
+with exceptions restricted to their first D inputs. DRC has no errors or
+critical warnings; the documented board oscillator routing exception remains.
+
+Hardware validation on 2026-11-18 passed through Vivado volatile JTAG and
+`/dev/ttyUSB0`, both on the first download and after repeated volatile
+reconfiguration with DRAM power retained:
+
+```text
+Wukong DDR3: waiting for calibration
+Wukong DDR3: PASS
+```
+
+Logs, reports and artifact hashes are in `build/wukong-v1/ddr/`. This qualifies
+the standalone MIG/traffic path, rather than CPU accesses or full-capacity
+memory retention. The SoC is still separate: its DDR window returns ERR until
+the Wishbone bridge and clock crossing are installed.
+
 ## Next steps
 
-1. Regenerate MIG and validate DDR calibration/traffic independently.
-2. Add the Wishbone/MIG adapter and clock crossing, preserving byte ordering and TAS locks.
-3. Implement bounded SF3 application loading and XIP application boot.
-4. Run the full ISA suite, DDR tests and both CoreMark seed sets for at least ten seconds.
+1. Add the Wishbone/MIG adapter and clock crossing, preserving byte ordering and TAS locks.
+2. Implement bounded SF3 application loading and XIP application boot.
+3. Run the full ISA suite, DDR tests and both CoreMark seed sets for at least ten seconds.
