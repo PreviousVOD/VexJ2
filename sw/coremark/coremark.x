@@ -3,7 +3,7 @@ OUTPUT_ARCH(sh)
 ENTRY(_coremark_start)
 MEMORY
 {
-  xip : ORIGIN = 0x10000010, LENGTH = 0x000ffff0
+  xip : ORIGIN = 0x10000020, LENGTH = 0x000fffe0
   sram : ORIGIN = 0x00008000, LENGTH = 0x00006000
 }
 SECTIONS

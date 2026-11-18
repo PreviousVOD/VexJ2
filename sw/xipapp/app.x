@@ -4,19 +4,18 @@ ENTRY(_xip_start)
 
 MEMORY
 {
-  xip : o = 0x10000010, l = 0x003ffff0
+  app : o = DEFINED(LOAD_ADDRESS) ? LOAD_ADDRESS : 0x10000020, l = 0x00400000
 }
 
 SECTIONS
 {
-  /* The packed image header loads and enters at 0x10000010. Stronger alignment
-     of a later input section must not move the beginning of the image. */
-  .text ORIGIN(xip) : {
+  /* Stronger alignment of a later input section must not move the image entry. */
+  .text ORIGIN(app) : {
     *(.text.start)
     *(.text)
     *(.rodata*)
-  } > xip
-  .data : { *(.data) } > xip
-  .bss : { *(.bss) *(COMMON) } > xip
-  ASSERT(_xip_start == ORIGIN(xip), "XIP entry does not match the image header")
+  } > app
+  .data : { *(.data) } > app
+  .bss : { *(.bss) *(COMMON) } > app
+  ASSERT(_xip_start == ORIGIN(app), "Application entry does not match its load address")
 }

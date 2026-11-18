@@ -417,12 +417,15 @@ program, busy polling, and read-back verification. UART uploads require two
 flow-control handshakes: wait for `Program flash` after erase, then wait for a
 `Page xxxxxx` acknowledgment after each page is programmed and verified. Raw
 streaming overruns the 16550's 16-byte receive FIFO while the CPU is working on
-flash. `tools/xip_image.py` packs the 16-byte application header and implements
-the host protocol.
+flash. `tools/xip_image.py` packs the 32-byte application header and implements
+the host protocol. Its load-address field selects direct XIP execution at
+`0x10000020` or copying to an address within the 8 MiB SDRAM window before
+jumping to the application entry.
 
 `make xip-hw-sim` verifies both a preloaded direct XIP boot and a blank-flash
 UART upload followed by XIP execution. The test image prints `XIP CPU tests
-passed`.
+passed`. Direct SDRAM-load simulation and SDRAM-linked UART upload/reboot on
+hardware also pass; logs are under `build/boot-load-validation/`.
 
 ### EG4S20 SiP SDRAM
 

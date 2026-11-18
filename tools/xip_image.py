@@ -10,17 +10,23 @@ import tty
 from pathlib import Path
 
 MAGIC = 0x4A325831
-ENTRY = 0x10000010
+XIP_BASE = 0x10000000
+HEADER_SIZE = 32
+XIP_LOAD_ADDRESS = XIP_BASE + HEADER_SIZE
 
 
-def pack(input_path, output_path):
+def pack(input_path, output_path, load_address=XIP_LOAD_ADDRESS):
     application = input_path.read_bytes()
     if not application:
         raise ValueError("empty application")
-    header = struct.pack(">IIII", MAGIC, ENTRY, len(application), sum(application) & 0xFFFFFFFF)
+    if not 0 <= load_address <= 0xFFFFFFFF or load_address & 1:
+        raise ValueError("load address must be an aligned 32-bit address")
+    header = struct.pack(">IIIII12x", MAGIC, load_address, len(application),
+                         sum(application) & 0xFFFFFFFF, load_address)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(header + application)
-    print(f"packed {len(application)} application bytes into {len(header) + len(application)}-byte image")
+    print(f"packed {len(application)} application bytes at {load_address:#010x} "
+          f"into {len(header) + len(application)}-byte image")
 
 
 def read_until(fd, markers, timeout, output):
@@ -43,7 +49,7 @@ def read_until(fd, markers, timeout, output):
 def upload(image_path, device, wait_for_banner=True, success_marker=b"XIP CPU tests passed",
            result_timeout=120):
     image = image_path.read_bytes()
-    if len(image) < 20:
+    if len(image) < HEADER_SIZE:
         raise ValueError("image is too short")
     fd = os.open(device, os.O_RDWR | os.O_NOCTTY)
     try:
@@ -75,7 +81,7 @@ def upload(image_path, device, wait_for_banner=True, success_marker=b"XIP CPU te
             offset += count
         read_until(fd, [success_marker, b"Verify error", b"checksum error"], result_timeout, output)
         if success_marker not in output:
-            raise RuntimeError("upload or XIP boot failed")
+            raise RuntimeError("upload or application boot failed")
     finally:
         os.close(fd)
 
@@ -86,6 +92,9 @@ def main():
     pack_parser = subcommands.add_parser("pack")
     pack_parser.add_argument("input", type=Path)
     pack_parser.add_argument("output", type=Path)
+    pack_parser.add_argument("--load-address", type=lambda value: int(value, 0),
+                             default=XIP_LOAD_ADDRESS,
+                             help="application destination; default is the XIP payload address")
     upload_parser = subcommands.add_parser("upload")
     upload_parser.add_argument("image", type=Path)
     upload_parser.add_argument("--device", default="/dev/ttyACM0")
@@ -94,7 +103,7 @@ def main():
     args = parser.parse_args()
 
     if args.command == "pack":
-        pack(args.input, args.output)
+        pack(args.input, args.output, args.load_address)
     else:
         upload(args.image, args.device, not args.no_wait)
 

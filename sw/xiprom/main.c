@@ -4,7 +4,11 @@
 
 #define XIP_BASE 0x10000000
 #define XIP_MAGIC 0x4a325831
-#define XIP_HEADER_WORDS 4
+#define XIP_HEADER_WORDS 8
+#define XIP_HEADER_BYTES (XIP_HEADER_WORDS * 4)
+#define XIP_LOAD_ADDRESS (XIP_BASE + XIP_HEADER_BYTES)
+#define SDRAM_BASE 0x80000000
+#define SDRAM_BYTES 0x00800000
 #define FLASH_BYTES (1024 * 1024)
 #define FLASH_SECTOR_BYTES 65536
 #define FLASH_PAGE_BYTES 256
@@ -21,20 +25,22 @@ static uint32_t uart_read_be32(void) {
 
 static int image_header_valid(void) {
   volatile const uint32_t *header = (volatile const uint32_t *)XIP_BASE;
-  uint32_t length;
-  uint32_t entry;
-  if (header[0] != XIP_MAGIC) return 0;
-  entry = header[1];
-  length = header[2];
-  if (length == 0 || length > FLASH_BYTES - XIP_HEADER_WORDS * 4) return 0;
-  return entry == XIP_BASE + XIP_HEADER_WORDS * 4;
+  uint32_t entry = header[1];
+  uint32_t length = header[2];
+  uint32_t load = header[4];
+  if (header[0] != XIP_MAGIC || header[5] || header[6] || header[7]) return 0;
+  if (length == 0 || length > FLASH_BYTES - XIP_HEADER_BYTES) return 0;
+  if ((entry & 1) || entry < load || entry - load >= length) return 0;
+  if (load == XIP_LOAD_ADDRESS) return 1;
+  if (load < SDRAM_BASE || load >= SDRAM_BASE + SDRAM_BYTES) return 0;
+  return length <= SDRAM_BYTES - (load - SDRAM_BASE);
 }
 
 static uint32_t application_checksum(uint32_t length) {
   uint32_t checksum = 0;
   uint32_t index;
   for (index = 0; index < length; ++index)
-    checksum += *(volatile const uint8_t *)(XIP_BASE + XIP_HEADER_WORDS * 4 + index);
+    checksum += *(volatile const uint8_t *)(XIP_LOAD_ADDRESS + index);
   return checksum;
 }
 
@@ -42,11 +48,13 @@ static void boot_application(void) {
   volatile const uint32_t *header = (volatile const uint32_t *)XIP_BASE;
   uint32_t length = header[2];
   uint32_t expected = header[3];
+  uint32_t load = header[4];
   uint32_t actual;
+  uint32_t index;
   void (*entry)(void);
 
   if (!image_header_valid()) {
-    uart_puts("No valid XIP image: ");
+    uart_puts("No valid application image: ");
     uart_hex(header[0], 8);
     uart_puts(" ");
     uart_hex(header[1], 8);
@@ -55,15 +63,24 @@ static void boot_application(void) {
     uart_puts("\n");
     return;
   }
-  uart_puts("Booting XIP image\n");
   actual = application_checksum(length);
   if (actual != expected) {
-    uart_puts("XIP checksum error: expected ");
+    uart_puts("Image checksum error: expected ");
     uart_hex(expected, 8);
     uart_puts(", actual ");
     uart_hex(actual, 8);
     uart_puts("\n");
     return;
+  }
+  if (load == XIP_LOAD_ADDRESS) {
+    uart_puts("Booting XIP image\n");
+  } else {
+    uart_puts("Loading image to ");
+    uart_hex(load, 8);
+    uart_puts("\n");
+    for (index = 0; index < length; ++index)
+      *(volatile uint8_t *)(load + index) = *(volatile const uint8_t *)(XIP_LOAD_ADDRESS + index);
+    uart_puts("Booting loaded image\n");
   }
   entry = (void (*)(void))header[1];
   entry();
@@ -91,7 +108,7 @@ static int load_application(void) {
   }
   address = uart_read_be32();
   length = uart_read_be32();
-  if (address != 0 || length < 20 || length > FLASH_BYTES) {
+  if (address != 0 || length <= XIP_HEADER_BYTES || length > FLASH_BYTES) {
     uart_puts("Bad image range\n");
     return 0;
   }

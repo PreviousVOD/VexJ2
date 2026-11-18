@@ -110,22 +110,43 @@ halfword arrives in the low 16 bits. Data lane selection, replicated subword
 stores, and sign extension remain big-endian. Atomic operations hold CYC and
 LOCK across the read/write sequence, including the gap between transfers.
 
-The SoC designates arbiter input 0 as CPU data and input 1 as that same CPU's
-read-only instruction port. During an idle data beat inside a locked cycle,
-the instruction port may borrow the route until its cycle ends. Data ownership
-and downstream CYC/LOCK remain asserted, so other masters cannot interleave.
-Without this exception, an instruction fetch from the atomic operand's memory
-would freeze the CPU before it could finish the atomic operation. The default
-arbiter configuration has no borrowing, and another master's lock never permits
-borrowing. This is not permission for a second CPU or DMA reader to bypass LOCK.
+`J2WishboneIntercon` provides the complete two-stage matrix: a native
+`WishboneDecoder` per master and a `J2WishboneArbiter` per shared slave. The
+D-bus reaches every slave; the read-only I-bus reaches only memories. The SoC
+declares this connectivity instead of instantiating individual muxes, arbiters
+and response muxes. Each decoder gates LOCK with its selected CYC, so an atomic
+operation does not reserve unrelated slaves.
 
-The SoC uses `J2WishboneArbiter` with native one-hot round-robin selection and
-registered grants held until both CYC and LOCK are released. A competing-master
-regression exposed that SpinalHDL 1.14.2's `WishboneArbiter` excludes locked
-masters from its request vector and can reselect a different master during a
-locked cycle. The integration wrapper corrects this without changing the CPU
-ports or peripheral implementations. TAS/CAS tests cover contention, response
-waits, and reset during an atomic cycle.
+Each instruction master is explicitly paired with its CPU's data master:
+
+```scala
+matrix.addMaster(dataBus, dataSlaves)
+matrix.addInstructionMaster(instructionBus, dataBus, instructionSlaves)
+```
+
+Registration order is unrestricted. The matrix resolves each pair into the
+local input indices for each slave's arbiter. If the paired data master cannot
+reach a particular slave, the instruction master arbitrates there normally.
+It cannot borrow another CPU's or DMA master's lock.
+
+During an idle data beat inside a locked cycle, only that owner's paired,
+read-only instruction port may borrow the route. The route stays stable until
+the instruction cycle ends, including wait states and ERR completion; data
+ownership and downstream LOCK remain intact. This allows the owning CPU to
+fetch the instructions needed to finish its atomic operation while excluding
+unrelated masters. Multiple CPU pairs are supported, including instruction
+ports at arbiter input zero.
+
+The J2 arbiter uses one-hot round-robin selection. Pair mappings are validated
+for distinct data/instruction roles and one instruction partner per data
+master. The matrix validates pairs after all masters are registered, allowing
+an instruction master to be declared before its data partner. Decoder CYC
+qualification confines LOCK to the selected slave and releases the reservation
+when the master ends its cycle. The routed STB is also qualified with its CYC.
+
+TAS/CAS tests cover contention, response waits and reset. Matrix regressions
+cover both CPU pairs, unrelated-master exclusion, registration order, sparse
+connectivity, delayed responses, ERR ownership and service after lock release.
 
 ## Extending and validating the design
 
@@ -443,8 +464,9 @@ Probe sources, raw traces, logs and JSON results are under
   from XIP, checks its readback, and verifies word/halfword/byte reads across two
   lines. `tools/isa_validation.py` requires its `XIP cache tests passed` marker in
   simulation and hardware, alongside the existing ISA, SDRAM and timer checks.
-  Its linker script pins the image entry to `0x10000010`: aligning test data must
-  not move the image away from the address encoded in the flash header.
+  Its linker script pins the default image entry to `0x10000020`: aligning test
+  data must not move the image away from the address encoded in the flash header.
+  `LOAD_ADDRESS` can override the linker origin for BootROM load mode.
 
 - Full-SoC simulation passes reset, cold boot and blank-flash UART upload with
   the updated cache/ISA application. Vendor PLL simulation confirms 32 MHz.
@@ -500,3 +522,48 @@ Original final artifacts are under `build/xip-cache/`: `window-isa-sim.log`,
 RTL hashes and results; hardware results also include the bitstream and timing
 reports. The uncached trace/profile is in `build/performance-investigation/`,
 and the hardware baseline is in `build/coremark/spinal-independent/hardware/`.
+
+## Wishbone matrix validation (2026-11-18)
+
+The matrix refactor removes the individual SoC muxes, arbiters and response
+muxes while retaining native decoders and the J2 atomic policy inside
+`J2WishboneIntercon`. All 45 Scala tests pass. The directed matrix test uses two
+data masters and one instruction master to verify independent slave routing,
+selected-slave locking, competing-data exclusion and instruction borrowing.
+
+Full-SoC reset, cold-boot and UART-loader simulations pass, as do SDRAM load
+mode and both CoreMark seed sets. On FPGA, XIP and SDRAM-load applications both
+pass UART upload and independent reboot. The matrix build uses 11,349 LUTs,
+51 9K BRAMs and 10 32K BRAMs; setup/hold slack is 3.409/0.146 ns with no timing
+violations.
+
+Using ten-iteration, 32-byte-header CoreMark images, FPGA performance and
+validation score 0.417497 and 0.416618 CM/MHz respectively, with valid CRCs.
+These remain short regression runs. Matrix simulation and hardware artifacts
+are under `build/wishbone-matrix/` and `build/coremark/wishbone-matrix/`.
+
+### Paired-master arbitration correction (2026-11-18)
+
+The first matrix implementation chose one instruction port per slave and
+allowed it to borrow from any data owner. It also rejected instruction input
+zero. Explicit per-CPU pairing fixes all three cases. `J2WishbonePairingSpec`
+adds six regressions, including the three review reproductions and delayed
+ACK/ERR tests with both CPU pairs active. The single-CPU FPGA build exercises
+its paired I/D ports with the normal ISA application; multi-CPU and sparse
+matrix configurations are checked in RTL simulation.
+
+All 51 Scala tests and the full CPU ISA regressions pass. Full-SoC reset,
+cold-boot and UART-loader simulations pass. Vendor PLL simulation confirms
+32 MHz. FPGA place-and-route reports zero setup/hold errors, with minimum
+setup/hold slack of 1.981/0.149 ns. Utilization is 11,217 LUTs, 2,668 registers,
+51 9K BRAMs, 10 32K BRAMs and nine DSPs.
+
+On FPGA, UART upload and an independent JTAG reboot both pass the complete
+cache, SDRAM, timer and ISA application, including TAS/CAS executing from their
+locked SRAM/SDRAM. The board is left running this validation application.
+
+Validation artifacts for this correction are under `build/bus-matrix-fix/`:
+`isa-sim.log`, `pairing.log`, `sim/results.json`, `hardware/results.json`,
+`hardware/{upload,reboot}.log`, `fpga-build.log`, `clock.log`,
+and the saved bitstream, area and timing reports. The matrix pairing API change
+is also applied to the CPU's shared-memory atomic regression harness.

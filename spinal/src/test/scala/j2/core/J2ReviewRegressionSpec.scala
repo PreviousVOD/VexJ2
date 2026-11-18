@@ -16,7 +16,7 @@ class J2ReviewRegressionSpec extends munit.FunSuite {
       val cpu = new J2MicrocodedCore
       cpu.io.event.valid := False
       cpu.io.event.payload.assignFromBits(B(0, cpu.io.event.payload.getBitsWidth bits))
-      val arb    = new J2WishboneArbiter(3, instructionInput = Some(1))
+      val arb    = new J2WishboneArbiter(3, instructionPairs = Map(0 -> 1))
       val inputs = arb.io.inputs
       val output = arb.io.output
       inputs(2) <> io.competitor

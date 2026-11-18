@@ -45,39 +45,33 @@ flowchart LR
   PLL --> RESET[PLL-lock reset controller<br/>32 MHz SoC clock]
   RESET --> CPU[J2MicrocodedCore]
 
-  CPU -->|I-bus| IMUX[iMux<br/>WishboneDecoder]
-  CPU -->|D-bus: memory| DMEM[Memory select<br/>and response mux]
-  CPU -->|D-bus: peripherals| DMUX[dMux<br/>WishboneDecoder]
+  CPU -->|I-bus| IGUARD[I-bus error guard<br/>halfword selection]
+  CPU -->|D-bus| DGUARD[D-bus error guard]
+  IGUARD -->|memories only| MATRIX[J2WishboneIntercon<br/>decoders plus atomic-safe arbiters]
+  DGUARD -->|memory and peripherals| MATRIX
 
-  IMUX -->|instruction master| RA[ROM arbiter]
-  IMUX -->|instruction master| SA[SRAM arbiter]
-  IMUX -->|instruction master| FA[Flash arbiter]
-  IMUX -->|instruction master| DA[SDRAM arbiter]
-  DMEM -->|data master| RA
-  DMEM -->|data master| SA
-  DMEM -->|data master| FA
-  DMEM -->|data master| DA
-
-  RA --> ROM[Internal ROM<br/>32 KiB]
-  SA --> SRAM[Internal SRAM<br/>32 KiB]
-  FA --> CACHE[J2ReadCache<br/>4 KiB, two-way, 32-byte lines]
+  MATRIX --> ROM[Internal ROM<br/>32 KiB]
+  MATRIX --> SRAM[Internal SRAM<br/>32 KiB]
+  MATRIX --> CACHE[J2ReadCache<br/>4 KiB, two-way, 32-byte lines]
   CACHE -->|line refill| XIP[J2SpiFlash XIP<br/>Apb3SpiXdrMasterCtrl]
   XIP --> FLASH[Winbond 25Q80<br/>quad-SPI flash]
-  DA --> SDRAM[BmbSdramCtrl<br/>8 MiB SiP SDRAM]
+  MATRIX --> SDRAM[BmbSdramCtrl<br/>8 MiB SiP SDRAM]
 
-  DMUX --> GPIO[32-bit GPIO<br/>0xff000000]
-  DMUX --> UART[UART<br/>0xff001000]
-  DMUX -->|flash control| CTRL[J2SpiFlash control<br/>0xff002000]
-  DMUX --> TIMER[Architecture timer<br/>0xff003000]
-  DMUX -->|cache control| CACHE
+  MATRIX --> GPIO[32-bit GPIO<br/>0xff000000]
+  MATRIX --> UART[UART<br/>0xff001000]
+  MATRIX -->|flash control| CTRL[J2SpiFlash control<br/>0xff002000]
+  MATRIX --> TIMER[Architecture timer<br/>0xff003000]
+  MATRIX -->|cache control| CACHE
   CTRL -->|APB| XIP
   CTRL -. invalidate and refill hold .-> CACHE
 ```
 
-Each memory has its own cycle-locking `J2WishboneArbiter`: data master 0, instruction
-master 1. The instruction side has no peripheral path. GPIO and UART are
-peripheral-only. Unmapped instruction, memory, or peripheral accesses return a
-Wishbone error.
+`J2WishboneIntercon` generates native per-master decoders and atomic-safe
+per-slave arbiters. The D-bus reaches all slaves; the read-only I-bus reaches
+only memories and may borrow idle beats during its paired D-bus atomic cycles.
+The matrix supports multiple explicit I/D pairs, independent of registration
+order; unrelated masters remain excluded while a data owner holds a lock.
+Unmapped accesses return a Wishbone error.
 
 ## Memory map
 
@@ -112,6 +106,35 @@ serve both instruction and data reads from synchronous RAM. Reset and accepted
 flash-control writes invalidate all lines. Control accesses wait for an active
 refill and CS release. Writing `1` to `0xff004000` explicitly invalidates both
 ways; reads return busy in bit 1 and zero in other bits. See the [cache architecture and validation](docs/cpu-architecture.md#two-way-xip-read-cache-2026-11-17).
+
+## Application image and boot modes
+
+`tools/xip_image.py pack` prefixes each application with a 32-byte big-endian
+header. All reserved words must be zero.
+
+| Offset | Field | Meaning |
+|---:|---|---|
+| `0x00` | Magic | `J2X1` (`0x4a325831`) |
+| `0x04` | Entry address | Halfword-aligned address inside the application |
+| `0x08` | Application length | Payload bytes, excluding the header |
+| `0x0c` | Checksum | Sum of all payload bytes, modulo 32 bits |
+| `0x10` | Load address | Destination selected by the pack command |
+| `0x14`–`0x1f` | Reserved | Three zero words |
+
+When the load address is the XIP payload address `0x10000020`, the BootROM runs
+the application directly from flash. Any other load address must fit with the
+complete application inside SDRAM at `0x80000000`–`0x807fffff`; the BootROM
+copies the verified payload there and jumps to its entry address.
+
+To build the validation application for SDRAM instead of XIP:
+
+```sh
+make -C sw/xipapp OUT="$PWD/build/sw/sdramapp" LOAD_ADDRESS=0x80400000
+tools/xip_image.py pack build/sw/sdramapp/main.bin \
+  build/sw/sdramapp/flash.bin --load-address 0x80400000
+```
+
+Use the resulting `flash.bin` with the normal simulator or UART upload flow.
 
 ## 32-bit GPIO
 
@@ -193,7 +216,7 @@ or put `td` on `PATH`; no vendor installation path is stored in the project.
 ## Verification
 
 ```sh
-make spinal-test            # 44 CPU, plugin, ISA, reset, SPI/cache and timer tests
+make spinal-test            # 51 CPU, matrix, ISA, reset, SPI/cache and timer tests
 make spinal-generate        # CPU and SoC Verilog under build/spinal/verilog
 make spinal-microcode-verif # full ROM, RTE, and interrupt regressions
 make verilog-hw-sim         # native SoC and full legacy CPU test ROM
@@ -329,19 +352,26 @@ one microsecond over 40 seconds, and validation timing matches exactly. SDRAM,
 timer interrupts, and quad-XIP boot pass on hardware after upload and a fresh
 JTAG reload. Full details and contracts are in [the CPU architecture guide](docs/cpu-architecture.md).
 
-The generic two-way XIP cache build passes at 32 MHz with 11,438 LUTs, 2,702
-registers, 51 9K BRAMs, and 10 32K BRAMs. Minimum setup/hold slack is
-2.978/0.201 ns. Both CoreMark seed sets run about 22.2 times faster than the
-uncached FPGA using identical ten-iteration binaries and matching CRCs; these
-short runs are regression measurements. Cache invalidation, ISA, SDRAM and
-timer tests pass after UART upload and an independent reboot. Because cached
-runs are shorter than CoreMark's ten-second reporting minimum, use the existing
-regression-only option when running them directly:
+The initial matrix-based, two-way XIP cache build passes at 32 MHz with 11,349
+LUTs, 51 9K BRAMs, and 10 32K BRAMs. Minimum setup/hold slack is 3.409/0.146 ns.
+Both CoreMark seed sets run about 22.2 times faster than the uncached FPGA and
+match its CRCs; these short runs are regression measurements. Matrix, cache,
+ISA, SDRAM, timer, XIP and SDRAM-load tests pass after UART upload and an
+independent reboot. Because cached runs are shorter than CoreMark's ten-second
+reporting minimum, use the existing regression-only option when running them
+directly:
 
 ```sh
 python3 tools/coremark.py hardware --iterations 10 \
   --output build/coremark/cached/hardware --allow-short
 ```
+
+The paired-master arbitration correction passes 51 Scala tests and full-SoC
+reset, cold-boot and UART-loader simulation. FPGA upload and independent reboot
+pass the cache, SDRAM, timer and ISA tests, including same-memory TAS/CAS.
+The corrected 32 MHz build uses 11,217 LUTs and 2,668 registers, with
+1.981/0.149 ns setup/hold slack and unchanged BRAM counts. Multi-CPU pairing and
+sparse-connectivity cases are covered in RTL simulation.
 
 Program volatile FPGA configuration and listen at 19,200 baud:
 

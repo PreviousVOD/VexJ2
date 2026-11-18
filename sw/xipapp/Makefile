@@ -6,7 +6,11 @@ CC := $(CROSS)gcc
 J2_CLOCK_HZ ?= 32000000
 CFLAGS := -m2 $(ENDIAN) -Os -Wall -ffreestanding -fno-builtin -nostdlib \
 	-I$(ROOT)/sw/xiprom -DJ2_CLOCK_HZ=$(J2_CLOCK_HZ)
+LOAD_ADDRESS ?=
 LDFLAGS := -m2 $(ENDIAN) -nostdlib -T app.x -Wl,-Map,$(OUT)/main.map
+ifneq ($(LOAD_ADDRESS),)
+LDFLAGS += -Wl,--defsym=LOAD_ADDRESS=$(LOAD_ADDRESS)
+endif
 OBJS := $(addprefix $(OUT)/,entry.o main.o uart.o isa.o isa_asm.o)
 
 all: $(OUT)/main.bin $(OUT)/main.lst

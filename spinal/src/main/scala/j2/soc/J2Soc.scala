@@ -1,12 +1,11 @@
 package j2.soc
 
-import j2.bus.{J2Wishbone, J2WishboneArbiter, J2ReadCache, J2ReadCacheConfig}
+import j2.bus.{J2Wishbone, J2WishboneIntercon, J2ReadCache, J2ReadCacheConfig}
 import j2.core.{J2CoreConfig, J2MicrocodedCore}
 import j2.periph._
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.misc.SizeMapping
-import spinal.lib.bus.wishbone.{Wishbone, WishboneDecoder}
 import spinal.lib.com.uart.{UartCtrlMemoryMappedConfig, WishboneUartCtrl}
 import spinal.lib.io.TriStateArray
 
@@ -37,7 +36,6 @@ final class J2Soc(
   private val uartMapping         = SizeMapping(0xff001000L, 0x1000)
   private val flashControlMapping = SizeMapping(0xff002000L, 0x1000)
   private val timerMapping        = SizeMapping(0xff003000L, 0x1000)
-
   private val cacheControlMapping = SizeMapping(0xff004000L, 0x1000)
 
   private val xipCache = new J2ReadCache(xipConfig)
@@ -53,39 +51,6 @@ final class J2Soc(
   )
   val sdramInterface = sdram.io.sdram
 
-  private def select(master: Wishbone, mapping: SizeMapping): Wishbone = {
-    val selected = J2Wishbone()
-    selected.CYC      := master.CYC && mapping.hit(master.ADR)
-    selected.STB      := master.STB
-    selected.WE       := master.WE
-    selected.ADR      := master.ADR
-    selected.DAT_MOSI := master.DAT_MOSI
-    selected.SEL      := master.SEL
-    // Only the selected memory participates in an atomic cycle. Forwarding a
-    // global LOCK to inactive memory arbiters can reserve the instruction ROM
-    // while an atomic SRAM operation waits for its next microstep.
-    selected.LOCK := master.LOCK && mapping.hit(master.ADR)
-    selected
-  }
-
-  private val dRom   = select(cpu.io.dbus, romMapping)
-  private val dSram  = select(cpu.io.dbus, sramMapping)
-  private val dFlash = select(cpu.io.dbus, flashMapping)
-  private val dSdram = select(cpu.io.dbus, sdramMapping)
-  private val memoryAccess = romMapping.hit(cpu.io.dbus.ADR) || sramMapping.hit(cpu.io.dbus.ADR) ||
-    flashMapping.hit(cpu.io.dbus.ADR) || sdramMapping.hit(cpu.io.dbus.ADR)
-
-  private val romArbiter   = new J2WishboneArbiter(2, instructionInput = Some(1))
-  private val sramArbiter  = new J2WishboneArbiter(2, instructionInput = Some(1))
-  private val flashArbiter = new J2WishboneArbiter(2, instructionInput = Some(1))
-  private val sdramArbiter = new J2WishboneArbiter(2, instructionInput = Some(1))
-  romArbiter.io.inputs(0) <> dRom
-  sramArbiter.io.inputs(0) <> dSram
-  flashArbiter.io.inputs(0) <> dFlash
-  sdramArbiter.io.inputs(0) <> dSdram
-  romArbiter.io.output <> rom.io.bus
-  sramArbiter.io.output <> sram.io.bus
-  flashArbiter.io.output <> xipCache.io.bus
   // Cache tags/refill commands use absolute addresses. Only the backend adapter
   // translates the mapped window to flash offsets, so relocation is explicit.
   flash.io.xip.cmd.valid       := xipCache.io.refill.cmd.valid
@@ -96,17 +61,30 @@ final class J2Soc(
   xipCache.io.hold       := flash.io.readHold
   xipCache.io.invalidate := flash.io.invalidate
   flash.io.readBusy      := xipCache.io.busy
-  sdramArbiter.io.output <> sdram.io.bus
 
-  private val instructionUnmapped =
-    !romMapping.hit(cpu.io.ibus.ADR) && !sramMapping.hit(cpu.io.ibus.ADR) &&
-      !flashMapping.hit(cpu.io.ibus.ADR) && !sdramMapping.hit(cpu.io.ibus.ADR)
-  private val instructionError = RegInit(False)
+  private val instructionMappings = Seq(romMapping, sramMapping, flashMapping, sdramMapping)
+  private val dataMappings = instructionMappings ++ Seq(
+    pioMapping,
+    uartMapping,
+    flashControlMapping,
+    timerMapping,
+    cacheControlMapping
+  )
+  private val instructionUnmapped = !instructionMappings.map(_.hit(cpu.io.ibus.ADR)).reduce(_ || _)
+  private val dataUnmapped        = !dataMappings.map(_.hit(cpu.io.dbus.ADR)).reduce(_ || _)
+  private val instructionError    = RegInit(False)
+  private val dataError           = RegInit(False)
   when(instructionUnmapped && cpu.io.ibus.CYC) {
     instructionError := True
   }.elsewhen(!cpu.io.ibus.CYC) {
     instructionError := False
   }
+  when(dataUnmapped && cpu.io.dbus.CYC) {
+    dataError := True
+  }.elsewhen(!cpu.io.dbus.CYC) {
+    dataError := False
+  }
+
   private val instructionBus = J2Wishbone()
   instructionBus.CYC      := cpu.io.ibus.CYC && !instructionUnmapped
   instructionBus.STB      := cpu.io.ibus.STB
@@ -115,30 +93,63 @@ final class J2Soc(
   instructionBus.DAT_MOSI := cpu.io.ibus.DAT_MOSI
   instructionBus.SEL      := cpu.io.ibus.SEL
   instructionBus.LOCK     := cpu.io.ibus.LOCK
-  private val iMux = WishboneDecoder(
-    instructionBus,
-    Seq(
-      romArbiter.io.inputs(1) -> romMapping,
-      sramArbiter.io.inputs(1) -> sramMapping,
-      flashArbiter.io.inputs(1) -> flashMapping,
-      sdramArbiter.io.inputs(1) -> sdramMapping
-    ),
-    byteAddressedDecodings = false
+
+  private val dataBus = J2Wishbone()
+  dataBus.CYC      := cpu.io.dbus.CYC && !dataUnmapped
+  dataBus.STB      := cpu.io.dbus.STB
+  dataBus.WE       := cpu.io.dbus.WE
+  dataBus.ADR      := cpu.io.dbus.ADR
+  dataBus.DAT_MOSI := cpu.io.dbus.DAT_MOSI
+  dataBus.SEL      := cpu.io.dbus.SEL
+  dataBus.LOCK     := cpu.io.dbus.LOCK
+
+  private val uartBus = J2Wishbone()
+  J2Wishbone.connectToWordAddressed(uartBus, uart.io.bus)
+
+  private val matrix = J2WishboneIntercon()
+  matrix.addSlaves(
+    rom.io.bus -> romMapping,
+    sram.io.bus -> sramMapping,
+    xipCache.io.bus -> flashMapping,
+    sdram.io.bus -> sdramMapping,
+    pio.io.bus -> pioMapping,
+    uartBus -> uartMapping,
+    flash.io.control -> flashControlMapping,
+    timer.io.bus -> timerMapping,
+    xipCache.io.control -> cacheControlMapping
   )
+  matrix.addMaster(
+    dataBus,
+    Seq(
+      rom.io.bus,
+      sram.io.bus,
+      xipCache.io.bus,
+      sdram.io.bus,
+      pio.io.bus,
+      uartBus,
+      flash.io.control,
+      timer.io.bus,
+      xipCache.io.control
+    )
+  )
+  matrix.addInstructionMaster(
+    instructionBus,
+    dataBus,
+    Seq(rom.io.bus, sram.io.bus, xipCache.io.bus, sdram.io.bus)
+  )
+
   cpu.io.ibus.ACK := Mux(instructionUnmapped, False, instructionBus.ACK)
   cpu.io.ibus.DAT_MISO := Mux(
     cpu.io.ibus.ADR(1),
     Cat(U(0, 16 bits), instructionBus.DAT_MISO(15 downto 0)),
     Cat(U(0, 16 bits), instructionBus.DAT_MISO(31 downto 16))
   )
-  cpu.io.ibus.ERR := Mux(instructionUnmapped, instructionError, instructionBus.ERR)
+  cpu.io.ibus.ERR      := Mux(instructionUnmapped, instructionError, instructionBus.ERR)
+  cpu.io.dbus.ACK      := Mux(dataUnmapped, False, dataBus.ACK)
+  cpu.io.dbus.ERR      := Mux(dataUnmapped, dataError, dataBus.ERR)
+  cpu.io.dbus.DAT_MISO := dataBus.DAT_MISO
 
-  private val peripheralAccess =
-    pioMapping.hit(cpu.io.dbus.ADR) || uartMapping.hit(cpu.io.dbus.ADR) ||
-      flashControlMapping.hit(cpu.io.dbus.ADR) || timerMapping.hit(cpu.io.dbus.ADR) ||
-      cacheControlMapping.hit(cpu.io.dbus.ADR)
-  private val peripheralUnmapped = !memoryAccess && !peripheralAccess
-  private val sdramPhy           = new Eg4SdramPhy
+  private val sdramPhy = new Eg4SdramPhy
   sdramPhy.clk   := ClockDomain.current.readClockWire
   sdramPhy.ras_n := sdramInterface.RASn
   sdramPhy.cas_n := sdramInterface.CASn
@@ -157,84 +168,6 @@ final class J2Soc(
     sdramDq := sdramInterface.DQ.write
   }
   sdramInterface.DQ.read := sdramDq
-
-  private val peripheralError = RegInit(False)
-  when(peripheralUnmapped && cpu.io.dbus.CYC) {
-    peripheralError := True
-  }.elsewhen(!cpu.io.dbus.CYC) {
-    peripheralError := False
-  }
-  private val peripheralBus = J2Wishbone()
-  peripheralBus.CYC      := cpu.io.dbus.CYC && !peripheralUnmapped && !memoryAccess
-  peripheralBus.STB      := cpu.io.dbus.STB
-  peripheralBus.WE       := cpu.io.dbus.WE
-  peripheralBus.ADR      := cpu.io.dbus.ADR
-  peripheralBus.DAT_MOSI := cpu.io.dbus.DAT_MOSI
-  peripheralBus.SEL      := cpu.io.dbus.SEL
-  peripheralBus.LOCK     := cpu.io.dbus.LOCK
-  private val uartBus = J2Wishbone()
-  J2Wishbone.connectToWordAddressed(uartBus, uart.io.bus)
-  private val dMux = WishboneDecoder(
-    peripheralBus,
-    Seq(
-      pio.io.bus -> pioMapping,
-      uartBus -> uartMapping,
-      flash.io.control -> flashControlMapping,
-      timer.io.bus -> timerMapping,
-      xipCache.io.control -> cacheControlMapping
-    ),
-    byteAddressedDecodings = false
-  )
-
-  private val memoryAck = MuxOH(
-    Vec(
-      romMapping.hit(cpu.io.dbus.ADR),
-      sramMapping.hit(cpu.io.dbus.ADR),
-      flashMapping.hit(cpu.io.dbus.ADR),
-      sdramMapping.hit(cpu.io.dbus.ADR)
-    ),
-    Vec(
-      romArbiter.io.inputs(0).ACK,
-      sramArbiter.io.inputs(0).ACK,
-      flashArbiter.io.inputs(0).ACK,
-      sdramArbiter.io.inputs(0).ACK
-    )
-  )
-  private val memoryError = MuxOH(
-    Vec(
-      romMapping.hit(cpu.io.dbus.ADR),
-      sramMapping.hit(cpu.io.dbus.ADR),
-      flashMapping.hit(cpu.io.dbus.ADR),
-      sdramMapping.hit(cpu.io.dbus.ADR)
-    ),
-    Vec(
-      romArbiter.io.inputs(0).ERR,
-      sramArbiter.io.inputs(0).ERR,
-      flashArbiter.io.inputs(0).ERR,
-      sdramArbiter.io.inputs(0).ERR
-    )
-  )
-  private val memoryData = MuxOH(
-    Vec(
-      romMapping.hit(cpu.io.dbus.ADR),
-      sramMapping.hit(cpu.io.dbus.ADR),
-      flashMapping.hit(cpu.io.dbus.ADR),
-      sdramMapping.hit(cpu.io.dbus.ADR)
-    ),
-    Vec(
-      romArbiter.io.inputs(0).DAT_MISO,
-      sramArbiter.io.inputs(0).DAT_MISO,
-      flashArbiter.io.inputs(0).DAT_MISO,
-      sdramArbiter.io.inputs(0).DAT_MISO
-    )
-  )
-  cpu.io.dbus.ACK := Mux(peripheralUnmapped, False, Mux(memoryAccess, memoryAck, peripheralBus.ACK))
-  cpu.io.dbus.ERR := Mux(
-    peripheralUnmapped,
-    peripheralError,
-    Mux(memoryAccess, memoryError, peripheralBus.ERR)
-  )
-  cpu.io.dbus.DAT_MISO := Mux(memoryAccess, memoryData, peripheralBus.DAT_MISO)
 
   cpu.io.event.valid              := timer.io.interrupt
   cpu.io.event.payload.command    := 0
