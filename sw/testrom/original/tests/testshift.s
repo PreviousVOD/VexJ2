@@ -243,45 +243,7 @@ _testgo:
  mov.l _ppass_addr, r4
  mov.l r3, @r4
 
-! Unlike other shifter instructions, SHAD and SHLD do not read or
-! write the T bit. Instead of storing the initial and expected SR
-! values in the test case, the following tests initialize SR to 0
-! and compare against 0, using R0=0.        
- mov   #0, r0
-!---- SHLD
-.rept 4
- mov.l @r1+, r2 ! initial value A
- mov.l @r1+, r3 ! initial value B
- ldc   r0, sr
- shld  r3, r2
- stc   sr, r0
- mov.l @r1+, r5 ! result value
- cmp/eq r2, r5
- bt     .+6
- jmp    @r13
- nop
- cmp/eq #0, r0
- bt     .+6
- jmp    @r13
- nop
-.endr
-!----- SHAD
-.rept 6
- mov.l @r1+, r2 ! initial value A
- mov.l @r1+, r3 ! initial value B
- ldc   r0, sr
- shad  r3, r2
- stc   sr, r0
- mov.l @r1+, r5 ! result value
- cmp/eq r2, r5
- bt     .+6
- jmp    @r13
- nop
- cmp/eq #0, r0
- bt     .+6
- jmp    @r13
- nop
-.endr
+
         
 !----
  bra    _pass
@@ -360,47 +322,6 @@ _testvalue :
  .long 0x12345678
  .long 0x00000000
  .long 0x00001234
-!----SHLD
- .long 0xa55a5aa5 ! A
- .long 3          ! B
- .long 0x2ad2d528 ! Y
-
- .long 0xa55a5aa5
- .long -21
- .long 0x0000052a
-
- .long 0xa55a5aa5
- .long -32
- .long 0
-        
- .long 0x255a5aa5
- .long -32
- .long 0
-!----SHAD
- .long 0x0aa5a55a ! A
- .long 3          ! B
- .long 0x552d2ad0 ! Y
-        
- .long 0x0aa5a55a
- .long 4
- .long 0xaa5a55a0
-        
- .long 0x5aa5a55a
- .long -3
- .long 0x0b54b4ab
-        
- .long 0xa55a5aa5
- .long -10
- .long 0xffe95696
-
- .long 0xa55a5aa5
- .long -32
- .long -1
-        
- .long 0x255a5aa5
- .long -32
- .long 0
-
 /**************
  Congratulations
  **************/

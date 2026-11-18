@@ -14,7 +14,7 @@ class J2IsaSpec extends munit.FunSuite {
     )
   }
 
-  test("J2 extension instructions decode as legal") {
+  test("J2 extension instructions are illegal on SH-2") {
     val extensions = Seq(
       0x4f2c, // SHAD
       0x4f2d, // SHLD
@@ -23,7 +23,7 @@ class J2IsaSpec extends munit.FunSuite {
     )
     extensions.foreach { instruction =>
       assert(!J2Isa.excludedJ2(instruction), f"0x$instruction%04x must not be excluded")
-      assert(J2Isa.legal(instruction))
+      assert(J2Isa.decode(instruction).isInstanceOf[J2DecodeResult.Illegal])
     }
   }
 

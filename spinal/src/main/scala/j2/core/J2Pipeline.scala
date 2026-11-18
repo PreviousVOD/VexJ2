@@ -70,16 +70,26 @@ object J2ControlDefaults {
   }
 }
 
+/** EX output held in MA until the bus response completes. Holding the address between requests also
+  * preserves the decoder selection during TAS lock gaps.
+  */
+final class J2MemoryRequest extends Bundle {
+  val address, data = UInt(32 bits)
+  val write         = Bool()
+  val size          = J2MemSize()
+}
+
 final class J2PipelineState extends Bundle {
-  val ex1Metadata, wb1Metadata, wb2Metadata, wb3Metadata = new J2InstructionMetadata
-  val ex1                                                = new J2ExControl
-  val ex1Stall                                           = new J2ExStallControl
-  val wb1                                                = new J2WbControl
-  val wb2                                                = new J2WbControl
-  val wb3                                                = new J2WbControl
-  val wb1Stall                                           = new J2WbStallControl
-  val wb2Stall                                           = new J2WbStallControl
-  val wb3Stall                                           = new J2WbStallControl
+  val maRequest                          = new J2MemoryRequest
+  val exMetadata, maMetadata, wbMetadata = new J2InstructionMetadata
+  val ex                                 = new J2ExControl
+  val exAction                           = new J2ExStallControl
+  val exWriteback                        = new J2WbControl
+  val ma                                 = new J2WbControl
+  val wb                                 = new J2WbControl
+  val exWritebackAction                  = new J2WbStallControl
+  val maAction                           = new J2WbStallControl
+  val wbAction                           = new J2WbStallControl
 }
 
 final class J2Pipeline extends Component {
@@ -87,12 +97,13 @@ final class J2Pipeline extends Component {
     val slot        = in Bool ()
     val nextIdStall = in Bool ()
     // Kill the younger writeback paired with EX when a data access faults.
-    val cancelWb1 = in Bool ()
-    val ex        = in(new J2ExControl)
-    val exStall   = in(new J2ExStallControl)
-    val wb        = in(new J2WbControl)
-    val wbStall   = in(new J2WbStallControl)
-    val state     = out(new J2PipelineState)
+    val cancelExWriteback = in Bool ()
+    val ex                = in(new J2ExControl)
+    val exStall           = in(new J2ExStallControl)
+    val wb                = in(new J2WbControl)
+    val wbStall           = in(new J2WbStallControl)
+    val memoryRequest     = in(new J2MemoryRequest)
+    val state             = out(new J2PipelineState)
   }
 
   private val metadata = new J2InstructionMetadata
@@ -101,34 +112,38 @@ final class J2Pipeline extends Component {
   private val graph = new J2PipelineLogic(
     io.slot,
     io.nextIdStall,
-    io.cancelWb1,
+    io.cancelExWriteback,
     io.ex,
     io.exStall,
     io.wb,
     io.wbStall,
-    metadata
+    metadata,
+    io.memoryRequest
   )
   io.state := graph.state
   graph.build()
 }
 
-/** Non-collapsing microstep pipeline shared by the CPU plugin and leaf tests. EX and WB1 occupy
-  * parallel payload paths at node 1; only WB travels onward.
+/** SH-2 ID -> EX -> MA -> WB slot pipeline; IF is owned by J2FetchPlugin. ALU results finish in EX.
+  * Memory controls and instruction metadata continue through MA and WB. External waits freeze
+  * slots, not the multiplier clock.
   */
 final class J2PipelineLogic(
     advance: Bool,
     nextIdStall: Bool,
-    cancelWb1: Bool,
+    cancelExWriteback: Bool,
     ex: J2ExControl,
     exStall: J2ExStallControl,
     wb: J2WbControl,
     wbStall: J2WbStallControl,
-    metadata: J2InstructionMetadata
+    metadata: J2InstructionMetadata,
+    memoryRequest: J2MemoryRequest
 ) extends Area {
   val EX        = Payload(new J2ExControl)
   val EX_ACTION = Payload(new J2ExStallControl)
   val WB        = Payload(new J2WbControl)
   val WB_ACTION = Payload(new J2WbStallControl)
+  val MEMORY    = Payload(new J2MemoryRequest)
   val METADATA  = Payload(new J2InstructionMetadata)
   val stages    = Vector.fill(4)(CtrlLink())
   val links = stages.zip(stages.tail).map { case (from, to) =>
@@ -143,30 +158,38 @@ final class J2PipelineLogic(
   id.up(METADATA)      := metadata
   id.bypass(EX_ACTION) := Mux(nextIdStall, J2ControlDefaults.exStall(), id.up(EX_ACTION))
   id.bypass(WB_ACTION) := Mux(nextIdStall, J2ControlDefaults.wbStall(), id.up(WB_ACTION))
-  // Kill only WB1 as it enters WB2. Older WB2 still enters WB3 on this edge.
+  // EX creates the MA request. Hold unused payloads across bubbles, especially
+  // while TAS keeps CYC/LOCK asserted between its read and write.
+  stages(1).down(MEMORY) := Mux(
+    stages(1).up(EX_ACTION).memoryIssue && !cancelExWriteback,
+    memoryRequest,
+    stages(2).up(MEMORY)
+  )
+  // Cancel younger EX writeback on a data fault; the older MA result drains to WB.
   stages(1).bypass(WB_ACTION) :=
-    Mux(cancelWb1, J2ControlDefaults.wbStall(), stages(1).up(WB_ACTION))
+    Mux(cancelExWriteback, J2ControlDefaults.wbStall(), stages(1).up(WB_ACTION))
   stages.last.down.ready := advance
 
   val state = new J2PipelineState
-  state.ex1         := stages(1).up(EX)
-  state.ex1Stall    := stages(1).up(EX_ACTION)
-  state.ex1Metadata := stages(1).up(METADATA)
-  state.wb1         := stages(1).up(WB)
-  state.wb2         := stages(2).up(WB)
-  state.wb3         := stages(3).up(WB)
-  state.wb1Stall    := stages(1).up(WB_ACTION)
-  state.wb2Stall    := stages(2).up(WB_ACTION)
-  state.wb3Stall    := stages(3).up(WB_ACTION)
-  state.wb1Metadata := stages(1).up(METADATA)
-  state.wb2Metadata := stages(2).up(METADATA)
-  state.wb3Metadata := stages(3).up(METADATA)
+  state.maRequest         := stages(2).up(MEMORY)
+  state.ex                := stages(1).up(EX)
+  state.exAction          := stages(1).up(EX_ACTION)
+  state.exMetadata        := stages(1).up(METADATA)
+  state.exWriteback       := stages(1).up(WB)
+  state.ma                := stages(2).up(WB)
+  state.wb                := stages(3).up(WB)
+  state.exWritebackAction := stages(1).up(WB_ACTION)
+  state.maAction          := stages(2).up(WB_ACTION)
+  state.wbAction          := stages(3).up(WB_ACTION)
+  state.maMetadata        := stages(2).up(METADATA)
+  state.wbMetadata        := stages(3).up(METADATA)
 
   def build(): Unit = {
     Builder(links ++ stages)
     // Payloads are registers created by StageLink. Reset after Builder so reset
     // retains priority over movement, including when advance is asserted.
     when(ClockDomain.current.isResetActive) {
+      stages(2).up(MEMORY).assignFromBits(B(0, stages(2).up(MEMORY).getBitsWidth bits))
       stages(1).up(EX)        := J2ControlDefaults.ex()
       stages(1).up(EX_ACTION) := J2ControlDefaults.exStall()
       for (stage <- stages.tail) {
@@ -190,8 +213,8 @@ final class J2Hazards extends Component {
     val macStall         = out Bool ()
   }
 
-  private val wbWrite    = io.state.wb1Stall.regWriteW
-  private val wbAddress  = io.state.wb1.regW
+  private val wbWrite    = io.state.exWritebackAction.regWriteW
+  private val wbAddress  = io.state.exWriteback.regW
   private val xConflict  = io.ex.xSelect === J2XBusSelect.REG && io.ex.regX === wbAddress
   private val yConflict  = io.ex.ySelect === J2YBusSelect.REG && io.ex.regY === wbAddress
   private val zConflict  = io.exStall.regWriteZ && io.ex.regZ === wbAddress
@@ -199,6 +222,6 @@ final class J2Hazards extends Component {
 
   io.registerConflict := wbWrite && (xConflict || yConflict || zConflict || r0Conflict)
   io.macStall := io.macStallSense &&
-    (io.state.wb1.macBusy || io.state.wb2.macBusy || io.state.wb3.macBusy ||
-      io.state.ex1.macBusy || io.macBusy)
+    (io.state.exWriteback.macBusy || io.state.ma.macBusy || io.state.wb.macBusy ||
+      io.state.ex.macBusy || io.macBusy)
 }

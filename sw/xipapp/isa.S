@@ -17,30 +17,6 @@ _isa_atomic_begin:
   mov #3,r5
   tas.b @r4
   bt 9f
-  mov #4,r5
-  mov #17,r2
-  mov.l r2,@r4
-  mov r4,r0
-  mov #34,r1
-  .word 0x2123 /* cas.l r2,r1,@r0 */
-  bf 9f
-  mov #5,r5
-  cmp/eq r2,r1
-  bf 9f
-  mov #34,r6
-  mov.l @r4,r3
-  cmp/eq r6,r3
-  bf 9f
-  mov #6,r5
-  mov #51,r1
-  mov #17,r2
-  .word 0x2123
-  bt 9f
-  cmp/eq r6,r1
-  bf 9f
-  mov.l @r4,r3
-  cmp/eq r6,r3
-  bf 9f
   mov #0,r0
   rts
   nop
@@ -86,14 +62,17 @@ _isa_forward:
 1:
   cmp/eq #1,r0
   bf 9f
-  /* J2 SHAD/SHLD must handle a negative shift of exactly 32. */
-  mov #-32,r1
+  /* SH-2 fixed shifts and rotates. */
   mov #-1,r2
-  .word 0x421c /* shad r1,r2 */
-  cmp/eq r3,r2
-  bf 9f
-  .word 0x421d /* shld r1,r2 */
+  shlr16 r2
+  shlr16 r2
   tst r2,r2
+  bf 9f
+  mov #1,r2
+  rotr r2
+  rotl r2
+  mov #1,r1
+  cmp/eq r1,r2
   bf 9f
   mov #0,r0
   rts
@@ -266,3 +245,107 @@ _isa_bad_sr:
   nop
 .align 2
 2: .long 1b
+
+/* Removed J2 extensions must enter SH-2 vector 4, or vector 6 in a
+ * delay slot. Context[5] holds the expected saved PC separately from the
+ * repaired continuation. Raw words keep the build strictly -m2. */
+.macro extension_test name, opcode, delayed=0
+.global _\name
+_\name:
+  mov.l 4f,r1
+  mov.l r1,@r4
+  mov.l 5f,r1
+  mov.l r1,@(20,r4)
+  mov #77,r0
+.if \delayed
+  bra 2f
+.endif
+1:
+  .word \opcode
+  mov #-1,r0
+2:
+  rts
+  nop
+.align 2
+4: .long 2b
+.if \delayed
+5: .long 2b
+.else
+5: .long 1b
+.endif
+.endm
+extension_test isa_removed_bgnd, 0x003b
+extension_test isa_removed_cas, 0x2123
+extension_test isa_removed_shad, 0x421c
+extension_test isa_removed_shld, 0x421d
+extension_test isa_slot_bgnd, 0x003b, 1
+extension_test isa_slot_cas, 0x2123, 1
+extension_test isa_slot_shad, 0x421c, 1
+extension_test isa_slot_shld, 0x421d, 1
+
+/* Dependent MAC accesses must wait for the free-running multiplier. */
+.global _isa_mul_pipeline
+_isa_mul_pipeline:
+  mov #3,r1
+  mov #7,r2
+  mul.l r1,r2
+  sts macl,r0
+  cmp/eq #21,r0
+  bf 9f
+  dmuls.l r1,r2
+  clrmac
+  sts mach,r0
+  tst r0,r0
+  bf 9f
+  sts macl,r0
+  tst r0,r0
+  bf 9f
+  muls.w r1,r2
+  mov #-1,r3
+  lds r3,macl
+  sts macl,r0
+  cmp/eq #-1,r0
+  bf 9f
+  dmulu.l r1,r2
+  mov.l r3,@r4
+  lds.l @r4+,mach
+  sts mach,r0
+  cmp/eq #-1,r0
+  bf 9f
+  sts macl,r0
+  cmp/eq #21,r0
+  bf 9f
+  /* Three successive memory-fed MACs, with distinct first operands. */
+  mov #2,r1
+  mov #3,r2
+  mov.l r1,@r4
+  mov.l r2,@(4,r4)
+  mov #4,r1
+  mov #5,r2
+  mov.l r1,@(8,r4)
+  mov.l r2,@(12,r4)
+  mov #6,r1
+  mov #7,r2
+  mov.l r1,@(16,r4)
+  mov.l r2,@(20,r4)
+  mov r4,r5
+  mov r4,r6
+  add #4,r6
+  clrmac
+  mac.l @r5+,@r6+
+  mac.l @r5+,@r6+
+  mac.l @r5+,@r6+
+  /* 2*3 + 3*4 + 4*5 = 38 */
+  sts macl,r0
+  cmp/eq #38,r0
+  bf 9f
+  sts mach,r0
+  tst r0,r0
+  bf 9f
+  mov #0,r0
+  rts
+  nop
+9:
+  mov #1,r0
+  rts
+  nop

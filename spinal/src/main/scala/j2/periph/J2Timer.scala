@@ -45,5 +45,8 @@ final class J2Timer(clockHz: Int, tickHz: Int = 1000000, width: Int = 32) extend
 
   timer.io.tick  := tick && tickEnable(0)
   timer.io.clear := busClearing || ClockDomain.current.isResetActive
-  io.interrupt   := interruptEnable(0) && limitHit
+  // Keep the timer comparator off the CPU's half-cycle microcode address path.
+  // The level IRQ follows enable/limitHit by one system clock, including clears
+  // and disables. The CSR still reports the current comparator result.
+  io.interrupt := RegNext(interruptEnable(0) && limitHit) init (False)
 }

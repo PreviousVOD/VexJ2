@@ -124,19 +124,27 @@ final class J2Datapath extends Component {
   )
 
   private val shiftLeft = !io.ybus(31)
-  private val shiftMagnitude =
-    Mux(shiftLeft, io.ybus(4 downto 0), (U(0, 6 bits) - io.ybus(4 downto 0)).resize(5))
-  private val shiftRightZero = shiftMagnitude === 0
-  private val shiftLogical   = Mux(shiftRightZero, U(0, 32 bits), io.xbus >> shiftMagnitude)
-  private val shiftArithmetic = Mux(
-    shiftRightZero,
-    Mux(io.xbus(31), U(0xffffffffL, 32 bits), U(0, 32 bits)),
-    (io.xbus.asSInt >> shiftMagnitude).asUInt
-  )
-  private val rotatePlainLeft = (io.xbus << shiftMagnitude).resize(32) |
-    (io.xbus >> (32 - shiftMagnitude)).resize(32)
-  private val rotatePlainRight = (io.xbus >> shiftMagnitude).resize(32) |
-    (io.xbus << (32 - shiftMagnitude)).resize(32)
+  // Only +/-1, +/-2, +/-8 and +/-16 are legal SH-2 shift counts.
+  // Decode their low five bits directly; all candidates are fixed wiring.
+  private val logicalLeft = io
+    .ybus(4 downto 0)
+    .mux(
+      2 -> (io.xbus << 2).resize(32),
+      8 -> (io.xbus << 8).resize(32),
+      16 -> (io.xbus << 16).resize(32),
+      default -> (io.xbus << 1).resize(32)
+    )
+  private val shiftLogical = io
+    .ybus(4 downto 0)
+    .mux(
+      30 -> (io.xbus >> 2).resize(32),
+      24 -> (io.xbus >> 8).resize(32),
+      16 -> (io.xbus >> 16).resize(32),
+      default -> (io.xbus >> 1).resize(32)
+    )
+  private val shiftArithmetic    = Cat(io.xbus(31), io.xbus(31 downto 1)).asUInt
+  private val rotatePlainLeft    = Cat(io.xbus(30 downto 0), io.xbus(31)).asUInt
+  private val rotatePlainRight   = Cat(io.xbus(0), io.xbus(31 downto 1)).asUInt
   private val rotateThroughLeft  = Cat(io.xbus(30 downto 0), io.sr.t).asUInt
   private val rotateThroughRight = Cat(io.sr.t, io.xbus(31 downto 1)).asUInt
   private val shiftResult        = UInt(32 bits)
@@ -153,7 +161,7 @@ final class J2Datapath extends Component {
   } elsewhen (io.exStall.shift === J2ShiftFunc.ROTC) {
     shiftResult := rotateThroughLeft
   } otherwise {
-    shiftResult := (io.xbus << shiftMagnitude).resize(32)
+    shiftResult := logicalLeft
   }
   io.shiftResult := shiftResult
   io.shiftT      := Mux(shiftLeft, io.xbus(31), io.xbus(0))

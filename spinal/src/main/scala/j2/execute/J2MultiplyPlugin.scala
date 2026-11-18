@@ -25,26 +25,34 @@ final class J2MultiplyPlugin extends FiberPlugin with J2MultiplyService {
     val pc   = host[J2ArchitecturalService].architectural
     when(s.advance && d.control.macSLatch)(macS := pc.nextStatus.s)
     val multiplyUseEx1 =
-      !m.fault && (s.state.ex1Stall.multiplyStart || s.state.ex1Stall.machWrite)
+      !m.fault && (s.state.exAction.multiplyStart || s.state.exAction.machWrite)
     val multiplyUseEx2 =
-      !m.fault && (s.state.ex1Stall.multiplyCommand =/= J2MultiplyCommand.NOP ||
-        s.state.ex1Stall.maclWrite)
+      !m.fault && (s.state.exAction.multiplyCommand =/= J2MultiplyCommand.NOP ||
+        s.state.exAction.maclWrite)
     val multiplySelect1 = Mux(
       multiplyUseEx1,
-      s.state.ex1Stall.macSelect1,
-      s.state.wb3Stall.macSelect1
+      s.state.exAction.macSelect1,
+      s.state.wbAction.macSelect1
     )
     val multiplySelect2 = Mux(
       multiplyUseEx2,
-      s.state.ex1Stall.macSelect2,
-      s.state.wb3Stall.macSelect2
+      s.state.exAction.macSelect2,
+      s.state.wbAction.macSelect2
     )
 
+    // A command or special-register access must never disappear while busy.
+    // This interlock covers memory-fed MAC microsteps as well as EX operations;
+    // the arithmetic engine continues ticking while the slot is held.
+    val readsResult = s.state.ex.ySelect === J2YBusSelect.MACH ||
+      s.state.ex.ySelect === J2YBusSelect.MACL
+    allocation.get.port.blocked := io.busy &&
+      (io.command =/= J2MultiplyCommand.NOP || io.writeM1 || io.writeMach ||
+        io.writeMacl || (!m.fault && readsResult))
     io.slot := s.advance
     io.command := Mux(
-      !m.fault && s.state.ex1Stall.multiplyCommand =/= J2MultiplyCommand.NOP,
-      s.state.ex1Stall.multiplyCommand,
-      Mux(m.readValid, s.state.wb3Stall.multiplyCommand, J2MultiplyCommand.NOP)
+      !m.fault && s.state.exAction.multiplyCommand =/= J2MultiplyCommand.NOP,
+      s.state.exAction.multiplyCommand,
+      Mux(m.readValid, s.state.wbAction.multiplyCommand, J2MultiplyCommand.NOP)
     )
     io.in1 := multiplySelect1.mux(
       J2MacSelect1.XBUS -> e.xbus,
@@ -57,12 +65,12 @@ final class J2MultiplyPlugin extends FiberPlugin with J2MultiplyService {
       J2MacSelect2.WBUS -> m.read
     )
     io.s := macS
-    io.writeM1 := (!m.fault && s.state.ex1Stall.multiplyStart) ||
-      (s.state.wb3Stall.multiplyStart && m.readValid)
-    io.writeMach := (!m.fault && s.state.ex1Stall.machWrite) ||
-      (s.state.wb3Stall.machWrite && m.readValid)
-    io.writeMacl := (!m.fault && s.state.ex1Stall.maclWrite) ||
-      (s.state.wb3Stall.maclWrite && m.readValid)
+    io.writeM1 := (!m.fault && s.state.exAction.multiplyStart) ||
+      (s.state.wbAction.multiplyStart && m.readValid)
+    io.writeMach := (!m.fault && s.state.exAction.machWrite) ||
+      (s.state.wbAction.machWrite && m.readValid)
+    io.writeMacl := (!m.fault && s.state.exAction.maclWrite) ||
+      (s.state.wbAction.maclWrite && m.readValid)
 
   }
 }

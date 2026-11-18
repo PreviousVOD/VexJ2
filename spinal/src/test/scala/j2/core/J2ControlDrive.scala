@@ -61,14 +61,26 @@ object J2ControlDrive {
     value.multiplyCommand #= J2MultiplyCommand.NOP
   }
 
+  def memoryRequest(value: J2MemoryRequest): Unit = {
+    value.address #= 0
+    value.data    #= 0
+    value.write   #= false
+    value.size    #= J2MemSize.BYTE
+  }
+
   def state(value: J2PipelineState): Unit = {
-    ex(value.ex1)
-    exStall(value.ex1Stall)
-    wb(value.wb1)
-    wb(value.wb2)
-    wb(value.wb3)
-    wbStall(value.wb1Stall)
-    wbStall(value.wb2Stall)
-    wbStall(value.wb3Stall)
+    memoryRequest(value.maRequest)
+    for (metadata <- Seq(value.exMetadata, value.maMetadata, value.wbMetadata)) {
+      metadata.pc       #= 0
+      metadata.resumePc #= 0
+    }
+    ex(value.ex)
+    exStall(value.exAction)
+    wb(value.exWriteback)
+    wb(value.ma)
+    wb(value.wb)
+    wbStall(value.exWritebackAction)
+    wbStall(value.maAction)
+    wbStall(value.wbAction)
   }
 }

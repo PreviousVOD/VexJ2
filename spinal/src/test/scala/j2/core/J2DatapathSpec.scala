@@ -85,13 +85,15 @@ class J2DatapathSpec extends munit.FunSuite {
       }
 
       check(0x80000000L, 0xffffffffL, false, J2ShiftFunc.LOGIC, 0x40000000L)
-      check(0x80000000L, 0xffffffe0L, false, J2ShiftFunc.LOGIC, 0)
       check(0x80000000L, 0xffffffffL, false, J2ShiftFunc.ARITH, 0xc0000000L)
       check(0xf0000000L, 1, false, J2ShiftFunc.ROTATE, 0xe0000001L)
       check(0xf0000000L, 0xffffffffL, false, J2ShiftFunc.ROTATE, 0x78000000L)
       check(0x0f000000L, 1, true, J2ShiftFunc.ROTC, 0x1e000001L)
       check(0x0f000000L, 0xffffffffL, true, J2ShiftFunc.ROTC, 0x87800000L)
-      check(1, 4, false, J2ShiftFunc.LOGIC, 0x10)
+      for (count <- Seq(1, 2, 8, 16); x <- Seq(0L, 1L, 0x12345678L, 0x80000001L, 0xffffffffL)) {
+        check(x, count, false, J2ShiftFunc.LOGIC, BigInt(x) << count)
+        check(x, (-count).toLong & 0xffffffffL, true, J2ShiftFunc.LOGIC, BigInt(x) >> count)
+      }
     }
   }
 

@@ -34,10 +34,9 @@ $(OUT)/uart16550.o: $(ROOT)/sw/testrom/uart16550.c Makefile
 $(OUT)/%.o: $(SRC)/%.c Makefile
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@
-# The J2 shift tests use SHAD/SHLD (SH-3/SH-2A opcodes, implemented by J2).
 $(OUT)/tests/%.o: $(SRC)/tests/%.s Makefile
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) -Wa,-isa=sh2a -c $< -o $@
+	$(CC) $(CFLAGS) -Wa,-isa=sh2 -c $< -o $@
 
 $(OUT)/main.elf: $(OBJS) Makefile $(SRC)/startup/sh32.x
 	$(CC) $(LDFLAGS) $(filter %.o,$^) -lgcc -o $@

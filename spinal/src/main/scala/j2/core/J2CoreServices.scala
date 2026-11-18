@@ -74,8 +74,8 @@ final class J2ExecutePort extends Bundle {
   val shiftT                                           = Bool()
 }
 final class J2MultiplyPort extends Bundle {
-  val busy       = Bool()
-  val mach, macl = UInt(32 bits)
+  val busy, blocked = Bool()
+  val mach, macl    = UInt(32 bits)
 }
 final class J2ArchitecturalPort extends Bundle {
   val pc, sequentialPc   = UInt(32 bits)

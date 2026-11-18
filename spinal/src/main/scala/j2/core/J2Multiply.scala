@@ -27,20 +27,23 @@ final class J2Multiply extends Component {
   private val machReg      = RegInit(U(0, 32 bits))
   private val maclReg      = RegInit(U(0, 32 bits))
 
-  private val signedProduct   = (operand1.asSInt * operand2.asSInt).resize(64).asUInt
-  private val unsignedProduct = (operand1 * operand2).resize(64)
-  private val signedProduct16 =
-    (operand1(15 downto 0).asSInt * operand2(15 downto 0).asSInt).resize(64).asUInt
-  private val unsignedProduct16 = (operand1(15 downto 0) * operand2(15 downto 0)).resize(64)
-  private val product = commandReg.mux(
-    J2MultiplyCommand.DMULSL -> signedProduct,
-    J2MultiplyCommand.MULL -> signedProduct,
-    J2MultiplyCommand.MACL -> signedProduct,
-    J2MultiplyCommand.MULSW -> signedProduct16,
-    J2MultiplyCommand.MACW -> signedProduct16,
-    J2MultiplyCommand.MULUW -> unsignedProduct16,
-    default -> unsignedProduct
-  )
+  // Independent multiplier pipeline, clocked even while CPU slots wait for memory.
+  // Word operations: product -> accumulate/commit (2 clocks).
+  // Long operations: partial products -> cross terms -> product -> commit (4 clocks).
+  private val product        = RegInit(U(0, 64 bits))
+  private val p00            = RegInit(U(0, 32 bits))
+  private val p01, p10, p11  = RegInit(S(0, 34 bits))
+  private val cross          = RegInit(S(0, 35 bits))
+  private val base           = RegInit(U(0, 64 bits))
+  private val longCommandReg = RegInit(False)
+  private val signedLong     = commandReg =/= J2MultiplyCommand.DMULUL
+  private val aLow           = operand1(15 downto 0).resize(17).asSInt
+  private val bLow           = operand2(15 downto 0).resize(17).asSInt
+  private val aHigh          = Cat(signedLong && operand1(31), operand1(31 downto 16)).asSInt
+  private val bHigh          = Cat(signedLong && operand2(31), operand2(31 downto 16)).asSInt
+  private val signedWord     = commandReg =/= J2MultiplyCommand.MULUW
+  private val aWord          = Cat(signedWord && operand1(15), operand1(15 downto 0)).asSInt
+  private val bWord          = Cat(signedWord && operand2(15), operand2(15 downto 0)).asSInt
   private val accumulator = Mux(
     saturate && commandReg === J2MultiplyCommand.MACL,
     Cat(machReg(15 downto 0), maclReg).asSInt.resize(64).asUInt,
@@ -85,7 +88,8 @@ final class J2Multiply extends Component {
         io.command === J2MultiplyCommand.DMULUL ||
         io.command === J2MultiplyCommand.MULL ||
         io.command === J2MultiplyCommand.MACL
-      remaining := Mux(longCommand, U(2, 2 bits), U(0, 2 bits))
+      longCommandReg := longCommand
+      remaining      := Mux(longCommand, U(3, 2 bits), U(1, 2 bits))
       when(
         io.command === J2MultiplyCommand.DMULSL ||
           io.command === J2MultiplyCommand.DMULUL
@@ -96,6 +100,25 @@ final class J2Multiply extends Component {
         maclReg := 0
       }
     } elsewhen (busyReg) {
+      when(longCommandReg) {
+        switch(remaining) {
+          is(3) {
+            p00 := operand1(15 downto 0) * operand2(15 downto 0)
+            p01 := aLow * bHigh
+            p10 := aHigh * bLow
+            p11 := aHigh * bHigh
+          }
+          is(2) {
+            cross := p01.resize(35) + p10.resize(35)
+            base  := Cat(p11(31 downto 0), p00).asUInt
+          }
+          is(1) {
+            product := base + (cross.resize(64).asUInt << 16).resize(64)
+          }
+        }
+      } elsewhen (remaining === 1) {
+        product := (aWord * bWord).resize(64).asUInt
+      }
       when(remaining === 0) {
         busyReg    := False
         commandReg := J2MultiplyCommand.NOP

@@ -19,7 +19,8 @@ MARKERS = (
     "XIP cache tests passed",
     "SDRAM tests passed", "Timer tests passed",
     "ISA atomics passed (SRAM/SDRAM)", "ISA forwarding passed",
-    "ISA MAC saturation passed", "ISA exceptions passed",
+    "ISA multiply pipeline passed", "ISA MAC saturation passed", "ISA exceptions passed",
+    "ISA SH-2 illegal extensions passed",
     "ISA regression tests passed", "XIP CPU tests passed",
 )
 

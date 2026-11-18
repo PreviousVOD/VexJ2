@@ -7,21 +7,29 @@ cross-reference; the handwritten Verilog SoC and third-party bus/peripheral RTL
 have been removed.
 
 The ISA baseline is `docs/isa/REN_rej09b0171_superh_MAH_20040630.pdf`. The
-J2-only `SHAD`, `SHLD`, `CAS.L`, and `BGND` instructions are implemented and
-decoded as legal instructions. There are no excluded instructions.
+J2-only `SHAD`, `SHLD`, `CAS.L`, and `BGND` encodings now raise SH-2 illegal
+instruction exceptions (vector 4, or vector 6 in a delay slot). `TAS.B` remains
+supported. The pipeline uses explicit IF/ID/EX/MA/WB responsibilities and a
+registered two-/four-clock multiplier; see [the SH-2 pipeline page](docs/sh2-pipeline.md).
 
 ## Status
 
 | Area | Status |
 |---|---|
-| SH-2 and J2 decode | 54,521 legal encodings, zero exclusions |
-| Scala CPU, ISA and integration tests | 34 tests passing |
-| Full original CPU test ROM | Passing, 5,768 retired instructions |
-| VHDL simulator cross-reference | Full original ROM and RTE passing |
+| SH-2 decode | 53,752 legal encodings; J2 extensions trap |
+| Scala CPU, ISA and integration tests | 52 tests passing |
+| Legacy CPU ROM, adapted to SH-2 | Passing, 5,295 retired instructions |
+| VHDL simulator cross-reference | Historical full J2 ROM and RTE pass; reference retained |
 | Native UART, SPI/XIP, and SDRAM | Passing simulations and hardware UART-loader tests |
 | 32-bit bidirectional GPIO | Native `WishboneGpio` plus 32 EG4 pads |
 | FPGA implementation | Timing-clean at 32 MHz |
 | Tang Primer hardware | Boot banner, `Flash ID: ef4014`, SDRAM, timer and XIP tests pass |
+
+The current SH-2 refactor passes all simulator boot modes and FPGA upload/reboot
+validation. It uses 9,880 LUTs and five DSPs, with 7.100/0.157 ns setup/hold
+slack at 32 MHz and an STA-estimated Fmax of 41.622 MHz. Both CoreMark seed
+sets pass CRC checks. Details and the stage diagram are in
+[SH-2 pipeline](docs/sh2-pipeline.md).
 
 The FPGA-only boot failure is fixed: the PLL now uses VCO feedback for its
 32 MHz divider calculation with a 384 MHz VCO, power-on reset waits for PLL lock, and SPI uses
@@ -35,7 +43,7 @@ directly from flash pass.
 ## Architecture
 
 The CPU is composed from native SpinalHDL FiberPlugins with typed services and
-a generic, collectively stalled microstep pipeline. `J2CoreConfig` selects ROM
+an explicit EX/MA/WB graph with collective slot stalls. `J2CoreConfig` selects ROM
 and debug options while preserving the existing CPU IO. See
 [CPU ownership, timing contracts, and extension guide](docs/cpu-architecture.md).
 
@@ -162,6 +170,9 @@ All external pins are LVCMOS33. The legacy validation ROM enables outputs at
 Its 32-bit counter ticks at 1 MHz, derived from the parameterized SoC clock, and
 stops at the programmable limit. The interrupt is a level request on vector
 `0x40` at priority 14; software must stop, clear, or rearm the timer in the ISR.
+The CPU IRQ is registered: assertion and deassertion follow the enabled compare
+result by one system clock. Pending status still reports the current comparison.
+This removes the timer comparator from the CPU's half-cycle microcode ROM path.
 
 | Offset | Function |
 |---:|---|
@@ -217,7 +228,7 @@ or put `td` on `PATH`; no vendor installation path is stored in the project.
 ## Verification
 
 ```sh
-make spinal-test            # 51 CPU, matrix, ISA, reset, SPI/cache and timer tests
+make spinal-test            # 52 CPU, matrix, ISA, reset, SPI/cache and timer tests
 make spinal-generate        # CPU and SoC Verilog under build/spinal/verilog
 make spinal-microcode-verif # full ROM, RTE, and interrupt regressions
 make verilog-hw-sim         # native SoC and full legacy CPU test ROM
@@ -397,8 +408,8 @@ tools/xip_image.py upload build/sw/xipapp/flash.bin --no-wait
 
 The application must match the native UART register map; an image built for
 the removed Verilog/16550 SoC can pass the ROM checksum but fail after the jump.
-The current hardware validation logs are `build/review/boot/upload.log` and
-`build/review/boot/fpga-uart.log`; implementation notes are in
+The current hardware validation logs are `build/sh2-refactor/hardware/upload.log`
+and `build/sh2-refactor/hardware/reboot.log`; earlier bring-up notes are in
 `docs/microcoded-core-debug.md`.
 
 The free Winbond 25Q80 uses CS=D3, CLK=H4, IO0=B3, IO1=F4, IO2=F5, and

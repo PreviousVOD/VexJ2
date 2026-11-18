@@ -5,7 +5,7 @@ extern const uint32_t isa_atomic_begin[], isa_atomic_end[];
 extern uint32_t isa_pc_relative(void);
 extern int isa_bad_mach(volatile uint32_t *), isa_bad_macl(volatile uint32_t *),
     isa_bad_sr(volatile uint32_t *);
-extern int isa_forward(volatile uint32_t *);
+extern int isa_forward(volatile uint32_t *), isa_mul_pipeline(volatile uint32_t *);
 extern void isa_macl(volatile uint32_t *), isa_macw(volatile uint32_t *);
 extern int isa_bad_long(volatile uint32_t *), isa_bad_word(volatile uint32_t *);
 extern int isa_bad_store_long(volatile uint32_t *),
@@ -110,6 +110,32 @@ static int faults(void) {
   return 1;
 }
 
+extern int isa_removed_bgnd(volatile uint32_t *), isa_removed_cas(volatile uint32_t *),
+    isa_removed_shad(volatile uint32_t *), isa_removed_shld(volatile uint32_t *),
+    isa_slot_bgnd(volatile uint32_t *), isa_slot_cas(volatile uint32_t *),
+    isa_slot_shad(volatile uint32_t *), isa_slot_shld(volatile uint32_t *);
+
+static int removed_extensions(void) {
+  typedef int (*test_fn)(volatile uint32_t *);
+  static const test_fn tests[] = {
+      isa_removed_bgnd, isa_removed_cas, isa_removed_shad, isa_removed_shld,
+      isa_slot_bgnd, isa_slot_cas, isa_slot_shad, isa_slot_shld};
+  volatile uint32_t *p = CONTEXT;
+  for (unsigned i = 0; i < sizeof(tests) / sizeof(tests[0]); ++i) {
+    for (unsigned j = 0; j < 6; ++j)
+      p[j] = 0;
+    int result = tests[i](p);
+    uint32_t vector = i < 4 ? 4 : 6;
+    if (p[3] != vector || p[4] != 1)
+      return failure("removed extension vector/count", p[3], vector);
+    if (p[1] != p[5])
+      return failure("removed extension saved PC", p[1], p[5]);
+    if (result != 77 || (p[2] & 0xf0) != 0xf0)
+      return failure("removed extension state", result, 77);
+  }
+  return 1;
+}
+
 int isa_test(void) {
   if (!atomics(0xa000, 0xb000) || !atomics(0x80720000, 0x80721000))
     return 0;
@@ -119,12 +145,18 @@ int isa_test(void) {
   if (isa_pc_relative() != 0x13579bdf)
     return failure("PC-relative delay slot", isa_pc_relative(), 0x13579bdf);
   uart_puts("ISA forwarding passed\n");
+  if (isa_mul_pipeline(CONTEXT))
+    return failure("MUL/MAC interlock", 1, 0);
+  uart_puts("ISA multiply pipeline passed\n");
   if (!multiply())
     return 0;
   uart_puts("ISA MAC saturation passed\n");
   if (!faults())
     return 0;
   uart_puts("ISA exceptions passed\n");
+  if (!removed_extensions())
+    return 0;
+  uart_puts("ISA SH-2 illegal extensions passed\n");
   uart_puts("ISA regression tests passed\n");
   return 1;
 }

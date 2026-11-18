@@ -59,6 +59,10 @@ def main() -> None:
     if not predecode:
         raise SystemExit("no reference predecode entries found")
 
+    # The reference contains J2 additions; this core targets the SH-2 ISA.
+    extensions = {"BGND", "CAS.L", "SHAD", "SHLD"}
+    predecode = [entry for entry in predecode if entry[2].split()[0] not in extensions]
+
     hex_data = "".join(f"{entry.upper()}\n" for entry in entries)
     predecode_data = "".join(
         f"{pattern.replace(' ', '')}\t{int(address, 2):02x}\t{name}\n"

@@ -32,7 +32,7 @@ object J2Isa {
   import J2DecodeResult._
 
   /*
-   * SH-2 instruction set plus the J2 extensions BGND, CAS.L, SHAD and SHLD.
+   * SH-2 instruction set from REJ09B0171. J2 extensions are illegal opcodes.
    */
   private val basePatterns = Seq(
     "CLRT" -> "0000000000001000",
@@ -176,11 +176,7 @@ object J2Isa {
     "XOR #imm, R0" -> "11001010iiiiiiii",
     "TRAPA #imm" -> "11000011iiiiiiii",
     "ADD #imm, Rn" -> "0111nnnniiiiiiii",
-    "MOV #imm, Rn" -> "1110nnnniiiiiiii",
-    "BGND" -> "0000000000111011",
-    "CAS.L Rm, Rn, @R0" -> "0010nnnnmmmm0011",
-    "SHAD Rm, Rn" -> "0100nnnnmmmm1100",
-    "SHLD Rm, Rn" -> "0100nnnnmmmm1101"
+    "MOV #imm, Rn" -> "1110nnnniiiiiiii"
   )
 
   val instructions: Seq[J2OpcodeDef] =

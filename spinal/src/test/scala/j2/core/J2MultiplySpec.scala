@@ -49,6 +49,13 @@ class J2MultiplySpec extends munit.FunSuite {
         sleep(1)
         dut.io.slot #= true
         assert(!dut.io.busy.toBoolean)
+        val longCommand = Set(
+          J2MultiplyCommand.DMULSL,
+          J2MultiplyCommand.DMULUL,
+          J2MultiplyCommand.MULL,
+          J2MultiplyCommand.MACL
+        ).contains(command)
+        assertEquals(cycles, if (longCommand) 4 else 2, s"arithmetic clocks: $command")
         assertEquals(dut.io.mach.toBigInt, expectedMach & 0xffffffffL, s"MACH $command")
         assertEquals(dut.io.macl.toBigInt, expectedMacl & 0xffffffffL, s"MACL $command")
       }
@@ -107,6 +114,20 @@ class J2MultiplySpec extends munit.FunSuite {
       accumulator(0, 0)
       run(J2MultiplyCommand.MACL, -2147483648L, 2147483647L, 0xffff8000L, 0)
       dut.io.s #= false
+      val random = new scala.util.Random(0x532)
+      val mask   = (BigInt(1) << 64) - 1
+      for (_ <- 0 until 100) {
+        val a        = random.nextInt()
+        val b        = random.nextInt()
+        val signed   = BigInt(a) * BigInt(b) & mask
+        val unsigned = BigInt(a.toLong & 0xffffffffL) * BigInt(b.toLong & 0xffffffffL)
+        run(J2MultiplyCommand.DMULSL, a, b, signed >> 32, signed)
+        run(J2MultiplyCommand.DMULUL, a, b, unsigned >> 32, unsigned)
+        val acc = (BigInt(random.nextLong()) & mask)
+        accumulator((acc >> 32).toLong, (acc & 0xffffffffL).toLong)
+        val sum = (acc + signed) & mask
+        run(J2MultiplyCommand.MACL, a, b, sum >> 32, sum)
+      }
       accumulator(0x00010000L, 0)
       run(J2MultiplyCommand.MACL, 0, 0, 0x00010000L, 0)
       accumulator(0xffffffffL, 0xffffffffL)

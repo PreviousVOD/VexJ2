@@ -21,14 +21,14 @@ final class J2RegisterPlugin extends FiberPlugin with J2RegisterService {
     val e  = host[J2ExecuteService].execute
     val pc = host[J2ArchitecturalService].architectural
     io.slot           := s.advance
-    io.readX          := s.state.ex1.regX
-    io.readY          := s.state.ex1.regY
-    io.writeW.enable  := s.state.wb3Stall.regWriteW && m.readValid
-    io.writeW.address := s.state.wb3.regW
+    io.readX          := s.state.ex.regX
+    io.readY          := s.state.ex.regY
+    io.writeW.enable  := s.state.wbAction.regWriteW && m.readValid
+    io.writeW.address := s.state.wb.regW
     io.writeW.data    := m.read
-    io.writeZ.enable := s.state.ex1Stall.regWriteZ && !m.fault &&
-      (s.state.ex1Stall.zSelect =/= J2ZBusSelect.WBUS || m.readValid)
-    io.writeZ.address := s.state.ex1.regZ
-    io.writeZ.data    := Mux(s.state.ex1Stall.prWritePc, pc.pc, e.zbus)
+    io.writeZ.enable := s.state.exAction.regWriteZ && !m.fault &&
+      (s.state.exAction.zSelect =/= J2ZBusSelect.WBUS || m.readValid)
+    io.writeZ.address := s.state.ex.regZ
+    io.writeZ.data    := Mux(s.state.exAction.prWritePc, pc.pc, e.zbus)
   }
 }

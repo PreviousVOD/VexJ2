@@ -27,9 +27,9 @@ final class J2ArchitecturalPlugin extends FiberPlugin with J2ArchitecturalServic
     val t          = host[J2TrapService].trap
     nextStatus := a.status
     val srSelect = Mux(
-      s.state.wb3Stall.srWriteW && m.readValid,
+      s.state.wbAction.srWriteW && m.readValid,
       J2SrSelect.WBUS,
-      Mux(m.fault, J2SrSelect.PREV, s.state.ex1Stall.srSelect)
+      Mux(m.fault, J2SrSelect.PREV, s.state.exAction.srSelect)
     )
 
     switch(srSelect) {
@@ -54,7 +54,7 @@ final class J2ArchitecturalPlugin extends FiberPlugin with J2ArchitecturalServic
         nextStatus.interruptMask := d.interruptLevel
       }
       is(J2SrSelect.SET_T) {
-        switch(s.state.ex1Stall.tSelect) {
+        switch(s.state.exAction.tSelect) {
           is(J2TSelect.CLEAR)(nextStatus.t := False)
           is(J2TSelect.SET)(nextStatus.t   := True)
           is(J2TSelect.SHIFT)(nextStatus.t := e.shiftT)
@@ -65,7 +65,7 @@ final class J2ArchitecturalPlugin extends FiberPlugin with J2ArchitecturalServic
     }
 
     // Architectural addresses remain distinct from the speculative microcode PC.
-    val resumePc = Mux(d.delaySlot, Mux(s.state.ex1Stall.pcWriteZ, e.zbus, a.pc), f.pc + 2)
+    val resumePc = Mux(d.delaySlot, Mux(s.state.exAction.pcWriteZ, e.zbus, a.pc), f.pc + 2)
     a.port.metadata.resumePc := Mux(d.startInstruction, resumePc, a.operationResumePc)
     a.port.metadata.pc       := Mux(d.startInstruction, f.pc, a.operationPc)
     when(s.advance) {
@@ -73,7 +73,7 @@ final class J2ArchitecturalPlugin extends FiberPlugin with J2ArchitecturalServic
         a.operationResumePc := resumePc
         a.operationPc       := f.pc
       }
-      when(s.state.ex1Stall.pcWriteZ && !m.fault) {
+      when(s.state.exAction.pcWriteZ && !m.fault) {
         a.pc := e.zbus
       } elsewhen (d.incrementPc) {
         a.pc := a.port.sequentialPc

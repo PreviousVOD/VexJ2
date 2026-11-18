@@ -45,23 +45,10 @@ class J2ReviewRegressionSpec extends munit.FunSuite {
     }
     val completed = mutable.ArrayBuffer.empty[Boolean]
     val compiled  = SimConfig.withVerilator.compile(new SharedMemory)
-    for (
-      variant <- Seq("tas", "cas-success", "cas-fail");
-      latency <- Seq(0, 4)
-    )
-      compiled.doSim(s"$variant-wait-$latency") { dut =>
-        val cas         = variant != "tas"
-        val shouldWrite = variant != "cas-fail"
+    for (latency <- Seq(0, 4))
+      compiled.doSim(s"tas-wait-$latency") { dut =>
         val code = Seq(
-          0xd00b,
-          0xd10c,
-          0xd20c,
-          if (cas) 0x2123 else 0x401b,
-          0xd30c,
-          0xe407,
-          0x2342,
-          0xaffe,
-          9
+          0xd00b, 0xd10c, 0xd20c, 0x401b, 0xd30c, 0xe407, 0x2342, 0xaffe, 9
         )
         val mem = mutable.Map[Long, Long](
           0L -> 0x100L,
@@ -70,7 +57,7 @@ class J2ReviewRegressionSpec extends munit.FunSuite {
           0x134L -> 0x11223344L,
           0x138L -> 0x12345678L,
           0x13cL -> 0x600L,
-          0x300L -> (if (!cas) 0L else if (shouldWrite) 0x12345678L else 0x87654321L)
+          0x300L -> 0L
         )
         code.zipWithIndex.foreach { case (op, index) =>
           val addr = 0x100L + index * 2
@@ -125,7 +112,7 @@ class J2ReviewRegressionSpec extends munit.FunSuite {
               }
               if (addr == 0x900) {
                 assert(
-                  atomicWrite || (!shouldWrite && !dut.io.locked.toBoolean),
+                  atomicWrite,
                   "competitor entered the locked cycle"
                 )
                 competingDone = true
@@ -149,11 +136,11 @@ class J2ReviewRegressionSpec extends munit.FunSuite {
           tick()
         }
         println(
-          s"shared atomic variant=$variant latency=$latency result=${mem.get(0x600L)} pc=${dut.io.pc.toLong.toHexString} I=${dut.io.instructionPending.toBoolean} D=${dut.io.dataPending.toBoolean} lock=${dut.io.locked.toBoolean}"
+          s"shared atomic TAS latency=$latency result=${mem.get(0x600L)} pc=${dut.io.pc.toLong.toHexString} I=${dut.io.instructionPending.toBoolean} D=${dut.io.dataPending.toBoolean} lock=${dut.io.locked.toBoolean}"
         )
         assertEquals(
           mem.get(0x300L),
-          Some(if (!cas) 0x80000000L else if (shouldWrite) 0x11223344L else 0x87654321L)
+          Some(0x80000000L)
         )
         assert(competingDone)
         completed += (mem.get(0x600L) == Some(7L))

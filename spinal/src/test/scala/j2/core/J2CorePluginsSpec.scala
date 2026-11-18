@@ -47,6 +47,8 @@ class J2CorePluginsSpec extends munit.FunSuite {
       wbActions.regWriteW.allowOverride
       exActions.regWriteZ := True
       wbActions.regWriteW := True
+      val request = new J2MemoryRequest
+      request.assignFromBits(B(0, request.getBitsWidth bits))
       val graph = new J2PipelineLogic(
         io.advance,
         io.bubble,
@@ -55,7 +57,8 @@ class J2CorePluginsSpec extends munit.FunSuite {
         exActions,
         J2ControlDefaults.wb(),
         wbActions,
-        metadata
+        metadata,
+        request
       )
       io.state := graph.state
       graph.build()
@@ -72,28 +75,28 @@ class J2CorePluginsSpec extends munit.FunSuite {
       dut.io.advance #= true
       dut.clockDomain.waitSampling()
       sleep(1)
-      assertEquals(dut.io.state.ex1Metadata.resumePc.toLong, 0x102L)
+      assertEquals(dut.io.state.exMetadata.resumePc.toLong, 0x102L)
       dut.io.advance #= false
       dut.io.pc      #= 0x200
       dut.clockDomain.waitSampling(3)
       sleep(1)
-      assertEquals(dut.io.state.ex1Metadata.pc.toLong, 0x100L)
+      assertEquals(dut.io.state.exMetadata.pc.toLong, 0x100L)
       dut.io.advance #= true
       dut.clockDomain.waitSampling()
       sleep(1)
-      assertEquals(dut.io.state.wb2Metadata.pc.toLong, 0x100L)
-      assertEquals(dut.io.state.ex1Metadata.pc.toLong, 0x200L)
+      assertEquals(dut.io.state.maMetadata.pc.toLong, 0x100L)
+      assertEquals(dut.io.state.exMetadata.pc.toLong, 0x200L)
       dut.io.pc     #= 0x300
       dut.io.cancel #= true
       dut.io.bubble #= true
       dut.clockDomain.waitSampling()
       sleep(1)
-      assertEquals(dut.io.state.wb3Metadata.pc.toLong, 0x100L)
-      assertEquals(dut.io.state.wb2Metadata.pc.toLong, 0x200L)
-      assert(dut.io.state.wb3Stall.regWriteW.toBoolean, "older writeback drains")
-      assert(!dut.io.state.wb2Stall.regWriteW.toBoolean, "younger writeback is cancelled")
-      assert(!dut.io.state.ex1Stall.regWriteZ.toBoolean, "decode hazards insert a bubble")
-      assertEquals(dut.io.state.ex1Metadata.resumePc.toLong, 0x302L)
+      assertEquals(dut.io.state.wbMetadata.pc.toLong, 0x100L)
+      assertEquals(dut.io.state.maMetadata.pc.toLong, 0x200L)
+      assert(dut.io.state.wbAction.regWriteW.toBoolean, "older writeback drains")
+      assert(!dut.io.state.maAction.regWriteW.toBoolean, "younger writeback is cancelled")
+      assert(!dut.io.state.exAction.regWriteZ.toBoolean, "decode hazards insert a bubble")
+      assertEquals(dut.io.state.exMetadata.resumePc.toLong, 0x302L)
     }
   }
 }

@@ -27,8 +27,8 @@ final class J2ExecutePlugin extends FiberPlugin with J2ExecuteService {
     val pc  = host[J2ArchitecturalService].architectural
     val m   = host[J2MemoryService].memory
     val mul = host[J2MultiplyService].multiply
-    io.ex              := s.state.ex1
-    io.exStall         := s.state.ex1Stall
+    io.ex              := s.state.ex
+    io.exStall         := s.state.exAction
     io.regX            := r.x
     io.regY            := r.y
     io.reg0            := r.r0

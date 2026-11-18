@@ -6,8 +6,13 @@ instances for each core. The existing Boolean constructor remains supported.
 Generation and SoC integration use the configuration constructor.
 
 The organization follows VexiiRiscv's plugin host, typed services, and generic
-pipeline links. It retains J2's microcoded execution model, complete ISA,
-canonical control ROM, and classic Wishbone interfaces.
+pipeline links. The implemented ISA is now SH-2: J2's `BGND`, `CAS.L`, `SHAD`
+and `SHLD` encodings raise illegal-instruction exceptions. Complex instructions
+retain microcode and classic Wishbone interfaces. The reference ROM's unused
+extension rows remain at their original addresses, but have no legal predecode
+entry. See [the SH-2 pipeline page](sh2-pipeline.md) for the manual mapping and
+current validation results. Historical measurements below describe their
+respective revisions, including the former J2 extensions.
 
 ## Ownership and interfaces
 
@@ -37,50 +42,65 @@ graph during build, and releases the retainer afterward. The builder creates
 the pipeline registers once all connections are registered. Plugin list order
 does not define hardware priority or elaboration order.
 
-## Microstep pipeline
+## SH-2 slot pipeline
 
-```text
-                     +--> EX1 control/actions/metadata --> execution
-decode node 0 -------+
-                     +--> WB1 --> WB2 --> WB3 --> W writeback
-                          |       |       |
-                          +-------+-------+---- instruction/resume metadata
+```mermaid
+flowchart LR
+  IF["IF: request / response buffer<br/>opcode, PC, predecode"] --> ID["ID: microcode / hazards"]
+  ID --> EX["EX: ALU, fixed shifts<br/>branch, address, store data"]
+  EX --> MA["MA: registered request<br/>Wishbone waits / response"]
+  MA --> WB["WB: load result + validity<br/>destination + metadata"]
+  EX -->|Z forwarding| RF["Registers / SR / PC"]
+  WB -->|W forwarding| RF
+  RF --> EX
+  EX --> MUL["MUL/MAC operand capture<br/>2 / 4 arithmetic clocks"]
+  WB -->|memory operands| MUL
+  MUL -->|MACH / MACL| EX
+  MUL -. busy interlock .-> ID
 ```
 
-`J2PipelineLogic` uses `Payload`, `CtrlLink`, and `StageLink.withoutCollapse()`.
-EX1 and WB1 are parallel payload paths at node 1; only writeback and metadata
-continue to nodes 2 and 3. The standalone `J2Pipeline` component is a test and
-generation wrapper around this same graph, not a second implementation.
+`J2PipelineLogic` uses `Payload`, `CtrlLink`, and `StageLink.withoutCollapse()`
+for ID, EX, MA and WB. IF remains in the fetch plugin. EX contains execution
+controls plus the deferred writeback controls that travel through MA to WB.
+The standalone `J2Pipeline` is a test/generation wrapper around the same graph.
 
-All stages advance together. There is no elastic bubble collapse. A decode
-hazard inserts no-effect EX/WB action bundles while older writeback advances.
-A data fault suppresses the younger EX effects and clears WB1's actions as it
-enters WB2; older WB2 still drains into WB3. Metadata travels with its microstep,
-including when actions are cancelled. Stage occupancy represents microsteps;
-the action bundles determine which architectural effects occur.
+EX computes a `J2MemoryRequest`; the EX-to-MA transfer registers its address,
+data, size and write direction. The memory plugin drives the bus directly from
+this MA payload. It holds the last request across bubbles so TAS retains the
+same decoder selection throughout its locked read/modify/write sequence.
+Responses are captured during waits; data and validity move into WB on the
+same enabled edge as MA's destination controls and instruction metadata.
 
-`schedule.advance` is registered. A memory request launches once on an enabled
-edge and clears the next slot enable on that issuing edge. Waiting for the
-registered bus-active flag alone would allow an extra microstep. Instruction
-and data completions are captured independently of slot advancement, then held
-until the next enabled slot. This keeps the W value paired with its WB controls
-and avoids repeating stores or multiplier commands while waiting.
+All stages advance together, with no elastic bubble collapse. A decode hazard
+inserts no-effect EX/writeback actions while older stages advance. A data
+fault suppresses younger EX effects and cancels EX's deferred writeback on
+entry to MA; the older MA result drains into WB with invalid data suppressed.
+The action bundles determine architectural effects; occupancy is per microstep.
+
+Memory/fetch readiness is registered. The issuing edge immediately clears the
+next ready state, preventing an extra slot before registered bus-active is
+visible. A separate MAC interlock qualifies slot advancement when EX or WB
+needs a busy multiplier. Both bus response capture and multiplier arithmetic
+continue while slots are held. Commands and stores therefore execute once.
+
+The multiplier has registered arithmetic boundaries. Word commands register
+the product then accumulate/commit; long commands register partial products,
+cross terms, the combined product, then accumulate/commit. This is two or four
+clocks after operand acceptance. Busy accesses to MACH/MACL, including
+memory-fed MAC operands and CLRMAC/LDS, hold their slot until accepted.
 
 The control ROM still reads on the falling edge. Its output drives the control
-table before the rising-edge microstep transfer. Pipeline migration does not
-change this half-cycle path or retime the sequencer.
+table before the rising-edge microstep transfer; this change does not retime
+the sequencer.
 
-The response buffer's opcode is predecoded before ID consumes it. The resulting
-address, legality, and delay-slot classification are latched on the same edge
-as the accepted opcode. This gives predecode a full cycle and keeps its logic
-off the rising-to-falling-edge ROM path, without adding a slot or changing when
-an instruction is visible. Patterns are checked for mutual exclusion at
-elaboration and select through a one-hot mux. Exhaustive testing checks every
-16-bit encoding; CPU traces check the unchanged timing of instruction acceptance.
+The response buffer's opcode is predecoded before ID consumes it. Its address,
+legality and delay-slot classification are latched with the opcode, keeping
+predecode off the rising-to-falling-edge ROM path. Patterns select through a
+one-hot mux; exhaustive testing checks every 16-bit encoding.
 
 ## Architectural priorities
 
-- PC/SR writes belong to the architectural plugin. A valid WB3 SR load takes
+- PC/SR writes belong to the architectural plugin. A valid WB SR load takes
   priority over EX SR selection. Branch decode sees the current EX T result
   through `nextStatus` before the status register is updated.
 - Register reads forward W, then Z1, then Z2, then stored data. Physical
@@ -144,7 +164,7 @@ an instruction master to be declared before its data partner. Decoder CYC
 qualification confines LOCK to the selected slave and releases the reservation
 when the master ends its cycle. The routed STB is also qualified with its CYC.
 
-TAS/CAS tests cover contention, response waits and reset. Matrix regressions
+TAS tests cover contention, response waits and reset. Matrix regressions
 cover both CPU pairs, unrelated-master exclusion, registration order, sparse
 connectivity, delayed responses, ERR ownership and service after lock release.
 
