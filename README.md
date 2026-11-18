@@ -10,24 +10,27 @@ The ISA baseline is `docs/isa/REN_rej09b0171_superh_MAH_20040630.pdf`. The
 J2-only `SHAD`, `SHLD`, `CAS.L`, and `BGND` encodings now raise SH-2 illegal
 instruction exceptions (vector 4, or vector 6 in a delay slot). `TAS.B` remains
 supported. The pipeline uses explicit IF/ID/EX/MA/WB responsibilities and a
-registered two-/four-clock multiplier; see [the SH-2 pipeline page](docs/sh2-pipeline.md).
+registered two-/four-clock multiplier. A hybrid decoder issues the first operation
+directly and uses a rising-edge ROM for continuation/system steps. IF retains
+the unused halfword of each sequential 32-bit fetch. See
+[the SH-2 pipeline page](docs/sh2-pipeline.md).
 
 ## Status
 
 | Area | Status |
 |---|---|
 | SH-2 decode | 53,752 legal encodings; J2 extensions trap |
-| Scala CPU, ISA and integration tests | 52 tests passing |
-| Legacy CPU ROM, adapted to SH-2 | Passing, 5,295 retired instructions |
+| Scala CPU, ISA and integration tests | 53 tests passing |
+| Legacy CPU ROM, adapted to SH-2 | Passing, 23,289 clocks, 3,539 instruction transfers |
 | VHDL simulator cross-reference | Historical full J2 ROM and RTE pass; reference retained |
 | Native UART, SPI/XIP, and SDRAM | Passing simulations and hardware UART-loader tests |
 | 32-bit bidirectional GPIO | Native `WishboneGpio` plus 32 EG4 pads |
 | FPGA implementation | Timing-clean at 32 MHz |
 | Tang Primer hardware | Boot banner, `Flash ID: ef4014`, SDRAM, timer and XIP tests pass |
 
-The current SH-2 refactor passes all simulator boot modes and FPGA upload/reboot
-validation. It uses 9,880 LUTs and five DSPs, with 7.100/0.157 ns setup/hold
-slack at 32 MHz and an STA-estimated Fmax of 41.622 MHz. Both CoreMark seed
+The current SH-2 hybrid decoder passes all simulator boot modes and FPGA upload/reboot
+validation. It uses 10,635 LUTs and five DSPs, with 6.608/0.175 ns setup/hold
+slack at 32 MHz and an STA-estimated Fmax of 40.581 MHz. Both CoreMark seed
 sets pass CRC checks. Details and the stage diagram are in
 [SH-2 pipeline](docs/sh2-pipeline.md).
 
@@ -53,7 +56,7 @@ flowchart LR
   PLL --> RESET[PLL-lock reset controller<br/>32 MHz SoC clock]
   RESET --> CPU[J2MicrocodedCore]
 
-  CPU -->|I-bus| IGUARD[I-bus error guard<br/>halfword selection]
+  CPU -->|I-bus| IGUARD[I-bus error guard<br/>aligned 32-bit words]
   CPU -->|D-bus| DGUARD[D-bus error guard]
   IGUARD -->|memories only| MATRIX[J2WishboneIntercon<br/>decoders plus atomic-safe arbiters]
   DGUARD -->|memory and peripherals| MATRIX
@@ -172,7 +175,7 @@ stops at the programmable limit. The interrupt is a level request on vector
 `0x40` at priority 14; software must stop, clear, or rearm the timer in the ISR.
 The CPU IRQ is registered: assertion and deassertion follow the enabled compare
 result by one system clock. Pending status still reports the current comparison.
-This removes the timer comparator from the CPU's half-cycle microcode ROM path.
+This keeps the timer comparator behind a register before CPU event selection.
 
 | Offset | Function |
 |---:|---|
@@ -228,7 +231,7 @@ or put `td` on `PATH`; no vendor installation path is stored in the project.
 ## Verification
 
 ```sh
-make spinal-test            # 52 CPU, matrix, ISA, reset, SPI/cache and timer tests
+make spinal-test            # 53 CPU, matrix, ISA, reset, SPI/cache and timer tests
 make spinal-generate        # CPU and SoC Verilog under build/spinal/verilog
 make spinal-microcode-verif # full ROM, RTE, and interrupt regressions
 make verilog-hw-sim         # native SoC and full legacy CPU test ROM
@@ -274,19 +277,25 @@ configuration, including flash access latency.
 ```sh
 . tools/env.sh
 export J2_CLOCK_HZ=32000000
-make coremark-build             # both standard seed sets; one iteration
+make coremark-build             # both standard seed sets; 300 iterations each
 make coremark-sim               # full SoC/XIP simulation; both seed sets
 export TD_HOME=/path/to/TD_4.6.7_Linux
 make coremark-fpga-build        # timer-enabled FPGA, timing and PLL checks
-make coremark-hw                # ttyACM0 at 19200 baud; ten iterations per seed set
+make coremark-hw                # ttyACM0 at 19200 baud; 300 iterations per seed set
 ```
 
 `coremark-hw` reloads FPGA SRAM and replaces the dedicated application flash
 image through the UART loader for each seed set. It leaves the validation
 workload installed. Configuration flash is untouched. Set `COREMARK_ITERATIONS`
-to override the count; hardware measurements must last at least ten seconds.
-One-iteration simulations are CRC regressions and are marked as short runs,
-following [CoreMark's run rules](https://github.com/eembc/coremark#run-rules).
+to override the count. Both simulator and hardware runs must measure at least
+ten seconds per seed set; the default 300 iterations targets about 16 seconds
+on the current cached 32 MHz core. Faster configurations may need more
+iterations: the runner rejects results below ten seconds. Simulation allows
+1,800 seconds of host time per seed set and one billion simulated clocks.
+For intentional short CRC regressions, build with a smaller count and invoke
+`tools/coremark.py sim` or `hardware` with matching `--iterations` and
+`--allow-short`. Such runs are not reportable scores, following
+[CoreMark's run rules](https://github.com/eembc/coremark#run-rules).
 
 New results default to `build/coremark/refactored/{simulation,hardware}/`, with
 logs, firmware binaries, compiler settings, CRCs, raw timer ticks, derived
@@ -408,8 +417,8 @@ tools/xip_image.py upload build/sw/xipapp/flash.bin --no-wait
 
 The application must match the native UART register map; an image built for
 the removed Verilog/16550 SoC can pass the ROM checksum but fail after the jump.
-The current hardware validation logs are `build/sh2-refactor/hardware/upload.log`
-and `build/sh2-refactor/hardware/reboot.log`; earlier bring-up notes are in
+The current hardware validation logs are `build/sh2-decode-fetch/hardware/upload.log`
+and `build/sh2-decode-fetch/hardware/reboot.log`; earlier bring-up notes are in
 `docs/microcoded-core-debug.md`.
 
 The free Winbond 25Q80 uses CS=D3, CLK=H4, IO0=B3, IO1=F4, IO2=F5, and

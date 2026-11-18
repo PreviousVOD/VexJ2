@@ -16,7 +16,8 @@ BOOTROM := $(CURDIR)/build/sw/xiprom/main.bin
 XIP_ROM := $(CURDIR)/build/verilog/xip/j2_validation_rom.hex
 XIPAPP := $(CURDIR)/build/sw/xipapp/main.bin
 XIP_IMAGE := $(CURDIR)/build/sw/xipapp/flash.bin
-COREMARK_ITERATIONS ?= 1
+# About 16 seconds per seed set on the cached 32 MHz core.
+COREMARK_ITERATIONS ?= 300
 COREMARK_LABEL ?= refactored
 COREMARK_RESULTS ?= build/coremark/$(COREMARK_LABEL)
 SIMTESTS := $(CURDIR)/build/sw/simtests/rte.bin $(CURDIR)/build/sw/simtests/interrupts.bin
@@ -67,7 +68,6 @@ coremark-sim: coremark-build $(BOOTROM) $(XIP_IMAGE) $(TOOL_VERILATOR)
 coremark-fpga-build: coremark-build verilog-fpga
 	$(MAKE) fpga-clock-test
 
-coremark-hw: COREMARK_ITERATIONS = 10
 coremark-hw: coremark-build
 	python3 tools/coremark.py hardware --iterations $(COREMARK_ITERATIONS) --output $(COREMARK_RESULTS)/hardware
 

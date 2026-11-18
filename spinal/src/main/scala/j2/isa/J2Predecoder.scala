@@ -57,6 +57,7 @@ final class J2Predecoder extends Component {
   val io = new Bundle {
     val instruction      = in UInt (16 bits)
     val address          = out UInt (8 bits)
+    val firstLine        = out UInt (72 bits)
     val legal            = out Bool ()
     val delaySlotIllegal = out Bool ()
   }
@@ -67,7 +68,15 @@ final class J2Predecoder extends Component {
 
   private val selected = Vec(matches.map(_._2))
   io.address := MuxOH(selected, Vec(matches.map { case (entry, _) => U(entry.address, 8 bits) }))
-  io.legal   := selected.asBits.orR
+  // Direct first-operation decode. The same canonical control definitions feed
+  // both this logic and the continuation ROM, so the two paths cannot drift.
+  io.firstLine := MuxOH(
+    selected,
+    Vec(matches.map { case (entry, _) =>
+      U(J2MicrocodeData.entries(entry.address), 72 bits)
+    })
+  )
+  io.legal := selected.asBits.orR
   io.delaySlotIllegal :=
     ((io.instruction(15 downto 12) === 0) && (io.instruction(3 downto 2) === 0) && io.instruction(
       0

@@ -1,8 +1,8 @@
 // Wishbone/ISS harness for the SpinalHDL SH-2 core.
 //
 // The system model and Wishbone slave are reused from the archived verification
-// infrastructure. The SpinaHDL core returns the addressed instruction halfword
-// in DAT_MISO[15:0], unlike the old J2 core which returned a full aligned word.
+// infrastructure. Instruction responses are full aligned big-endian words;
+// the core selects and retains their instruction halfwords.
 #ifdef USE_MICROCODED_CORE
 #include "VJ2MicrocodedCore.h"
 using CoreModel = VJ2MicrocodedCore;
@@ -22,11 +22,6 @@ using CoreModel = VJ2Core;
 #include <vector>
 
 using namespace j2sim;
-
-static uint32_t fetch_halfword(SysBus &sys, uint32_t address) {
-  uint32_t word = sys.fetch32(address & ~3u);
-  return (address & 2u) ? (word & 0xffffu) : (word >> 16);
-}
 
 int main(int argc, char **argv) {
   if (argc < 2) {
@@ -110,7 +105,7 @@ int main(int argc, char **argv) {
         ibus.step(top.io_ibus_CYC, top.io_ibus_STB, top.io_ibus_ADR,
                   false, top.io_ibus_SEL, 0, stall, data,
                   [&](uint32_t address, bool, unsigned, uint32_t) {
-                    uint32_t value = fetch_halfword(sys, address);
+                    uint32_t value = sys.fetch32(address);
                     if (cycles >= bus_log_from) {
                       printf("%9llu IF adr=%08x data=%04x\n",
                              (unsigned long long)cycles, address, value);

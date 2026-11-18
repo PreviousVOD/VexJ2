@@ -41,6 +41,13 @@ class J2PredecoderSpec extends munit.FunSuite {
           f"ISA legality 0x$instruction%04x"
         )
         assertEquals(dut.io.legal.toBoolean, expected.isDefined, f"legality 0x$instruction%04x")
+        expected.foreach { entry =>
+          assertEquals(
+            dut.io.firstLine.toBigInt,
+            j2.microcode.J2MicrocodeData.entries(entry.address),
+            f"direct first operation 0x$instruction%04x"
+          )
+        }
         assertEquals(
           dut.io.delaySlotIllegal.toBoolean,
           J2PredecodeEntry.isDelaySlotIllegal(instruction),

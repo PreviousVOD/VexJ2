@@ -3,7 +3,7 @@ UPSTREAM := $(ROOT)/third_party/coremark
 CROSS ?= sh-none-elf-
 CC := $(CROSS)gcc
 J2_CLOCK_HZ ?= 32000000
-ITERATIONS ?= 1
+ITERATIONS ?= 300
 RUN ?= performance
 ifneq ($(filter $(RUN),performance validation),$(RUN))
 $(error RUN must be performance or validation)

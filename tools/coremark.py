@@ -44,8 +44,8 @@ def environment_hashes():
     return {str(p.relative_to(ROOT)): sha(p) for p in sorted(files)}
 
 
-def parse_result(text, run, iterations, clock_hz, require_duration=False):
-    """Short regressions allow only the upstream minimum-duration error."""
+def parse_result(text, run, iterations, clock_hz, require_duration=True):
+    """Require ten measured seconds unless explicitly running a short regression."""
     text = text.replace("\r", "")
     if "J2 CoreMark complete" not in text or "J2 timer error" in text:
         raise ValueError("incomplete run or invalid timer")
@@ -75,7 +75,7 @@ def parse_result(text, run, iterations, clock_hz, require_duration=False):
     if not full and (errors != [SHORT_WARNING] or "Errors detected" not in text):
         raise ValueError("unexpected short-run validation status")
     if require_duration and not full:
-        raise ValueError("hardware performance run must last at least ten seconds")
+        raise ValueError("CoreMark run must last at least ten seconds; increase --iterations")
     seconds = ticks / 1000000
     return dict(run=run, iterations=iterations, ticks=ticks, timer_hz=1000000,
                 clock_hz=clock_hz, seconds=seconds, crc_valid=True,
@@ -171,7 +171,7 @@ def run_suite(args):
             with log_path.open("w") as log, contextlib.redirect_stdout(log):
                 xip_image.upload(firmware / "flash.bin", args.device, False, COMPLETE, args.timeout)
         result = parse_result(log_path.read_text(), run, args.iterations, clock_hz,
-                              args.command == "hardware" and not args.allow_short)
+                              not args.allow_short)
         result["firmware_sha256"] = sha(firmware / "flash.bin")
         result["compiler_flags"] = re.search(r"Compiler flags\s*:\s*([^\r\n]+)", log_path.read_text())[1]
         report["results"].append(result)
@@ -205,9 +205,10 @@ def main():
     commands.add_parser("check-sources")
     for name in ("sim", "hardware"):
         p = commands.add_parser(name)
-        p.add_argument("--iterations", type=int, default=1)
+        p.add_argument("--iterations", type=int, default=300)
         p.add_argument("--output", type=Path, required=True)
-        p.add_argument("--timeout", type=int, default=300)
+        p.add_argument("--timeout", type=int, default=1800 if name == "sim" else 300,
+                       help="Wall-clock timeout per seed set (simulated time is checked separately)")
         p.add_argument("--max-cycles", type=int, default=1000000000)
         p.add_argument("--device", default="/dev/ttyACM0")
         p.add_argument("--allow-short", action="store_true", help="Calibration only; not a reportable score")

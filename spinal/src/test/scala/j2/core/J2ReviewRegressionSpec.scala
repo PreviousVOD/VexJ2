@@ -22,20 +22,16 @@ class J2ReviewRegressionSpec extends munit.FunSuite {
       inputs(2) <> io.competitor
       inputs(0) <> cpu.io.dbus
       val i = inputs(1)
-      i.CYC           := cpu.io.ibus.CYC
-      i.STB           := cpu.io.ibus.STB
-      i.WE            := False
-      i.ADR           := cpu.io.ibus.ADR
-      i.DAT_MOSI      := 0
-      i.SEL           := B"1111"
-      i.LOCK          := False
-      cpu.io.ibus.ACK := i.ACK
-      cpu.io.ibus.ERR := i.ERR
-      cpu.io.ibus.DAT_MISO := Mux(
-        cpu.io.ibus.ADR(1),
-        i.DAT_MISO(15 downto 0),
-        i.DAT_MISO(31 downto 16)
-      ).resize(32)
+      i.CYC                := cpu.io.ibus.CYC
+      i.STB                := cpu.io.ibus.STB
+      i.WE                 := False
+      i.ADR                := cpu.io.ibus.ADR
+      i.DAT_MOSI           := 0
+      i.SEL                := B"1111"
+      i.LOCK               := False
+      cpu.io.ibus.ACK      := i.ACK
+      cpu.io.ibus.ERR      := i.ERR
+      cpu.io.ibus.DAT_MISO := i.DAT_MISO
       io.bus <> output
       io.pc                 := cpu.io.pc
       io.instructionPending := cpu.io.ibus.CYC
@@ -226,7 +222,7 @@ class J2ReviewRegressionSpec extends munit.FunSuite {
             else {
               instructionWaits = 0
               dut.io.ibus.ACK      #= true
-              dut.io.ibus.DAT_MISO #= code.getOrElse(dut.io.ibus.ADR.toLong, 9).toLong
+              dut.io.ibus.DAT_MISO #= J2InstructionMemory.word(code, dut.io.ibus.ADR.toLong)
             }
           }
           if (dut.io.dbus.STB.toBoolean) {

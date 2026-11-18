@@ -11,6 +11,7 @@ class J2MicrosequencerSpec extends munit.FunSuite {
     dut.io.eventAcknowledge      #= false
     dut.io.instruction           #= 0x0009
     dut.io.predecodeAddress      #= 3
+    dut.io.instructionLine       #= J2MicrocodeData.entries(3)
     dut.io.illegalInstruction    #= false
     dut.io.illegalDelaySlot      #= false
     dut.io.instructionStall      #= false
@@ -117,4 +118,65 @@ class J2MicrosequencerSpec extends munit.FunSuite {
       assertEquals(dut.io.operation.code.toInt, 0x0704)
     }
   }
+  test("direct first operation survives a hazard and continuation reads do not skip or restart") {
+    SimConfig.withVerilator.compile(new J2Microsequencer).doSim { dut =>
+      driveDefaults(dut)
+      dut.clockDomain.forkStimulus(10)
+      dut.clockDomain.assertReset()
+      dut.clockDomain.waitSampling(2)
+      dut.clockDomain.deassertReset()
+      dut.clockDomain.waitSampling()
+      sleep(1)
+      dut.io.slot     #= true
+      dut.io.dispatch #= true
+      dut.clockDomain.waitSampling()
+      sleep(1)
+      assert(dut.io.directValid.toBoolean)
+      assertEquals(dut.io.directLine.toBigInt, J2MicrocodeData.entries(3))
+      dut.io.dispatch         #= false
+      dut.io.registerConflict #= true
+      sleep(1)
+      assertEquals(dut.io.prefetchAddress.toInt, 3)
+      dut.clockDomain.waitSampling()
+      sleep(1)
+      // IF accepts a different opcode while ID retries the first one.
+      dut.io.instruction      #= 0xe105
+      dut.io.predecodeAddress #= 0x30
+      dut.io.instructionLine  #= 0x12345
+      sleep(1)
+      assertEquals(dut.io.operation.code.toInt, 9)
+      assert(dut.io.directValid.toBoolean)
+      assertEquals(dut.io.directLine.toBigInt, J2MicrocodeData.entries(3))
+      dut.io.registerConflict #= false
+      sleep(1)
+      assertEquals(dut.io.prefetchAddress.toInt, 4)
+      dut.clockDomain.waitSampling()
+      sleep(1)
+      assertEquals(dut.io.operation.address.toInt, 4)
+      assert(!dut.io.directValid.toBoolean)
+      dut.io.slot #= false
+      sleep(1)
+      assertEquals(dut.io.prefetchAddress.toInt, 4)
+      dut.clockDomain.waitSampling(3)
+      sleep(1)
+      assertEquals(dut.io.operation.address.toInt, 4)
+      // A level event remains asserted throughout entry; it must not reselect E0.
+      dut.io.eventValid      #= true
+      dut.io.eventBypassMask #= true
+      dut.io.eventVector     #= 0x40
+      dut.io.dispatch        #= true
+      dut.io.slot            #= true
+      dut.clockDomain.waitSampling()
+      sleep(1)
+      assertEquals(dut.io.operation.address.toInt, 0xe0)
+      assert(!dut.io.directValid.toBoolean)
+      dut.io.dispatch #= false
+      sleep(1)
+      assertEquals(dut.io.prefetchAddress.toInt, 0xe1)
+      dut.clockDomain.waitSampling()
+      sleep(1)
+      assertEquals(dut.io.operation.address.toInt, 0xe1)
+    }
+  }
+
 }

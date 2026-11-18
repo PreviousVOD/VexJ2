@@ -6,6 +6,7 @@ extern uint32_t isa_pc_relative(void);
 extern int isa_bad_mach(volatile uint32_t *), isa_bad_macl(volatile uint32_t *),
     isa_bad_sr(volatile uint32_t *);
 extern int isa_forward(volatile uint32_t *), isa_mul_pipeline(volatile uint32_t *);
+extern int isa_fetch_call(uint32_t, volatile uint32_t *);
 extern void isa_macl(volatile uint32_t *), isa_macw(volatile uint32_t *);
 extern int isa_bad_long(volatile uint32_t *), isa_bad_word(volatile uint32_t *);
 extern int isa_bad_store_long(volatile uint32_t *),
@@ -34,6 +35,50 @@ static int atomics(uint32_t code, uint32_t data) {
     *destination++ = *source++;
   int result = ((int (*)(volatile uint32_t *))code)((volatile uint32_t *)data);
   return result ? failure("atomic", result, 0) : 1;
+}
+
+/* Execute writable code through both halves of a fetched word. Re-entry after
+ * patching must refetch; an unused halfword containing illegal code must not run. */
+static int instruction_fetch(uint32_t address) {
+  volatile uint32_t *code = (volatile uint32_t *)address;
+  int (*entry)(void) = (int (*)(void))address;
+  code[0] = 0xe0017002; /* mov #1,r0; add #2,r0 */
+  code[1] = 0x000b7004; /* rts; add #4,r0 */
+  int result = entry();
+  if (result != 7)
+    return failure("word fetch", result, 7);
+  code[0] = 0xe0097002;
+  result = entry();
+  if (result != 15)
+    return failure("fetch after code patch", result, 15);
+  code[0] = 0xffffe003;
+  result = ((int (*)(void))(address + 2))();
+  if (result != 7)
+    return failure("lower-half entry", result, 7);
+  code[0] = 0xa002e001; /* bra address+8; mov #1,r0 */
+  code[1] = 0xffffffff; /* wrong path: both halfwords illegal */
+  code[2] = 0x000b7004;
+  result = entry();
+  if (result != 5)
+    return failure("fetch redirect/delay slot", result, 5);
+  return 1;
+}
+
+/* Put BT/BF in the last halfword of SDRAM. The overrun word at 0x80800000
+ * faults, but the taken branch must discard it and execute its valid target. */
+static int discarded_fetch_fault(void) {
+  volatile uint32_t *entry = (volatile uint32_t *)0x807ffffc;
+  volatile uint32_t *target = (volatile uint32_t *)0x807fff04;
+  target[0] = 0xe04d000b; /* mov #77,r0; rts */
+  target[1] = 0x00090009; /* delay slot; nop */
+  for (unsigned i = 0; i < 2; ++i) {
+    *entry = i ? 0x00188981 : 0x00088b81; /* sett; bt / clrt; bf */
+    CONTEXT[4] = 0;
+    int result = isa_fetch_call((uint32_t)entry, CONTEXT);
+    if (result != 77 || CONTEXT[4] != 0)
+      return failure("discarded fallthrough fetch fault", result, 77);
+  }
+  return 1;
 }
 
 static int multiply(void) {
@@ -140,6 +185,11 @@ int isa_test(void) {
   if (!atomics(0xa000, 0xb000) || !atomics(0x80720000, 0x80721000))
     return 0;
   uart_puts("ISA atomics passed (SRAM/SDRAM)\n");
+  if (!instruction_fetch(0xa800) || !instruction_fetch(0x80722000))
+    return 0;
+  if (!discarded_fetch_fault())
+    return 0;
+  uart_puts("ISA word fetch passed (SRAM/SDRAM)\n");
   if (isa_forward(CONTEXT))
     return failure("forwarding/branch/shift", 1, 0);
   if (isa_pc_relative() != 0x13579bdf)

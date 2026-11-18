@@ -39,6 +39,7 @@ trait J2TrapService { def trap: J2TrapPort }
 final class J2FetchPort extends Bundle {
   val opcode                            = UInt(16 bits)
   val predecodeAddress                  = UInt(8 bits)
+  val firstLine                         = UInt(72 bits)
   val legal, delaySlotIllegal           = Bool()
   val pc                                = UInt(32 bits)
   val active, fault, entryFault, issued = Bool()
@@ -50,6 +51,7 @@ final class J2MemoryPort extends Bundle {
   val faultPc                                      = UInt(32 bits)
 }
 final class J2DecodePort extends Bundle {
+  val ready                                                          = Bool()
   val control                                                        = new J2MicrocodeControl
   val operation                                                      = new J2Operation
   val nextIdStall, instructionIssue, instructionAddress, incrementPc = Bool()

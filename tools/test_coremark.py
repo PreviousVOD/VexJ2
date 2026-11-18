@@ -39,9 +39,14 @@ class ResultValidation(unittest.TestCase):
         self.assertAlmostEqual(result["iterations_per_second"], 10 / 12)
 
     def test_short_run_is_only_a_regression(self):
-        self.assertFalse(self.parse(output(100))["reportable_duration"])
+        self.assertFalse(self.parse(output(100), require_duration=False)["reportable_duration"])
         with self.assertRaises(ValueError):
-            self.parse(output(100), require_duration=True)
+            self.parse(output(100))
+
+    def test_ten_second_boundary(self):
+        with self.assertRaises(ValueError):
+            self.parse(output(9999999))
+        self.assertTrue(self.parse(output(10000000))["reportable_duration"])
 
     def test_corrupt_crc_fails_even_with_completion_marker(self):
         with self.assertRaises(ValueError):

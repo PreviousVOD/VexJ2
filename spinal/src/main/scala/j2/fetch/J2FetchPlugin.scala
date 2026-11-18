@@ -14,11 +14,16 @@ final class J2FetchPlugin extends FiberPlugin with J2FetchService {
     val predecoder    = new J2Predecoder
     predecoder.io.instruction := next
     val predecodeAddress        = RegInit(U(0, 8 bits))
+    val firstLine               = RegInit(U(0, 72 bits))
     val legal, delaySlotIllegal = RegInit(False)
     val pending, active         = RegInit(False)
     val address                 = RegInit(U(0, 32 bits))
+    val word                    = RegInit(B(0, 32 bits))
+    val wordAddress             = RegInit(U(0, 30 bits))
+    val wordValid               = RegInit(False)
     val fault, nextFault        = RegInit(False)
     val faultPc                 = RegInit(U(0, 32 bits))
+    port.firstLine        := firstLine
     port.opcode           := instruction
     port.predecodeAddress := predecodeAddress
     port.legal            := legal
@@ -40,22 +45,34 @@ final class J2FetchPlugin extends FiberPlugin with J2FetchService {
     val t       = host[J2TrapService].trap
     val issue   = s.advance && d.instructionIssue && !a.active
     val address = Mux(d.instructionAddress, e.zbus, pc.sequentialPc)
-    a.port.issued := issue
+    // Retain only the unused lower half of a successful sequential word fetch.
+    // A redirect always refetches, including a target in the same word; this is
+    // a prefetch buffer, not an instruction cache with persistent stale lines.
+    val hit = a.wordValid && address(31 downto 2) === a.wordAddress &&
+      address(1) && !address(0) && !d.instructionAddress
+    a.port.issued := issue && !hit
     a.port.entryFault := t.inService &&
       ((a.active && io.ERR) || (issue && address(0)))
 
     io.CYC      := a.active
     io.STB      := a.active
     io.WE       := False
-    io.ADR      := a.address
+    io.ADR      := (a.address & U(0xfffffffcL, 32 bits))
     io.SEL      := B"1111"
     io.DAT_MOSI := 0
     io.LOCK     := False
     when(a.active && (io.ACK || io.ERR)) {
       a.nextFault := io.ERR
-      a.next      := Mux(io.ERR, U(0x0009, 16 bits), io.DAT_MISO(15 downto 0).asUInt)
-      a.pending   := True
-      a.active    := False
+      a.next := Mux(
+        io.ERR,
+        U(0x0009, 16 bits),
+        Mux(a.address(1), io.DAT_MISO(15 downto 0), io.DAT_MISO(31 downto 16)).asUInt
+      )
+      a.word        := io.DAT_MISO
+      a.wordAddress := a.address(31 downto 2)
+      a.wordValid   := !io.ERR && !a.address(1)
+      a.pending     := True
+      a.active      := False
     }
     when(s.advance) {
       when(d.startInstruction && a.fault && d.delaySlot) {
@@ -65,7 +82,8 @@ final class J2FetchPlugin extends FiberPlugin with J2FetchService {
       when(a.pending) {
         a.instruction := a.next
         // The response buffer is stable before ID consumes it. Classify there
-        // and latch with the opcode, keeping decode off the half-cycle ROM path.
+        // and latch the first operation with its opcode for direct ID issue.
+        a.firstLine        := a.predecoder.io.firstLine
         a.predecodeAddress := a.predecoder.io.address
         a.legal            := a.predecoder.io.legal
         a.delaySlotIllegal := a.predecoder.io.delaySlotIllegal
@@ -77,8 +95,19 @@ final class J2FetchPlugin extends FiberPlugin with J2FetchService {
         a.pending := False
       }
       when(issue) {
-        a.address := address
-        a.active  := !address(0)
+        a.address   := address
+        a.active    := !hit && !address(0)
+        a.wordValid := False
+        // A non-delayed redirect discards the prefetched fallthrough instruction,
+        // including its error. Delayed redirects must retain the slot's fault.
+        when(d.instructionAddress && !d.control.delayJump) {
+          a.fault := False
+        }
+        when(hit) {
+          a.next      := a.word(15 downto 0).asUInt
+          a.nextFault := False
+          a.pending   := True
+        }
         when(address(0)) {
           a.next      := 0x0009
           a.nextFault := True

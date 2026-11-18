@@ -3,9 +3,10 @@ module j2_microcode_rom #(
 ) (
   input  wire        clk,
   input  wire [7:0]  address,
+  input  wire        enable,
   output wire [71:0] line
 );
-  wire rom_clk = ~clk;
+  wire rom_clk = clk;
 
   EG_LOGIC_BRAM #(
     .DATA_WIDTH_A(72),
@@ -31,7 +32,7 @@ module j2_microcode_rom #(
     .dib(72'b0),
     .addra(address),
     .addrb(8'b0),
-    .cea(1'b1),
+    .cea(enable),
     .ceb(1'b0),
     .ocea(1'b0),
     .oceb(1'b0),

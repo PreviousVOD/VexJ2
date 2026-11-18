@@ -57,7 +57,7 @@ final class J2SchedulePlugin extends FiberPlugin with J2ScheduleService with J2P
     a.memoryRequest.data    := e.memoryWriteData
     a.memoryRequest.write   := a.graph.state.ex.memoryWrite
     a.memoryRequest.size    := a.graph.state.ex.memorySize
-    a.advance               := a.ready && !mul.blocked
+    a.advance               := a.ready && d.ready && !mul.blocked
     a.control               := d.control
     a.metadata              := pc.metadata
     a.nextIdStall           := d.nextIdStall

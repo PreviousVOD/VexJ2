@@ -12,6 +12,8 @@ final class J2DecodePlugin(useEg4Rom: Boolean) extends FiberPlugin with J2Decode
     val sequencer               = new J2Microsequencer
     val rom: J2MicrocodeRomPort = if (useEg4Rom) new Eg4MicrocodeRom else new J2MicrocodeRom
     val table                   = new J2MicrocodeTable
+    val romValid                = RegInit(False)
+    val romAddress              = RegInit(U(0, 8 bits))
     port.control            := table.io.control
     port.operation          := sequencer.io.operation
     port.nextIdStall        := sequencer.io.nextIdStall
@@ -41,15 +43,22 @@ final class J2DecodePlugin(useEg4Rom: Boolean) extends FiberPlugin with J2Decode
     hazards.io.macStallSense := a.table.io.control.macStallSense
     hazards.io.macBusy       := mul.busy
     a.rom.io.clk             := ClockDomain.current.readClockWire
-    a.rom.io.address         := a.sequencer.io.operation.address
-    a.table.io.line          := a.rom.io.line
-    a.table.io.opcode        := a.sequencer.io.operation.code
-    a.table.io.tBcc          := pc.nextStatus.t
-    a.table.io.nextIdStall   := a.sequencer.io.nextIdStall
-    a.port.legal             := f.legal
-    a.port.delaySlotIllegal  := f.delaySlotIllegal
     val q = a.sequencer.io
     val c = a.table.io.control
+    a.rom.io.address := q.prefetchAddress
+    a.rom.io.enable  := !a.romValid || a.romAddress =/= q.prefetchAddress
+    when(a.rom.io.enable) {
+      a.romValid   := True
+      a.romAddress := q.prefetchAddress
+    }
+    a.port.ready            := q.directValid || (a.romValid && a.romAddress === q.operation.address)
+    a.table.io.line         := Mux(q.directValid, q.directLine, a.rom.io.line)
+    a.table.io.opcode       := a.sequencer.io.operation.code
+    a.table.io.tBcc         := pc.nextStatus.t
+    a.table.io.nextIdStall  := a.sequencer.io.nextIdStall
+    a.port.legal            := f.legal
+    a.port.delaySlotIllegal := f.delaySlotIllegal
+    q.instructionLine       := f.firstLine
     q.slot                  := s.advance
     q.dispatch              := c.dispatch
     q.delayJump             := c.delayJump

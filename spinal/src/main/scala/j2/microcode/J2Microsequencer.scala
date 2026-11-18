@@ -17,6 +17,7 @@ final class J2Microsequencer extends Component {
     val eventAcknowledge      = in Bool ()
     val instruction           = in UInt (16 bits)
     val predecodeAddress      = in UInt (8 bits)
+    val instructionLine       = in UInt (72 bits)
     val illegalInstruction    = in Bool ()
     val illegalDelaySlot      = in Bool ()
     val instructionStall      = in Bool ()
@@ -35,6 +36,9 @@ final class J2Microsequencer extends Component {
     val id                    = in(new J2IdControl)
 
     val operation          = out(new J2Operation)
+    val directLine         = out UInt (72 bits)
+    val directValid        = out Bool ()
+    val prefetchAddress    = out UInt (8 bits)
     val eventAck           = out Bool ()
     val instructionIssue   = out Bool ()
     val instructionAddress = out Bool ()
@@ -55,6 +59,12 @@ final class J2Microsequencer extends Component {
   operationReg.system init True
   operationReg.code init 0x0300
   operationReg.address init 0xda
+
+  private val firstLineReg         = RegInit(U(0, 72 bits))
+  private val firstAddressReg      = RegInit(U(0, 8 bits))
+  private val selectingInstruction = !idStall && instructionSequenceZero
+  private val firstLine            = Mux(selectingInstruction, io.instructionLine, firstLineReg)
+  private val firstAddress         = Mux(selectingInstruction, io.predecodeAddress, firstAddressReg)
 
   private val normalOperation = new J2Operation
   normalOperation.system  := False
@@ -124,7 +134,21 @@ final class J2Microsequencer extends Component {
     advancedOperation.address := selectedOperation.address + 1
   }
 
+  // Continuation reads launch on the edge that accepts the preceding microstep.
+  // A hazard retry keeps its address. Read ahead even on dispatch: that response
+  // is harmless if unused, and this keeps forwarded branch T off the ROM inputs.
+  io.prefetchAddress := selectedOperation.address
+  when(io.slot && !io.nextIdStall) {
+    io.prefetchAddress := advancedOperation.address
+  }
+  io.directLine  := firstLine
+  io.directValid := !selectedOperation.system && selectedOperation.address === firstAddress
+
   when(io.slot) {
+    when(selectingInstruction) {
+      firstLineReg    := io.instructionLine
+      firstAddressReg := io.predecodeAddress
+    }
     maskInterruptReg := io.maskInterruptNext
     when(io.interruptLevelCapture) {
       interruptLevelReg := io.eventLevel

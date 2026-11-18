@@ -349,3 +349,19 @@ _isa_mul_pipeline:
   mov #1,r0
   rts
   nop
+
+/* Call generated code with a recovery PC for unexpected fetch exceptions. */
+.global _isa_fetch_call
+_isa_fetch_call:
+  sts.l pr,@-r15
+  mov.l 2f,r1
+  mov.l r1,@r5
+  mov #0,r0
+  jsr @r4
+  nop
+1:
+  lds.l @r15+,pr
+  rts
+  nop
+.align 2
+2: .long 1b

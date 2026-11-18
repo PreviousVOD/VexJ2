@@ -140,12 +140,8 @@ final class J2Soc(
     Seq(rom.io.bus, sram.io.bus, xipCache.io.bus, sdram.io.bus)
   )
 
-  cpu.io.ibus.ACK := Mux(instructionUnmapped, False, instructionBus.ACK)
-  cpu.io.ibus.DAT_MISO := Mux(
-    cpu.io.ibus.ADR(1),
-    Cat(U(0, 16 bits), instructionBus.DAT_MISO(15 downto 0)),
-    Cat(U(0, 16 bits), instructionBus.DAT_MISO(31 downto 16))
-  )
+  cpu.io.ibus.ACK      := Mux(instructionUnmapped, False, instructionBus.ACK)
+  cpu.io.ibus.DAT_MISO := instructionBus.DAT_MISO
   cpu.io.ibus.ERR      := Mux(instructionUnmapped, instructionError, instructionBus.ERR)
   cpu.io.dbus.ACK      := Mux(dataUnmapped, False, dataBus.ACK)
   cpu.io.dbus.ERR      := Mux(dataUnmapped, dataError, dataBus.ERR)

@@ -18,8 +18,8 @@ respective revisions, including the former J2 extensions.
 
 | Subsystem | State and responsibilities |
 |---|---|
-| `fetch` | Active request, prefetched opcode/address and classification, fetch fault |
-| `decode` | Falling-edge ROM, control table, sequencer, hazards |
+| `fetch` | Aligned word request, retained lower halfword, opcode/address/first control word, fetch fault |
+| `decode` | Direct first operation, rising-edge continuation ROM, sequencer, hazards |
 | `schedule` | Registered slot enable, generic pipeline graph, final builder |
 | `regfile` | Register file, W/Z writeback selection and suppression |
 | `execute` | Datapath, multiplier/MACH/MACL, data bus transactions and faults |
@@ -46,7 +46,7 @@ does not define hardware priority or elaboration order.
 
 ```mermaid
 flowchart LR
-  IF["IF: request / response buffer<br/>opcode, PC, predecode"] --> ID["ID: microcode / hazards"]
+  IF["IF: word fetch / halfword buffer<br/>opcode, PC, first operation"] --> ID["ID: direct first operation<br/>continuation ROM / hazards"]
   ID --> EX["EX: ALU, fixed shifts<br/>branch, address, store data"]
   EX --> MA["MA: registered request<br/>Wishbone waits / response"]
   MA --> WB["WB: load result + validity<br/>destination + metadata"]
@@ -89,14 +89,36 @@ cross terms, the combined product, then accumulate/commit. This is two or four
 clocks after operand acceptance. Busy accesses to MACH/MACL, including
 memory-fed MAC operands and CLRMAC/LDS, hold their slot until accepted.
 
-The control ROM still reads on the falling edge. Its output drives the control
-table before the rising-edge microstep transfer; this change does not retime
-the sequencer.
+Instruction entry uses a hybrid decoder. `J2Predecoder` generates each legal
+opcode's first 72-bit control word directly from the canonical control data.
+IF registers this word with the opcode, entry address, legality and instruction
+PC. Ordinary single-step instructions issue without a control-ROM read. A
+hazard retry retains the original control word and entry address even if IF
+accepts another opcode on that edge.
 
-The response buffer's opcode is predecoded before ID consumes it. Its address,
-legality and delay-slot classification are latched with the opcode, keeping
-predecode off the rising-to-falling-edge ROM path. Patterns select through a
-one-hot mux; exhaustive testing checks every 16-bit encoding.
+Continuation and system operations use an enabled rising-edge synchronous ROM.
+The sequencer presents the next address on the edge that accepts the preceding
+microstep, even on dispatch. An unused sequential read is harmless; avoiding a
+conditional read enable keeps forwarded branch T off the ROM inputs. A stalled
+microstep holds its address. Decode permits advancement
+only when the ROM response's registered address matches the selected operation,
+or when its direct first operation is available. A new system redirect may
+wait for one ROM read; the ROM progresses independently of slot advancement,
+so an empty decode stage cannot deadlock the read that fills it. Persistent
+interrupt levels do not restart a system sequence already in progress.
+
+The FPGA BRAM wrapper uses the same rising edge and read enable as simulation;
+there is no inverted microcode clock or half-cycle control-ROM path.
+
+IF requests full aligned 32-bit words and selects the requested big-endian
+halfword itself. Following a successful upper-half fetch, it retains the lower
+half for one sequential request. A buffer hit supplies the response without
+an external transfer or the bus-issue stall. Redirects refetch even within the
+same word, and errors never populate the buffer. A non-delayed redirect also
+discards errors attached to unused fallthrough instructions; delayed redirects
+preserve the delay slot's error. The full requested PC is
+retained separately from the aligned bus address for exception frames. This
+buffer does not serve as a persistent instruction cache.
 
 ## Architectural priorities
 
@@ -125,9 +147,10 @@ data, byte selects, and write control stable through ACK or ERR. ERR wins if
 both responses are asserted; failed reads cannot write registers, SR, MACH, or
 MACL. Misaligned requests fault before reaching the bus.
 
-Instruction responses retain the existing SoC convention: the selected
-halfword arrives in the low 16 bits. Data lane selection, replicated subword
-stores, and sign extension remain big-endian. Atomic operations hold CYC and
+Instruction responses contain the full aligned big-endian word; adapters and
+CPU testbenches must not select a halfword before returning it. Data lane
+selection, replicated subword stores, and sign extension remain big-endian.
+Atomic operations hold CYC and
 LOCK across the read/write sequence, including the gap between transfers.
 
 `J2WishboneIntercon` provides the complete two-stage matrix: a native

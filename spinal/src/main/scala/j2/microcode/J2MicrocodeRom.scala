@@ -26,6 +26,7 @@ object J2MicrocodeData {
 final class J2MicrocodeRomIo extends Bundle {
   val clk     = in Bool ()
   val address = in UInt (8 bits)
+  val enable  = in Bool ()
   val line    = out UInt (72 bits)
 }
 
@@ -39,10 +40,11 @@ final class J2MicrocodeRom extends Component with J2MicrocodeRomPort {
   private val memory = Mem(UInt(72 bits), 256)
   memory.initBigInt(J2MicrocodeData.entries)
   io.address.addTag(crossClockDomain)
+  io.enable.addTag(crossClockDomain)
   private val readArea = new ClockingArea(
-    ClockDomain(clock = io.clk, config = ClockDomainConfig(clockEdge = FALLING))
+    ClockDomain(clock = io.clk, config = ClockDomainConfig(clockEdge = RISING))
   ) {
-    val line = memory.readSync(io.address)
+    val line = memory.readSync(io.address, io.enable)
     line.addTag(crossClockDomain)
   }
   io.line := readArea.line

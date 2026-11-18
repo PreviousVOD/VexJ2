@@ -114,7 +114,7 @@ class J2AtomicBusSpec extends munit.FunSuite {
           assert(dut.io.cpuLock.toBoolean, "atomic operation dropped LOCK")
         }
         if (dut.io.ibus.STB.toBoolean) {
-          dut.io.ibus.DAT_MISO #= code.getOrElse(dut.io.ibus.ADR.toLong, 9).toLong
+          dut.io.ibus.DAT_MISO #= J2InstructionMemory.word(code, dut.io.ibus.ADR.toLong)
           dut.io.ibus.ACK      #= true
         }
         if (dut.io.dbus.CYC.toBoolean && dut.io.dbus.STB.toBoolean) {

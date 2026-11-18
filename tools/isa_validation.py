@@ -18,7 +18,8 @@ ROOT = Path(__file__).resolve().parents[1]
 MARKERS = (
     "XIP cache tests passed",
     "SDRAM tests passed", "Timer tests passed",
-    "ISA atomics passed (SRAM/SDRAM)", "ISA forwarding passed",
+    "ISA atomics passed (SRAM/SDRAM)", "ISA word fetch passed (SRAM/SDRAM)",
+    "ISA forwarding passed",
     "ISA multiply pipeline passed", "ISA MAC saturation passed", "ISA exceptions passed",
     "ISA SH-2 illegal extensions passed",
     "ISA regression tests passed", "XIP CPU tests passed",

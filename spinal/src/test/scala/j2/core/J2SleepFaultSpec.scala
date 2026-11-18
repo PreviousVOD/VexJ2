@@ -16,6 +16,8 @@ class J2SleepFaultSpec extends munit.FunSuite {
         delaySlot: Boolean = false,
         ackAndError: Boolean = false,
         oddFetch: Boolean = false,
+        targetFetchError: Boolean = false,
+        discardFetchError: Boolean = false,
         irqSleep: Boolean = false,
         healthyValue: Option[Long] = None,
         youngerBranch: Boolean = false,
@@ -36,6 +38,18 @@ class J2SleepFaultSpec extends munit.FunSuite {
       ),
       Scenario("valid long load", address = 0x300, healthyValue = Some(0x12345678L)),
       Scenario("fault before delayed branch", youngerBranch = true),
+      Scenario(
+        "taken BF discards fallthrough fetch ERR",
+        instruction       = 0x8b03,
+        discardFetchError = true,
+        healthyValue      = Some(77L)
+      ),
+      Scenario(
+        "taken BT discards fallthrough fetch ERR",
+        instruction       = 0x8903,
+        discardFetchError = true,
+        healthyValue      = Some(77L)
+      ),
       Scenario("unaligned long load"),
       Scenario("halfword-aligned long load", address       = 0x302),
       Scenario("fault during exception entry", entryError  = true),
@@ -45,12 +59,13 @@ class J2SleepFaultSpec extends munit.FunSuite {
       Scenario("unaligned postincrement load", instruction = 0x6016),
       Scenario("failed SR load", instruction               = 0x4107),
       Scenario("failed MACH load", instruction             = 0x4106),
-      Scenario("SR load ERR", instruction           = 0x4107, address  = 0x300, dataError = true),
-      Scenario("MACH load ERR", instruction         = 0x4106, address  = 0x300, dataError = true),
-      Scenario("MACL load ERR", instruction         = 0x4116, address  = 0x300, dataError = true),
-      Scenario("store ERR without ACK", instruction = 0x2102, address  = 0x300, dataError = true),
+      Scenario("SR load ERR", instruction           = 0x4107, address = 0x300, dataError = true),
+      Scenario("MACH load ERR", instruction         = 0x4106, address = 0x300, dataError = true),
+      Scenario("MACL load ERR", instruction         = 0x4116, address = 0x300, dataError = true),
+      Scenario("store ERR without ACK", instruction = 0x2102, address = 0x300, dataError = true),
       Scenario("odd instruction target", oddFetch   = true),
-      Scenario("data ERR without ACK", address      = 0x300, dataError = true),
+      Scenario("lower-half instruction target ERR", address = 0x302, targetFetchError = true),
+      Scenario("data ERR without ACK", address              = 0x300, dataError        = true),
       Scenario(
         "ERR takes priority over ACK",
         address     = 0x300,
@@ -113,8 +128,15 @@ class J2SleepFaultSpec extends munit.FunSuite {
             code(0x112) = 0xaffe
             code(0x114) = 9
           }
-          if (scenario.oddFetch) {
-            code(0x106) = 0x412b // jmp @r1 (0x301)
+          if (scenario.discardFetchError) {
+            if (scenario.instruction == 0x8903) code(0x102) = 0x0018 // SETT for taken BT
+            code(0x108)                                     = 0xe0ff // discarded fallthrough
+            code(0x110)                                     = 0x2202
+            code(0x112)                                     = 0xaffe
+            code(0x114)                                     = 9
+          }
+          if (scenario.oddFetch || scenario.targetFetchError) {
+            code(0x106) = 0x412b // jmp @r1: odd target or lower-half word fetch
             code(0x108) = 9
             code(0x110) = 0x2202
             code(0x112) = 0xaffe
@@ -193,11 +215,14 @@ class J2SleepFaultSpec extends munit.FunSuite {
             if (dut.io.ibus.STB.toBoolean) {
               if (iw == latency) {
                 val addr = dut.io.ibus.ADR.toLong
-                assertEquals(addr & 1L, 0L, "odd fetch reached bus")
-                val error = scenario.fetchError && addr == (if (scenario.delaySlot) 0x108
-                                                            else 0x106) && !faultInjected
+                assertEquals(addr & 3L, 0L, "unaligned instruction word reached bus")
+                val error =
+                  !faultInjected && ((scenario.fetchError && addr == (if (scenario.delaySlot) 0x108
+                                                                      else 0x104)) ||
+                    (scenario.targetFetchError && addr == (scenario.address & ~3L)) ||
+                    (scenario.discardFetchError && addr == 0x108L))
                 if (!scenario.sleepTest && addr == 0x106) dut.io.event.valid #= true
-                dut.io.ibus.DAT_MISO #= code.getOrElse(addr, 0x0009).toLong
+                dut.io.ibus.DAT_MISO #= J2InstructionMemory.word(code, addr)
                 dut.io.ibus.ERR      #= error
                 dut.io.ibus.ACK      #= !error
                 if (error) faultInjected = true
@@ -241,12 +266,15 @@ class J2SleepFaultSpec extends munit.FunSuite {
             assert(!memory.contains(0x400L), "nested fault resumed normal execution")
           } else if (scenario.healthyValue.nonEmpty) {
             assertEquals(memory.get(0x400L), scenario.healthyValue)
-            assert(!reads.contains(0x24L), "aligned access raised an exception")
+            assert(!reads.contains(0x24L), "healthy path raised an exception")
+            if (scenario.discardFetchError)
+              assert(faultInjected, "fallthrough error was not exercised")
           } else {
             val expectedPc =
-              if (scenario.oddFetch) 0x301L
+              if (scenario.targetFetchError) scenario.address
+              else if (scenario.oddFetch) 0x301L
               else if (scenario.delaySlot) 0x110L
-              else if (scenario.fetchError) 0x106L
+              else if (scenario.fetchError) 0x104L
               else 0x108L
             assertEquals(memory.get(0x600L), Some(expectedPc), s"saved PC: ${scenario.name}")
             assertEquals(
@@ -254,7 +282,7 @@ class J2SleepFaultSpec extends munit.FunSuite {
               Some(if (scenario.irqSleep) 0L else 0xf0L),
               s"saved SR: ${scenario.name}"
             )
-            if (!scenario.oddFetch) {
+            if (!scenario.oddFetch && !scenario.targetFetchError) {
               assertEquals(memory.get(0x60cL), Some(0L), "failed load changed MACH")
               assertEquals(memory.get(0x610L), Some(0L), "failed load changed MACL")
             }

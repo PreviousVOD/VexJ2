@@ -32,9 +32,10 @@ class J2MicrocodedCoreSpec extends munit.FunSuite {
           0x116L -> 0xaffe,
           0x118L -> 0x0009
         )
-        val memory = mutable.Map[Long, Long](0L -> 0x100L, 4L -> 0x800L, 0x120L -> 0x400L)
-        val reads  = mutable.ArrayBuffer.empty[Long]
-        val writes = mutable.ArrayBuffer.empty[Long]
+        val memory  = mutable.Map[Long, Long](0L -> 0x100L, 4L -> 0x800L, 0x120L -> 0x400L)
+        val fetches = mutable.ArrayBuffer.empty[Long]
+        val reads   = mutable.ArrayBuffer.empty[Long]
+        val writes  = mutable.ArrayBuffer.empty[Long]
         dut.io.ibus.ACK                 #= false
         dut.io.ibus.ERR                 #= false
         dut.io.ibus.DAT_MISO            #= 0
@@ -52,7 +53,7 @@ class J2MicrocodedCoreSpec extends munit.FunSuite {
           dut.clockDomain.clockSim #= true
           sleep(5)
           dut.clockDomain.clockSim #= false
-          sleep(1) // Let the falling-edge microcode ROM settle.
+          sleep(1)
         }
         dut.clockDomain.clockSim #= false
         dut.clockDomain.assertReset()
@@ -89,7 +90,8 @@ class J2MicrocodedCoreSpec extends munit.FunSuite {
           if (dut.io.ibus.STB.toBoolean) {
             if (iw == 0) heldInstruction = dut.io.ibus.ADR.toLong
             if (iw == latency) {
-              dut.io.ibus.DAT_MISO #= code.getOrElse(dut.io.ibus.ADR.toLong, 0x0009).toLong
+              fetches += dut.io.ibus.ADR.toLong
+              dut.io.ibus.DAT_MISO #= J2InstructionMemory.word(code, dut.io.ibus.ADR.toLong)
               dut.io.ibus.ACK      #= true
               iw = 0
             } else iw += 1
@@ -112,6 +114,9 @@ class J2MicrocodedCoreSpec extends munit.FunSuite {
           tick()
           cycles += 1
         }
+        assertEquals(fetches.count(_ == 0x100L), 1, "both first-word instructions share a transfer")
+        assertEquals(fetches.count(_ == 0x104L), 1, "sequential lower half must use the buffer")
+        assert(fetches.contains(0x10cL), "lower-half branch target must fetch its aligned word")
         assertEquals(reads.take(2).toSeq, Seq(0L, 4L))
         assertEquals(
           writes.toSeq,
