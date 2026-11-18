@@ -34,11 +34,14 @@ trait J2MicrocodeRomPort {
   val io: J2MicrocodeRomIo
 }
 
-final class J2MicrocodeRom extends Component with J2MicrocodeRomPort {
+final class J2MicrocodeRom(backend: j2.memory.J2MemoryBackend = j2.memory.J2MemoryBackend.Inferred)
+    extends Component
+    with J2MicrocodeRomPort {
   val io = new J2MicrocodeRomIo
 
   private val memory = Mem(UInt(72 bits), 256)
   memory.initBigInt(J2MicrocodeData.entries)
+  backend.configure(memory)
   io.address.addTag(crossClockDomain)
   io.enable.addTag(crossClockDomain)
   private val readArea = new ClockingArea(

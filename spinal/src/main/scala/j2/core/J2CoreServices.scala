@@ -5,7 +5,10 @@ import spinal.lib._
 import j2.bus.J2Wishbone
 import j2.microcode.J2Operation
 
-final case class J2CoreConfig(useEg4Rom: Boolean = false, exposeDebug: Boolean = true)
+final case class J2CoreConfig(
+    memoryBackend: j2.memory.J2MemoryBackend = j2.memory.J2MemoryBackend.Inferred,
+    exposeDebug: Boolean = true
+)
 
 final class J2CoreIo(config: J2CoreConfig) extends Bundle {
   val ibus              = master(J2Wishbone())

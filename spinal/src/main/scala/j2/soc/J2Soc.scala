@@ -8,14 +8,13 @@ import spinal.lib._
 import spinal.lib.bus.misc.SizeMapping
 import spinal.lib.com.uart.{UartCtrlMemoryMappedConfig, WishboneUartCtrl}
 import spinal.lib.io.TriStateArray
-import spinal.lib.memory.sdram.sdr.{EG4S20, SdramInterface}
 
 final class J2Soc(
-    useBramRom: Boolean = false,
-    clockHz: Int = 32000000,
-    timerTickHz: Int = 1000000
+    val config: J2SocConfig = J2SocConfig()
 ) extends Component {
+  private val clockHz = config.clockHz
   val io = new Bundle {
+    val memory  = master(J2Wishbone())
     val uartRx  = in Bool ()
     val uartTx  = out Bool ()
     val gpio    = master(TriStateArray(32))
@@ -26,13 +25,13 @@ final class J2Soc(
   private val xipConfig = J2ReadCacheConfig(
     cacheBytes  = 4096,
     lineBytes   = 32,
-    baseAddress = 0x10000000L,
-    rangeBytes  = 0x00100000L
+    baseAddress = config.xipBase,
+    rangeBytes  = config.xipBytes
   )
   private val romMapping          = SizeMapping(0x00000000L, 0x00008000L)
   private val sramMapping         = SizeMapping(0x00008000L, 0x00008000L)
   private val flashMapping        = SizeMapping(xipConfig.baseAddress, xipConfig.rangeBytes)
-  private val sdramMapping        = SizeMapping(0x80000000L, 0x00800000L)
+  private val memoryMapping       = SizeMapping(config.memoryBase, config.memoryBytes)
   private val pioMapping          = SizeMapping(0xff000000L, 0x1000)
   private val uartMapping         = SizeMapping(0xff001000L, 0x1000)
   private val flashControlMapping = SizeMapping(0xff002000L, 0x1000)
@@ -40,23 +39,23 @@ final class J2Soc(
   private val cacheControlMapping = SizeMapping(0xff004000L, 0x1000)
 
   private val xipCache = new J2ReadCache(xipConfig)
-  private val cpu      = new J2MicrocodedCore(J2CoreConfig(useBramRom, exposeDebug = false))
-  private val rom      = new J2Rom(useBramRom)
-  private val sram     = new J2Sram
-  private val flash    = new J2SpiFlash(xipConfig.lineBytes)
-  private val sdram    = new J2Sdram
-  private val pio      = new J2Pio
-  private val timer    = new J2Timer(clockHz, timerTickHz)
+  private val cpu   = new J2MicrocodedCore(J2CoreConfig(config.memoryBackend, exposeDebug = false))
+  private val rom   = new J2Rom(config.memoryBackend, config.romHex)
+  private val sram  = new J2Sram(config.memoryBackend)
+  private val flash = new J2SpiFlash(xipConfig.lineBytes)
+  private val pio   = new J2Pio
+  private val timer = new J2Timer(clockHz, config.timerTickHz)
   private val uart = new WishboneUartCtrl(
     UartCtrlMemoryMappedConfig(19200, txFifoDepth = 32, rxFifoDepth = 32)
   )
-  val sdramInterface = master(SdramInterface(EG4S20.layout))
-  sdramInterface <> sdram.io.sdram
 
   // Cache tags/refill commands use absolute addresses. Only the backend adapter
   // translates the mapped window to flash offsets, so relocation is explicit.
-  flash.io.xip.cmd.valid       := xipCache.io.refill.cmd.valid
-  flash.io.xip.cmd.address     := xipCache.io.refill.cmd.address - U(xipConfig.baseAddress, 32 bits)
+  flash.io.xip.cmd.valid := xipCache.io.refill.cmd.valid
+  flash.io.xip.cmd.address := xipCache.io.refill.cmd.address - U(
+    xipConfig.baseAddress,
+    32 bits
+  ) + U(config.flashOffset, 32 bits)
   flash.io.xip.cmd.length      := xipCache.io.refill.cmd.length
   xipCache.io.refill.cmd.ready := flash.io.xip.cmd.ready
   xipCache.io.refill.rsp <> flash.io.xip.rsp
@@ -64,7 +63,7 @@ final class J2Soc(
   xipCache.io.invalidate := flash.io.invalidate
   flash.io.readBusy      := xipCache.io.busy
 
-  private val instructionMappings = Seq(romMapping, sramMapping, flashMapping, sdramMapping)
+  private val instructionMappings = Seq(romMapping, sramMapping, flashMapping, memoryMapping)
   private val dataMappings = instructionMappings ++ Seq(
     pioMapping,
     uartMapping,
@@ -113,7 +112,7 @@ final class J2Soc(
     rom.io.bus -> romMapping,
     sram.io.bus -> sramMapping,
     xipCache.io.bus -> flashMapping,
-    sdram.io.bus -> sdramMapping,
+    io.memory -> memoryMapping,
     pio.io.bus -> pioMapping,
     uartBus -> uartMapping,
     flash.io.control -> flashControlMapping,
@@ -126,7 +125,7 @@ final class J2Soc(
       rom.io.bus,
       sram.io.bus,
       xipCache.io.bus,
-      sdram.io.bus,
+      io.memory,
       pio.io.bus,
       uartBus,
       flash.io.control,
@@ -137,7 +136,7 @@ final class J2Soc(
   matrix.addInstructionMaster(
     instructionBus,
     dataBus,
-    Seq(rom.io.bus, sram.io.bus, xipCache.io.bus, sdram.io.bus)
+    Seq(rom.io.bus, sram.io.bus, xipCache.io.bus, io.memory)
   )
 
   cpu.io.ibus.ACK      := Mux(instructionUnmapped, False, instructionBus.ACK)

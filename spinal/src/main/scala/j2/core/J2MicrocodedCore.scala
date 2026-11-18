@@ -9,14 +9,14 @@ final class J2MicrocodedCore(
     pluginFactory: J2CoreConfig => Seq[FiberPlugin]
 ) extends Component {
   def this(config: J2CoreConfig) = this(config, J2CorePlugins.apply _)
-  def this(useEg4Rom: Boolean = false, exposeDebug: Boolean = true) =
-    this(J2CoreConfig(useEg4Rom, exposeDebug))
+  def this(exposeDebug: Boolean = true) =
+    this(J2CoreConfig(exposeDebug = exposeDebug))
 
-  val useEg4Rom   = config.useEg4Rom
-  val exposeDebug = config.exposeDebug
-  val io          = new J2CoreIo(config)
-  val host        = new PluginHost
-  val plugins     = pluginFactory(config) :+ new J2ExternalPlugin(io)
+  val memoryBackend = config.memoryBackend
+  val exposeDebug   = config.exposeDebug
+  val io            = new J2CoreIo(config)
+  val host          = new PluginHost
+  val plugins       = pluginFactory(config) :+ new J2ExternalPlugin(io)
   J2CorePlugins.validate(plugins)
   host.asHostOf(plugins)
 }

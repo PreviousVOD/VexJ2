@@ -1,6 +1,8 @@
 package j2.board.tang_primer
 
-import j2.soc.{J2ResetController, J2Soc}
+import j2.soc.{J2ResetController, J2Soc, J2SocConfig}
+import j2.memory.J2MemoryBackend
+import j2.periph.J2Sdram
 import spinal.core._
 
 final class J2TangPrimer(
@@ -69,11 +71,21 @@ final class J2TangPrimer(
   resetController.io.systemClock    := socClock
   resetController.io.resetN         := io.rstN
   resetController.io.clockLocked    := clockLocked
-  private val soc = ClockDomain(
+  private val socDomain = ClockDomain(
     clock     = socClock,
     reset     = resetController.io.reset,
     frequency = FixedFrequency(clockHz Hz)
-  )(new J2Soc(useEg4Rom, clockHz))
+  )
+  private val soc = socDomain(
+    new J2Soc(
+      J2SocConfig(
+        memoryBackend = if (useEg4Rom) J2MemoryBackend.Eg4BlockRam else J2MemoryBackend.Inferred,
+        clockHz       = clockHz
+      )
+    )
+  )
+  private val sdram = socDomain(new J2Sdram)
+  sdram.io.bus <> soc.io.memory
   soc.io.uartRx := io.uartRx
   io.uartTx     := soc.io.uartTx
   private val gpioPads = Seq.fill(32)(new Eg4GpioPad)
@@ -112,21 +124,21 @@ final class J2TangPrimer(
 
   private val sdramPhy = new Eg4SdramPhy
   sdramPhy.clk   := socClock
-  sdramPhy.ras_n := soc.sdramInterface.RASn
-  sdramPhy.cas_n := soc.sdramInterface.CASn
-  sdramPhy.we_n  := soc.sdramInterface.WEn
-  sdramPhy.addr  := soc.sdramInterface.ADDR
-  sdramPhy.ba    := soc.sdramInterface.BA
-  sdramPhy.cs_n  := soc.sdramInterface.CSn
-  sdramPhy.dm0   := soc.sdramInterface.DQM(0)
-  sdramPhy.dm1   := soc.sdramInterface.DQM(1)
-  sdramPhy.dm2   := soc.sdramInterface.DQM(2)
-  sdramPhy.dm3   := soc.sdramInterface.DQM(3)
-  sdramPhy.cke   := soc.sdramInterface.CKE
+  sdramPhy.ras_n := sdram.io.sdram.RASn
+  sdramPhy.cas_n := sdram.io.sdram.CASn
+  sdramPhy.we_n  := sdram.io.sdram.WEn
+  sdramPhy.addr  := sdram.io.sdram.ADDR
+  sdramPhy.ba    := sdram.io.sdram.BA
+  sdramPhy.cs_n  := sdram.io.sdram.CSn
+  sdramPhy.dm0   := sdram.io.sdram.DQM(0)
+  sdramPhy.dm1   := sdram.io.sdram.DQM(1)
+  sdramPhy.dm2   := sdram.io.sdram.DQM(2)
+  sdramPhy.dm3   := sdram.io.sdram.DQM(3)
+  sdramPhy.cke   := sdram.io.sdram.CKE
   private val sdramDq = Analog(Bits(32 bits))
   sdramPhy.dq <> sdramDq
-  when(soc.sdramInterface.DQ.writeEnable(0)) {
-    sdramDq := soc.sdramInterface.DQ.write
+  when(sdram.io.sdram.DQ.writeEnable(0)) {
+    sdramDq := sdram.io.sdram.DQ.write
   }
-  soc.sdramInterface.DQ.read := sdramDq
+  sdram.io.sdram.DQ.read := sdramDq
 }

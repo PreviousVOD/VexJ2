@@ -45,6 +45,11 @@ directly from flash pass.
 
 ## Architecture
 
+The **Wukong v1 / XC7A100T port** has a separate board target, platform ROM and
+Vivado implementation flow. Volatile JTAG, UART and SF3 quad ID/XIP reads on J11
+are validated; DDR3 and application boot integration are pending. See
+[Wukong port status and build instructions](docs/wukong-v1.md).
+
 The CPU is composed from native SpinalHDL FiberPlugins with typed services and
 an explicit EX/MA/WB graph with collective slot stalls. `J2CoreConfig` selects ROM
 and debug options while preserving the existing CPU IO. See

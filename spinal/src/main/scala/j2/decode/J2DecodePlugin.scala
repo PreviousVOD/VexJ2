@@ -6,14 +6,18 @@ import j2.core._
 import spinal.core._
 import spinal.lib.misc.plugin.FiberPlugin
 
-final class J2DecodePlugin(useEg4Rom: Boolean) extends FiberPlugin with J2DecodeService {
+final class J2DecodePlugin(memoryBackend: j2.memory.J2MemoryBackend)
+    extends FiberPlugin
+    with J2DecodeService {
   val allocation = during build new Area {
-    val port                    = new J2DecodePort
-    val sequencer               = new J2Microsequencer
-    val rom: J2MicrocodeRomPort = if (useEg4Rom) new Eg4MicrocodeRom else new J2MicrocodeRom
-    val table                   = new J2MicrocodeTable
-    val romValid                = RegInit(False)
-    val romAddress              = RegInit(U(0, 8 bits))
+    val port      = new J2DecodePort
+    val sequencer = new J2Microsequencer
+    val rom: J2MicrocodeRomPort =
+      if (memoryBackend == j2.memory.J2MemoryBackend.Eg4BlockRam) new Eg4MicrocodeRom
+      else new J2MicrocodeRom(memoryBackend)
+    val table      = new J2MicrocodeTable
+    val romValid   = RegInit(False)
+    val romAddress = RegInit(U(0, 8 bits))
     port.control            := table.io.control
     port.operation          := sequencer.io.operation
     port.nextIdStall        := sequencer.io.nextIdStall

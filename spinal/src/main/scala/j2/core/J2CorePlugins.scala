@@ -13,7 +13,7 @@ object J2CorePlugins {
   def apply(config: J2CoreConfig): Seq[FiberPlugin] = Seq(
     new J2FetchPlugin,
     new J2MemoryPlugin,
-    new J2DecodePlugin(config.useEg4Rom),
+    new J2DecodePlugin(config.memoryBackend),
     new J2SchedulePlugin,
     new J2RegisterPlugin,
     new J2ExecutePlugin,

@@ -6,8 +6,14 @@ import spinal.core.sim._
 
 class J2CorePluginsSpec extends munit.FunSuite {
   test("ROM and observation configurations elaborate through the same composition") {
-    for (rom <- Seq(false, true); debug <- Seq(false, true)) {
-      val config = J2CoreConfig(useEg4Rom = rom, exposeDebug = debug)
+    for (
+      rom <- Seq(
+        j2.memory.J2MemoryBackend.Inferred,
+        j2.memory.J2MemoryBackend.Eg4BlockRam,
+        j2.memory.J2MemoryBackend.XilinxBlockRam
+      ); debug <- Seq(false, true)
+    ) {
+      val config = J2CoreConfig(memoryBackend = rom, exposeDebug = debug)
       SpinalConfig(targetDirectory = s"simWorkspace/plugin-config-$rom-$debug")
         .generateVerilog(new J2MicrocodedCore(config))
     }

@@ -1,0 +1,30 @@
+ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)
+OUT := $(ROOT)/build/wukong-v1/rom
+CROSS ?= sh-none-elf-
+CC := $(CROSS)gcc
+CFLAGS := -m2 -mb -Os -Wall -Wextra -ffreestanding -fno-builtin -nostdlib \
+  -I$(ROOT)/sw/xiprom -I$(OUT) -include $(OUT)/board.h
+OBJS := $(OUT)/entry.o $(OUT)/main.o $(OUT)/uart.o $(OUT)/flash_probe.o
+
+.PHONY: all
+all: $(OUT)/boot.hex $(OUT)/main.lst
+
+$(OUT)/board.h: $(ROOT)/fpga/wukong-v1/board.properties $(ROOT)/tools/wukong_config.py
+	python3 $(ROOT)/tools/wukong_config.py
+
+$(OUT)/entry.o: $(ROOT)/sw/xiprom/entry.S $(OUT)/board.h Makefile
+	$(CC) $(CFLAGS) -c $< -o $@
+$(OUT)/main.o: main.c $(ROOT)/sw/xiprom/uart.h $(OUT)/board.h Makefile
+	$(CC) $(CFLAGS) -c $< -o $@
+$(OUT)/flash_probe.o: flash_probe.c $(OUT)/board.h Makefile
+	$(CC) $(CFLAGS) -c $< -o $@
+$(OUT)/uart.o: $(ROOT)/sw/xiprom/uart.c $(ROOT)/sw/xiprom/uart.h $(OUT)/board.h Makefile
+	$(CC) $(CFLAGS) -c $< -o $@
+$(OUT)/main.elf: $(OBJS) $(ROOT)/sw/xiprom/boot.x Makefile
+	$(CC) -m2 -mb -nostdlib -T $(ROOT)/sw/xiprom/boot.x -Wl,-Map,$(OUT)/main.map $(OBJS) -lgcc -o $@
+$(OUT)/main.bin: $(OUT)/main.elf
+	$(CROSS)objcopy -O binary $< $@
+$(OUT)/boot.hex: $(OUT)/main.bin $(ROOT)/tools/gen_verilog_rom.py
+	python3 $(ROOT)/tools/gen_verilog_rom.py $< $@
+$(OUT)/main.lst: $(OUT)/main.elf
+	$(CROSS)objdump -d $< > $@

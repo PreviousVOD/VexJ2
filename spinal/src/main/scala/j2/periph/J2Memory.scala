@@ -7,8 +7,7 @@ import spinal.lib._
 import scala.io.Source
 
 object J2RomData {
-  def words: Seq[BigInt] = {
-    val path = sys.env.getOrElse("J2_ROM_HEX", "../build/verilog/xip/j2_validation_rom.hex")
+  def words(path: String): Seq[BigInt] = {
     val values = Source
       .fromFile(path)
       .getLines()
@@ -21,12 +20,12 @@ object J2RomData {
   }
 }
 
-final class J2Rom(useBramRom: Boolean = false) extends Component {
+final class J2Rom(backend: j2.memory.J2MemoryBackend, initFile: String) extends Component {
   val io = new Bundle {
     val bus = slave(J2Wishbone())
   }
   private val pending = RegInit(False)
-  private val readData = if (useBramRom) {
+  private val readData = if (backend == j2.memory.J2MemoryBackend.Eg4BlockRam) {
     val memory = new Eg4Bram32
     memory.dia   := 0
     memory.dib   := 0
@@ -47,7 +46,8 @@ final class J2Rom(useBramRom: Boolean = false) extends Component {
     memory.doa
   } else {
     val memory = Mem(UInt(32 bits), 8192)
-    memory.initBigInt(J2RomData.words)
+    memory.initBigInt(J2RomData.words(initFile))
+    backend.configure(memory)
     memory.readSync(io.bus.ADR(14 downto 2)).asBits
   }
 
@@ -61,11 +61,13 @@ final class J2Rom(useBramRom: Boolean = false) extends Component {
   io.bus.ERR      := False
 }
 
-final class J2Sram extends Component {
+final class J2Sram(backend: j2.memory.J2MemoryBackend = j2.memory.J2MemoryBackend.Inferred)
+    extends Component {
   val io = new Bundle {
     val bus = slave(J2Wishbone())
   }
   private val banks = Seq.fill(4)(Mem(Bits(8 bits), 8192))
+  banks.foreach(backend.configure(_))
   banks.foreach(_.initBigInt(Seq.fill(8192)(BigInt(0))))
   private val pending = RegInit(False)
   private val readData = Cat(

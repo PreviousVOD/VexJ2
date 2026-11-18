@@ -97,7 +97,46 @@ spinal-test: microcode-data
 
 spinal-generate: microcode-data $(XIP_ROM)
 	mkdir -p $(SPINAL_OUT)
-	cd $(SPINAL_DIR) && $(SBT) -batch run
+	cd $(SPINAL_DIR) && $(SBT) -batch "runMain j2.Generate"
+
+# Wukong step 1 builds a separate platform ROM and synthesizes the board shell.
+# No implicit programming or shared-flash writes.
+VIVADO_HOME ?= /home/imi415/Softwares/Tools/Xilinx/2025.2/Vivado
+.PHONY: wukong-rom wukong-generate wukong-synth wukong-bitstream wukong-sim wukong-reset-sim wukong-program wukong-uart
+wukong-rom: $(TOOL_SH_GCC)
+	python3 tools/wukong_config.py
+	$(MAKE) -C sw/wukongrom
+
+wukong-generate: wukong-rom microcode-data $(TOOL_SBT)
+	cd $(SPINAL_DIR) && $(SBT) -batch "runMain j2.GenerateWukong"
+
+wukong-synth: wukong-generate
+	VIVADO_HOME="$(VIVADO_HOME)" bash tools/build_wukong.sh
+
+wukong-bitstream: wukong-synth
+	VIVADO_HOME="$(VIVADO_HOME)" bash tools/implement_wukong.sh
+
+wukong-sim: wukong-rom microcode-data $(TOOL_SBT) $(TOOL_VERILATOR)
+	cd $(SPINAL_DIR) && $(SBT) -batch "Test / runMain j2.board.WukongSmokeSim"
+
+wukong-reset-sim: wukong-synth
+	mkdir -p build/wukong-v1/reset_sim
+	rm -f build/wukong-v1/reset_sim/validation.pass
+	cd build/wukong-v1/reset_sim && VIVADO_HOME="$(VIVADO_HOME)" bash "$(CURDIR)/tools/run_vivado.sh" \
+		-mode batch -notrace -source "$(CURDIR)/tools/check_wukong_reset.tcl" -log driver.log -journal driver.jou
+	test -s build/wukong-v1/reset_sim/validation.pass
+
+# Requires an explicitly supplied, implemented and validated bitstream.
+wukong-program:
+	test -n "$(WUKONG_BITSTREAM)" && test -f "$(WUKONG_BITSTREAM)"
+	mkdir -p build/wukong-v1/program
+	rm -f build/wukong-v1/program/program.pass
+	cd build/wukong-v1/program && VIVADO_HOME="$(VIVADO_HOME)" bash "$(CURDIR)/tools/run_vivado.sh" -mode batch -notrace \
+		-source "$(CURDIR)/tools/program_wukong.tcl" -tclargs "$(abspath $(WUKONG_BITSTREAM))"
+	test -s build/wukong-v1/program/program.pass
+
+wukong-uart:
+	VIVADO_HOME="$(VIVADO_HOME)" python3 tools/check_wukong_uart.py
 
 spinal-verif:
 	$(MAKE) -C spinal/verif test

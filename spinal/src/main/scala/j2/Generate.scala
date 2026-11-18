@@ -20,7 +20,15 @@ object Generate extends App {
   config.generateVerilog(new J2PipelineRegFile)
   val cpuConfig =
     if (useEg4Rom) config.copy(targetDirectory = "../build/spinal/verilog-fpga") else config
-  cpuConfig.generateVerilog(new J2MicrocodedCore(J2CoreConfig(useEg4Rom, exposeDebug = !useEg4Rom)))
+  cpuConfig.generateVerilog(
+    new J2MicrocodedCore(
+      J2CoreConfig(
+        if (useEg4Rom) j2.memory.J2MemoryBackend.Eg4BlockRam
+        else j2.memory.J2MemoryBackend.Inferred,
+        exposeDebug = !useEg4Rom
+      )
+    )
+  )
   config.generateVerilog(new J2TangPrimer(clockHz, useEg4Rom = false))
   cpuConfig.generateVerilog(new J2TangPrimer(clockHz, useEg4Rom = useEg4Rom, usePll = usePll))
   config.generateVerilog(new J2MicrocodeRom)
