@@ -9,8 +9,20 @@ route_design
 report_utilization -file [file join $out vivado utilization_routed.rpt]
 report_timing_summary -delay_type min_max -report_unconstrained -check_timing_verbose \
     -file [file join $out vivado timing_routed.rpt]
+report_bus_skew -file [file join $out vivado bus_skew.rpt]
+set stream [open [file join $out vivado bus_skew.rpt] r]
+set skew_report [read $stream]
+close $stream
+if {[string first "VIOLATED" $skew_report] >= 0} { error "Bundled-data bus skew failed" }
 report_route_status -file [file join $out vivado route_status.rpt]
 report_cdc -file [file join $out vivado cdc.rpt]
+report_cdc -details -file [file join $out vivado cdc_details.rpt]
+set stream [open [file join $out vivado cdc_details.rpt] r]
+set cdc_report [read $stream]
+close $stream
+if {[regexp -line {^CDC-[0-9]+[ \t]+Critical[ \t]+[1-9]} $cdc_report]} {
+    error "Critical CDC findings; inspect cdc_details.rpt"
+}
 report_drc -file [file join $out vivado drc_routed.rpt]
 set errors [get_drc_violations -quiet -filter {SEVERITY == Error || SEVERITY == "Critical Warning"}]
 if {[llength $errors]} { error "Implementation DRC failures: $errors" }

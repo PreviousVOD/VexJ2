@@ -34,7 +34,7 @@ def main():
         (out / name).unlink(missing_ok=True)
     banner = ("Wukong-v1 platform ROM\r\nApplication flash offset: "
               f'{int(profile["flashOffset"], 0):08x}'
-              "\r\nSF3 quad ID: 20ba19\r\nSF3 quad XIP: PASS\r\nDDR3 and application boot pending\r\n").encode()
+              "\r\nSF3 quad ID: 20ba19\r\nSF3 quad XIP: PASS\r\nDDR3 CPU: PASS 00\r\nApplication boot pending\r\n").encode()
     echo = b"Wukong UART check\r\n"
     if args.ddr:
         banner = b"Wukong DDR3: PASS\r\n"
@@ -63,6 +63,8 @@ def main():
                         captured.extend(os.read(fd, 4096))
                     if args.ddr and (b"FAIL" in captured or b"TIMEOUT" in captured):
                         raise RuntimeError("DDR diagnostic failed; see ddr/hardware/uart.log")
+                    if not args.ddr and (b"SF3 quad XIP: FAIL" in captured or b"DDR3 CPU: FAIL" in captured):
+                        raise RuntimeError("Platform diagnostic failed; see hardware/uart.log")
                     code = proc.poll()
                     if code is not None and (code != 0 or not (out / "program.pass").is_file()):
                         raise RuntimeError("Vivado programming failed; see hardware/program.log")
@@ -73,16 +75,16 @@ def main():
                         report = dict(complete=True, device=device, programming="volatile JTAG",
                                       bitstream_sha256=digest, clock_hz=int(profile["clockHz"]),
                                       uart_baud=int(profile["uartBaud"]), banner=True, echo=True,
-                                      flash_written=False, flash_volatile_config_written=True, sf3_quad_id="20ba19", sf3_quad_xip=True)
+                                      flash_written=False, flash_volatile_config_written=True, sf3_quad_id="20ba19", sf3_quad_xip=True, ddr_cpu=True)
                         if args.ddr:
                             report.update(echo=False, flash_volatile_config_written=False,
                                           ddr_calibrated=True, ddr_bist=True, ddr_ui_clock_hz=83333333,
                                           ddr_memory_clock_hz=333333333,
                                           ddr_write_bursts=2048, ddr_read_bursts=2048)
-                            del report["sf3_quad_id"], report["sf3_quad_xip"]
+                            del report["sf3_quad_id"], report["sf3_quad_xip"], report["ddr_cpu"]
                         (out / "results.json").write_text(json.dumps(report, indent=2) + "\n")
                         print("WUKONG_DDR_HARDWARE_PASS: calibration, full/masked writes and readback" if args.ddr else
-                              "WUKONG_HARDWARE_PASS: volatile JTAG, ROM banner, SF3 quad ID/XIP and UART echo")
+                              "WUKONG_HARDWARE_PASS: volatile JTAG, ROM banner, SF3 quad ID/XIP, DDR CPU and UART echo")
                         return
                 raise TimeoutError("Wukong programming/UART timeout; see hardware logs")
             finally:

@@ -1,13 +1,29 @@
 package j2.board
 
 import j2.soc.J2Soc
+import spinal.core._
 import spinal.core.sim._
 import scala.collection.mutable.ArrayBuffer
 
 /** Pin-level Micron model for volatile protocol setup and 4-4-4 cached reads. Deliberately
   * nonuniform array data exposes lane, byte, address and dummy-clock errors.
   */
-final class Sf3Model(dut: J2Soc, initiallyQuad: Boolean) {
+final class Sf3Model(
+    csPin: Bool,
+    clockPin: Bool,
+    writePins: Bits,
+    enablePins: Bits,
+    readPins: Bits,
+    initiallyQuad: Boolean
+) {
+  def this(dut: J2Soc, initiallyQuad: Boolean) = this(
+    dut.io.spiCs,
+    dut.io.spiClk,
+    dut.io.spiData.write,
+    dut.io.spiData.writeEnable,
+    dut.io.spiData.read,
+    initiallyQuad
+  )
   var quad               = initiallyQuad
   var evcr               = if (quad) 0x5f else 0xdf
   var vcr                = 0xfb
@@ -25,8 +41,8 @@ final class Sf3Model(dut: J2Soc, initiallyQuad: Boolean) {
   def byte(a: Long): Int = ((a * 37) ^ (a >> 7) ^ 0xa5).toInt & 255
 
   def tick(): Unit = {
-    val cs  = dut.io.spiCs.toBoolean
-    val clk = dut.io.spiClk.toBoolean
+    val cs  = csPin.toBoolean
+    val clk = clockPin.toBoolean
     if (previousCs && !cs) {
       width  = if (quad) 4 else 1
       clocks = 0; opcode = 0; value = 0; address = 0
@@ -55,10 +71,10 @@ final class Sf3Model(dut: J2Soc, initiallyQuad: Boolean) {
         case other => assert(false, f"unexpected flash opcode $other%02x")
       }
     }
-    if (cs) dut.io.spiData.read #= 15
+    if (cs) readPins #= 15
     else if (!previousClock && clk) {
-      val pins   = dut.io.spiData.write.toInt
-      val enable = dut.io.spiData.writeEnable.toInt
+      val pins   = writePins.toInt
+      val enable = enablePins.toInt
       val driven = (pins & enable) | (~enable & 15)
       if (clocks < commandClocks) opcode = (opcode << width) | (driven & ((1 << width) - 1))
       else {
@@ -90,7 +106,7 @@ final class Sf3Model(dut: J2Soc, initiallyQuad: Boolean) {
         }
         val shift = 8 - width - (index % commandClocks) * width
         val bits  = (result >> shift) & ((1 << width) - 1)
-        dut.io.spiData.read #= (if (width == 4) bits else 13 | (bits << 1))
+        readPins #= (if (width == 4) bits else 13 | (bits << 1))
       }
     }
     previousCs    = cs

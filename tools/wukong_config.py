@@ -33,7 +33,8 @@ def main():
     (out / "rom").mkdir(parents=True, exist_ok=True)
     definitions = {"J2_CLOCK_HZ": "clockHz", "J2_FLASH_OFFSET": "flashOffset",
                    "J2_FLASH_BYTES": "flashBytes", "J2_XIP_BASE": "xipBase",
-                   "J2_XIP_BYTES": "xipBytes"}
+                   "J2_XIP_BYTES": "xipBytes", "J2_MEMORY_BASE": "memoryBase",
+                   "J2_MEMORY_BYTES": "memoryBytes"}
     (out / "rom/board.h").write_text("/* Generated from board.properties. */\n" +
         "".join(f"#define {name} {int(values[key], 0)}u\n" for name, key in definitions.items()))
     # Only known scalar settings enter Tcl; do not interpolate arbitrary profile text.

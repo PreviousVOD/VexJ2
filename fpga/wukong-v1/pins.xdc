@@ -1,4 +1,4 @@
-# QMTECH Wukong v1 schematic, pages 2 and 4. DDR pins belong to the future MIG IP.
+# QMTECH Wukong v1 schematic, pages 2 and 4. DDR pins/IO standards are supplied by MIG.
 set_property PACKAGE_PIN M22 [get_ports clk50]
 set_property PACKAGE_PIN H7 [get_ports reset_n]
 set_property PACKAGE_PIN F3 [get_ports uart_rx]
@@ -38,7 +38,7 @@ set_property PACKAGE_PIN G7 [get_ports {gpio[20]}]
 set_property PACKAGE_PIN D6 [get_ports {gpio[21]}]
 set_property PACKAGE_PIN G8 [get_ports {gpio[22]}]
 set_property PACKAGE_PIN G6 [get_ports {gpio[23]}]
-set_property IOSTANDARD LVCMOS33 [get_ports *]
+set_property IOSTANDARD LVCMOS33 [get_ports -filter {NAME !~ ddr3_*}]
 set_property PULLUP TRUE [get_ports {reset_n uart_rx flash_cs_n configuration_cs_n flash_dq[2] flash_dq[3]}]
 set_property DRIVE 8 [get_ports {uart_tx led_n[*] gpio[*] flash_cs_n flash_clk configuration_cs_n flash_dq[*]}]
 set_property SLEW SLOW [get_ports {uart_tx led_n[*] gpio[*] flash_cs_n flash_clk configuration_cs_n flash_dq[*]}]

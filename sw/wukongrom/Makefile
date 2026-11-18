@@ -4,7 +4,7 @@ CROSS ?= sh-none-elf-
 CC := $(CROSS)gcc
 CFLAGS := -m2 -mb -Os -Wall -Wextra -ffreestanding -fno-builtin -nostdlib \
   -I$(ROOT)/sw/xiprom -I$(OUT) -include $(OUT)/board.h
-OBJS := $(OUT)/entry.o $(OUT)/main.o $(OUT)/uart.o $(OUT)/flash_probe.o
+OBJS := $(OUT)/entry.o $(OUT)/main.o $(OUT)/uart.o $(OUT)/flash_probe.o $(OUT)/ddr_test.o $(OUT)/ddr_stack.o
 
 .PHONY: all
 all: $(OUT)/boot.hex $(OUT)/main.lst
@@ -15,6 +15,10 @@ $(OUT)/board.h: $(ROOT)/fpga/wukong-v1/board.properties $(ROOT)/tools/wukong_con
 $(OUT)/entry.o: $(ROOT)/sw/xiprom/entry.S $(OUT)/board.h Makefile
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OUT)/main.o: main.c $(ROOT)/sw/xiprom/uart.h $(OUT)/board.h Makefile
+	$(CC) $(CFLAGS) -c $< -o $@
+$(OUT)/ddr_test.o: ddr_test.c $(OUT)/board.h Makefile
+	$(CC) $(CFLAGS) -c $< -o $@
+$(OUT)/ddr_stack.o: ddr_stack.S $(OUT)/board.h Makefile
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OUT)/flash_probe.o: flash_probe.c $(OUT)/board.h Makefile
 	$(CC) $(CFLAGS) -c $< -o $@

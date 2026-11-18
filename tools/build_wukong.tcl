@@ -5,12 +5,14 @@ source [file join $out board.tcl]
 create_project -in_memory -part $board_part
 set_property target_language Verilog [current_project]
 source [file join $root tools wukong_ip.tcl]
+read_ip [file join $out ddr ip wukong_mig wukong_mig.xci]
 read_verilog [file join $out rtl j2_wukong_v1.v]
 # Spinal emits readmemb paths relative to the RTL working directory.
 cd [file join $out rtl]
 read_xdc [file join $root fpga wukong-v1 pins.xdc]
 synth_design -top j2_wukong_v1 -part $board_part
 read_xdc [file join $root fpga wukong-v1 clock_route.xdc]
+source [file join $root tools constrain_wukong_bridge.tcl]
 write_checkpoint -force [file join $out vivado synthesized.dcp]
 report_utilization -hierarchical -file [file join $out vivado utilization.rpt]
 report_timing_summary -file [file join $out vivado timing_synth.rpt]

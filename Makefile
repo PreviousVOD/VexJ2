@@ -99,7 +99,7 @@ spinal-generate: microcode-data $(XIP_ROM)
 	mkdir -p $(SPINAL_OUT)
 	cd $(SPINAL_DIR) && $(SBT) -batch "runMain j2.Generate"
 
-# Wukong step 1 builds a separate platform ROM and synthesizes the board shell.
+# Wukong builds its platform ROM, quad SF3 interface and MIG DDR integration.
 # No implicit programming or shared-flash writes.
 VIVADO_HOME ?= /home/imi415/Softwares/Tools/Xilinx/2025.2/Vivado
 .PHONY: wukong-rom wukong-generate wukong-synth wukong-bitstream wukong-sim wukong-reset-sim wukong-program wukong-uart
@@ -110,7 +110,7 @@ wukong-rom: $(TOOL_SH_GCC)
 wukong-generate: wukong-rom microcode-data $(TOOL_SBT)
 	cd $(SPINAL_DIR) && $(SBT) -batch "runMain j2.GenerateWukong"
 
-wukong-synth: wukong-generate
+wukong-synth: wukong-mig wukong-generate
 	VIVADO_HOME="$(VIVADO_HOME)" bash tools/build_wukong.sh
 
 wukong-bitstream: wukong-synth
@@ -248,3 +248,7 @@ wukong-ddr-bitstream: wukong-mig wukong-ddr-generate
 .PHONY: wukong-ddr-uart
 wukong-ddr-uart:
 	VIVADO_HOME="$(VIVADO_HOME)" python3 tools/check_wukong_uart.py --ddr
+
+.PHONY: wukong-bridge-sim
+wukong-bridge-sim: $(TOOL_SBT) $(TOOL_VERILATOR)
+	cd $(SPINAL_DIR) && $(SBT) -batch "testOnly j2.bus.J2WishboneDdrBridgeSpec"

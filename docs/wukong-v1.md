@@ -1,9 +1,8 @@
 # Wukong v1 port
 
-Step 1 separates board integration and provides a synthesizable XC7A100T
-platform. The CPU, pipeline, Wishbone matrix, peripherals and cache remain
-shared with Tang Primer. DDR3 integration and application boot are subsequent
-steps; this target is not yet a complete replacement for the Tang SoC.
+The XC7A100T platform shares its CPU, pipeline, Wishbone matrix, peripherals
+and cache with Tang Primer. The Wukong wrapper connects quad SF3 flash and
+256 MiB DDR3 through MIG. Application loading and boot remain the next stage.
 
 ## Board profile
 
@@ -18,7 +17,7 @@ example used for the pin audit are in `../Wukong/`.
 | Initial SoC clock | 32 MHz, PLL VCO 800 MHz / 25 |
 | UART | `/dev/ttyUSB0`, 19,200 baud, 8N1; FPGA RX F3, TX E3 |
 | Reset button | KEY0, H7, active low |
-| LEDs | J6: PLL lock; H6: system-clock heartbeat; active low |
+| LEDs | J6: DDR calibration; H6: system-clock heartbeat; active low |
 | Configuration flash | Onboard Micron MT25QL128, 16 MiB; CS P18 held high after configuration |
 | Application flash | Digilent Pmod SF3, 32 MiB, on J11 |
 | Application flash pins | CS H4; SCK A5; DQ0..3 F4/A4/B4/B5 |
@@ -88,7 +87,9 @@ flowchart LR
   S --> C["XIP cache<br/>physical application offset"]
   C --> F["SPI on J11<br/>Pmod SF3 application flash"]
   S --> B["External-memory Wishbone port<br/>byte addresses + LOCK + ERR"]
-  B --> E["Step 1: error termination<br/>Later: CDC + MIG DDR3"]
+  B --> E["Wishbone / native burst adapter<br/>toggle mailboxes: 32 ↔ 83.333 MHz"]
+  E --> M["MIG 4.2 / 128-bit UI"]
+  M --> D["256 MiB DDR3L"]
 ```
 
 `J2MemoryBackend` selects generic inference, EG4 block RAM or Xilinx block RAM
@@ -98,13 +99,15 @@ the boot image, clocks, address windows and physical flash offset.
 
 The EG4 SDRAM controller now lives in the Tang board wrapper, outside the
 shared SoC. The external-memory port preserves absolute byte addresses, byte
-selects, lock ownership and error responses. Wukong terminates DDR accesses
-with ERR until its controller is implemented, rather than leaving requests
-waiting forever. The initial DDR window remains 8 MiB at `0x80000000`.
+selects, lock ownership and error responses. Wukong maps its full 256 MiB DDR
+window at `0x80000000–0x8fffffff` through `J2WishboneDdrBridge`. Tang retains
+its existing SDRAM window.
 
 The board uses Vivado's `proc_sys_reset` v5.0 IP. Its clock is the 32 MHz PLL
-output, its external reset is KEY0, and its lock input requires both PLL LOCKED
-and configuration EOS. The SoC uses `peripheral_reset`. IP parameters are
+output, its external reset is KEY0, and its lock input requires both clock
+generator locks, configuration EOS and synchronized MIG readiness. The CPU
+stays in reset until DDR calibration completes. Readiness is registered in the
+UI domain before crossing to the reset controller. The SoC uses `peripheral_reset`. IP parameters are
 versioned in `tools/wukong_ip.tcl`; generated products stay under `build/`.
 
 `sw/wukongrom` initializes the SF3 for **4-4-4 quad protocol** at 4 MHz:
@@ -119,25 +122,27 @@ The cache backend uses quad `0xeb` commands on every burst, three quad address
 bytes, four quad dummy bytes (eight clocks) and quad payload. The controller's
 `dummyCount` is bytes minus one, hence `3`; mode selection is `0x01010101`.
 The ROM compares cached reads at offsets 0, 32, `0x100`, `0x800`, and the last
-cache line of the XIP window with the single-SPI reference, then echoes UART.
+cache line of the XIP window with the single-SPI reference, then runs the DDR
+CPU diagnostic and echoes UART.
 The fixed quad ID exercises all four input lanes even when array contents are
 erased. Flash array data and nonvolatile registers are never written. See
 [Micron N25Q256A register and read-command specifications](https://www.digikey.com/htmldatasheets/production/7446839/0/0/1/n25q256a.pdf).
 
 The flash remains in quad mode after the diagnostic. Initialization handles
 that state on the next FPGA-only reset; power cycling restores the flash's
-nonvolatile defaults. The ROM does not access DDR or boot an application.
+nonvolatile defaults. The ROM tests DDR but does not yet boot an application.
 The existing Tang boot ROM is unchanged.
 
 ## Build and validation
 
 ```sh
 make wukong-generate  # separate ROM and SpinalHDL board RTL
-make wukong-sim       # ROM UART + quad ID/XIP; cold and warm flash states
+make wukong-bridge-sim # CDC, byte masks, LOCK, aborts, timeouts and reset
+make wukong-sim       # ROM, quad SF3, DDR CPU tests; cold and warm flash states
 make wukong-synth     # Vivado synthesis, pins, DRC and memory-inference checks
 make wukong-reset-sim # XSim with the generated vendor reset IP
 make wukong-bitstream # place/route, timing gates and volatile configuration image
-make wukong-uart      # Vivado JTAG download + UART banner, quad SF3 ID/XIP and echo checks
+make wukong-uart      # volatile JTAG + SF3, DDR CPU diagnostic and UART echo
 make isa-sim          # shared CPU and existing Tang SoC regression
 ```
 
@@ -154,12 +159,12 @@ for missing package pins, DRC errors, unresolved black boxes and absent block
 RAM. A completion marker prevents a Vivado initialization failure that returns
 exit status zero from appearing successful.
 
-Implementation checks setup/hold timing and DRC, then writes `.bit` and `.bin`
+Implementation checks setup/hold timing, mailbox bus skew, critical CDC findings and DRC, then writes `.bit` and `.bin`
 files. External GPIO/SPI timing is not yet fully constrained or qualified;
 passing internal timing does not establish maximum external-interface speed.
 The hardware test opens UART before programming, downloads the bitstream with
 Vivado through the single connected cable, checks the exact ROM banner and
-Micron quad JEDEC ID `20ba19`, the XIP comparison result, and UART echo. It records the bitstream
+Micron quad JEDEC ID `20ba19`, the XIP comparison result, DDR CPU PASS, and UART echo. It records the bitstream
 SHA-256 and UART transcript under `build/wukong-v1/hardware`.
 
 For an explicitly selected implemented image:
@@ -175,8 +180,9 @@ The platform-ROM simulation checks banner, offset, quad JEDEC ID, cached reads
 and UART echo with three initialization seeds, including a flash already in
 quad mode. A pin-level Micron model supplies nonuniform array data and checks
 quad lane direction, burst length, allowed commands and all five refill addresses.
-No DDR access is allowed. One clock/reset driver
-avoids competing automatic/manual reset stimulus. The vendor reset simulation
+A native MIG model adds independent command/write-data backpressure and delayed
+reads on a separate UI clock. The CPU executes the same DDR diagnostic used
+on hardware. One clock/reset driver per domain avoids competing reset stimulus. The vendor reset simulation
 checks cold startup, clock-lock loss and button reset, including synchronous
 release with the documented UNISIM primitive propagation delays.
 
@@ -184,7 +190,7 @@ The existing 53 CPU/peripheral tests and all three Tang SoC boot modes (reset,
 cold, UART loader) passed after the shared refactor. Tang hardware RTL generation
 also passed.
 
-Validation on 2026-11-18:
+Initial platform validation on 2026-11-18 (before DDR integration):
 
 - SF3 quad ROM simulation passed all three seeds, including warm quad-state
   recovery; vendor reset simulation passed.
@@ -201,7 +207,7 @@ Validation on 2026-11-18:
   clock routing exception, DSP pipeline opportunities and BRAM asynchronous
   control checks. External GPIO/SPI timing still needs qualification.
 
-The hardware transcript is:
+The initial platform hardware transcript was:
 
 ```text
 Wukong-v1 platform ROM
@@ -213,9 +219,9 @@ Wukong UART check
 ```
 
 Evidence and artifact hashes are in `build/wukong-v1/validation/results.json`;
-raw hardware logs and the programmed bitstream hash are in
-`build/wukong-v1/hardware/`. Quad identification and cached data reads are validated. Application loading,
-flash programming, executing code from SF3 and DDR operation remain pending.
+The latest integrated hardware logs and programmed bitstream hash are in
+`build/wukong-v1/hardware/`; see the CPU integration results below. Application
+loading, flash programming and application execution from SF3 remain pending.
 
 ## Step 2: standalone DDR3 qualification
 
@@ -291,11 +297,85 @@ Wukong DDR3: PASS
 
 Logs, reports and artifact hashes are in `build/wukong-v1/ddr/`. This qualifies
 the standalone MIG/traffic path, rather than CPU accesses or full-capacity
-memory retention. The SoC is still separate: its DDR window returns ERR until
-the Wishbone bridge and clock crossing are installed.
+memory retention. CPU integration is qualified separately below.
+
+## CPU / DDR integration
+
+`J2WishboneDdrBridge` serializes one Wishbone word into a 16-byte MIG burst.
+The low four address bits select the word slot; the aligned byte address is
+converted to MIG's 16-bit-word units. SH-2's most significant byte occupies the
+lowest physical byte address. Write masks preserve the other twelve bytes and
+unselected bytes within the word. A zero-select write issues no native command.
+The full write-data burst is accepted before its command. Write ACK means that
+MIG accepted the command. MIG’s per-bank ordering preserves read-after-write
+behavior for the same address; its normal mode may reorder independent banks.
+This bridge is the only master of the native MIG port.
+
+Request and response toggle mailboxes cross the 32 MHz SoC and 83.333 MHz UI
+clocks. The source holds bundled data until capture is acknowledged. Constraints
+bound request data to 12 ns and response data to 31.25 ns, including bus skew;
+only first-stage toggle inputs are false-pathed. Reset chains asynchronously
+assert and synchronously release in their destination domains, with exceptions
+limited to their asynchronous preset pins. Reset of both mailboxes and MIG must
+be coordinated; live single-sided resets are unsupported.
+
+The upstream matrix retains CYC/LOCK ownership across TAS.B read/write beats.
+A withdrawn CYC or STB abandons a pending response; the bridge drains it before
+accepting another request. This also handles cancelled instruction fetches while
+the matrix retains an atomic data owner's CYC. Timeout, calibration loss during
+a transaction, or malformed read completion returns ERR and disables further
+native traffic until reset. This prevents an orphaned write-data burst or late
+read response from being associated with a later request.
+
+The platform ROM writes all 64 sampled 16-byte blocks before verifying them:
+32 consecutive blocks, 31 blocks spaced 8 MiB apart, and the last block of DDR.
+It also checks every byte and halfword lane, stack push/pop in DDR, instruction
+fetch and a delayed return from DDR, and TAS.B on all four byte lanes with both
+instructions and lock data in DDR. This samples 1 KiB across the capacity plus
+scratch areas; it is not a full-memory retention or throughput benchmark.
+
+Bridge simulation covers all 15 nonempty byte masks in all four burst slots,
+address bounds, zero-select writes, held CYC/LOCK with STB gaps, aborts, delayed
+responses, read and write-command timeouts, calibration loss, malformed read termination, and
+coordinated reset both idle and in flight. Whole-SoC simulation uses the ROM
+and both memory models, including warm SF3 quad-state recovery.
+
+Integration validation on 2026-11-18:
+
+- Bridge regression passed, including calibration-loss containment and reset
+  during an outstanding read. Whole-SoC ROM simulation passed seeds 1854751661,
+  2062956257 and 42, including flash initially in quad protocol.
+- Routed setup slack is **1.281 ns**, hold slack **0.048 ns**, with no failing
+  constrained endpoints. Request/response bus skew is **1.043 / 0.771 ns**,
+  inside the **12 / 31.25 ns** bounds. The design uses **8,649 LUTs, 6,568
+  registers, 17 RAMB36s, four RAMB18s and five DSPs**.
+- CDC reports no unsafe crossings or critical findings. The 100 CDC-15 warnings
+  describe the explicitly constrained, handshake-controlled payload bits
+  (67 request, 33 response); two CDC-8 warnings remain in vendor reset paths.
+  DRC has no errors or critical warnings. External GPIO/SPI speed qualification
+  remains outside this internal timing result.
+
+The initial and repeated volatile Vivado downloads both passed on
+`/dev/ttyUSB0`, with DDR and SF3 power retained between runs. CPU tests, quad
+SF3 checks and UART echo passed each time. No flash array or nonvolatile
+register writes were made. Evidence, timing reports and hashes are recorded in
+`build/wukong-v1/integration/results.json`, with separate `hardware-first/` and
+`hardware-repeat/` transcripts. The programmed bitstream SHA-256 is
+`478487f7665faf2e8e87353e1bf3ab56d7be2f94c64b9b1dafd6e565ab8d243f`.
+
+The integrated hardware diagnostic reports:
+
+```text
+Wukong-v1 platform ROM
+Application flash offset: 00000000
+SF3 quad ID: 20ba19
+SF3 quad XIP: PASS
+DDR3 CPU: PASS 00
+Application boot pending
+Wukong UART check
+```
 
 ## Next steps
 
-1. Add the Wishbone/MIG adapter and clock crossing, preserving byte ordering and TAS locks.
-2. Implement bounded SF3 application loading and XIP application boot.
-3. Run the full ISA suite, DDR tests and both CoreMark seed sets for at least ten seconds.
+1. Implement bounded SF3 application loading and XIP application boot.
+2. Run the full ISA suite on Wukong, broader DDR tests and both CoreMark seed sets for at least ten seconds.
