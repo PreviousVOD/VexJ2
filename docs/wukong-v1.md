@@ -2,7 +2,8 @@
 
 The XC7A100T platform shares its CPU, pipeline, Wishbone matrix, peripherals
 and cache with Tang Primer. The Wukong wrapper connects quad SF3 flash and
-256 MiB DDR3 through MIG. Application loading and boot remain the next stage.
+256 MiB DDR3 through MIG. Its ROM supports bounded application updates,
+quad XIP execution and loading applications into DDR.
 
 ## Board profile
 
@@ -123,14 +124,15 @@ bytes, four quad dummy bytes (eight clocks) and quad payload. The controller's
 `dummyCount` is bytes minus one, hence `3`; mode selection is `0x01010101`.
 The ROM compares cached reads at offsets 0, 32, `0x100`, `0x800`, and the last
 cache line of the XIP window with the single-SPI reference, then runs the DDR
-CPU diagnostic and echoes UART.
+CPU diagnostic before application boot or UART loading.
 The fixed quad ID exercises all four input lanes even when array contents are
-erased. Flash array data and nonvolatile registers are never written. See
+erased. This initialization changes only volatile protocol settings; application
+array updates use the separate bounded loader described below. See
 [Micron N25Q256A register and read-command specifications](https://www.digikey.com/htmldatasheets/production/7446839/0/0/1/n25q256a.pdf).
 
 The flash remains in quad mode after the diagnostic. Initialization handles
 that state on the next FPGA-only reset; power cycling restores the flash's
-nonvolatile defaults. The ROM tests DDR but does not yet boot an application.
+nonvolatile defaults. The ROM tests DDR, then offers application loading or boots the installed image.
 The existing Tang boot ROM is unchanged.
 
 ## Build and validation
@@ -138,11 +140,14 @@ The existing Tang boot ROM is unchanged.
 ```sh
 make wukong-generate  # separate ROM and SpinalHDL board RTL
 make wukong-bridge-sim # CDC, byte masks, LOCK, aborts, timeouts and reset
-make wukong-sim       # ROM, quad SF3, DDR CPU tests; cold and warm flash states
+make wukong-sim       # boot/upload/ISA regression with isolated fast-UART simulation images
+make wukong-image-test # exact firmware parser and host validation boundaries
+make wukong-apps      # packaged XIP and DDR-loaded ISA test applications
+make wukong-boot-hw   # backup SF3 sectors, upload and warm-boot both ISA applications
 make wukong-synth     # Vivado synthesis, pins, DRC and memory-inference checks
 make wukong-reset-sim # XSim with the generated vendor reset IP
 make wukong-bitstream # place/route, timing gates and volatile configuration image
-make wukong-uart      # volatile JTAG + SF3, DDR CPU diagnostic and UART echo
+make wukong-uart      # volatile JTAG + platform checks and read-only loader UART probe
 make isa-sim          # shared CPU and existing Tang SoC regression
 ```
 
@@ -164,7 +169,8 @@ files. External GPIO/SPI timing is not yet fully constrained or qualified;
 passing internal timing does not establish maximum external-interface speed.
 The hardware test opens UART before programming, downloads the bitstream with
 Vivado through the single connected cable, checks the exact ROM banner and
-Micron quad JEDEC ID `20ba19`, the XIP comparison result, DDR CPU PASS, and UART echo. It records the bitstream
+Micron quad JEDEC ID `20ba19`, the XIP comparison result, DDR CPU PASS, and a
+read-only UART loader range-rejection probe. It records the bitstream
 SHA-256 and UART transcript under `build/wukong-v1/hardware`.
 
 For an explicitly selected implemented image:
@@ -176,9 +182,8 @@ make wukong-program WUKONG_BITSTREAM=/absolute/path/to/validated.bit
 Both programming helpers configure volatile FPGA SRAM only. They do not write
 either flash device.
 
-The platform-ROM simulation checks banner, offset, quad JEDEC ID, cached reads
-and UART echo with three initialization seeds, including a flash already in
-quad mode. A pin-level Micron model supplies nonuniform array data and checks
+The boot simulation checks banner, offset, quad JEDEC ID, cached reads,
+application loading and execution, including a flash already in quad mode. A pin-level Micron model supplies nonuniform array data and checks
 quad lane direction, burst length, allowed commands and all five refill addresses.
 A native MIG model adds independent command/write-data backpressure and delayed
 reads on a separate UI clock. The CPU executes the same DDR diagnostic used
@@ -220,8 +225,8 @@ Wukong UART check
 
 Evidence and artifact hashes are in `build/wukong-v1/validation/results.json`;
 The latest integrated hardware logs and programmed bitstream hash are in
-`build/wukong-v1/hardware/`; see the CPU integration results below. Application
-loading, flash programming and application execution from SF3 remain pending.
+`build/wukong-v1/hardware/`; application boot results are stored separately
+under `build/wukong-v1/boot/` as described below.
 
 ## Step 2: standalone DDR3 qualification
 
@@ -340,7 +345,7 @@ responses, read and write-command timeouts, calibration loss, malformed read ter
 coordinated reset both idle and in flight. Whole-SoC simulation uses the ROM
 and both memory models, including warm SF3 quad-state recovery.
 
-Integration validation on 2026-11-18:
+CPU integration validation on 2026-11-18 (before the application loader):
 
 - Bridge regression passed, including calibration-loss containment and reset
   during an outstanding read. Whole-SoC ROM simulation passed seeds 1854751661,
@@ -355,7 +360,7 @@ Integration validation on 2026-11-18:
   DRC has no errors or critical warnings. External GPIO/SPI speed qualification
   remains outside this internal timing result.
 
-The initial and repeated volatile Vivado downloads both passed on
+Those initial and repeated volatile Vivado downloads both passed on
 `/dev/ttyUSB0`, with DDR and SF3 power retained between runs. CPU tests, quad
 SF3 checks and UART echo passed each time. No flash array or nonvolatile
 register writes were made. Evidence, timing reports and hashes are recorded in
@@ -363,7 +368,7 @@ register writes were made. Evidence, timing reports and hashes are recorded in
 `hardware-repeat/` transcripts. The programmed bitstream SHA-256 is
 `478487f7665faf2e8e87353e1bf3ab56d7be2f94c64b9b1dafd6e565ab8d243f`.
 
-The integrated hardware diagnostic reports:
+That diagnostic-only image reported:
 
 ```text
 Wukong-v1 platform ROM
@@ -375,7 +380,107 @@ Application boot pending
 Wukong UART check
 ```
 
+## SF3 application loading and boot
+
+After SF3 and DDR diagnostics pass, the ROM prints `Send U to load` and waits
+one second. `U` enters the UART loader. Otherwise the ROM validates the installed
+image and boots it; missing or corrupt images enter the loader. The timer used
+for boot/receive timeouts has interrupts disabled and is stopped before jumping
+to the application. Application startup owns VBR, stack setup and writable-data
+initialization; the supplied test app establishes its vectors and uses SRAM stack.
+
+```mermaid
+flowchart TD
+  R[ROM: SF3 + DDR diagnostics] --> W[One-second UART window]
+  W -->|U| L[UART loader]
+  W -->|timeout| V[Validate SF3 header + payload checksum]
+  L --> B[Receive bounded image in top 1 MiB of DDR]
+  B --> C[Validate complete staged image]
+  C --> E[Erase only affected application sectors]
+  E --> P[Program and verify payload]
+  P --> H[Program and verify header last]
+  H --> V
+  V -->|XIP load address| X[Jump into cached quad XIP]
+  V -->|DDR load address| D[Copy to DDR, verify checksum, jump]
+  V -->|invalid| L
+```
+
+The image format remains compatible with `tools/xip_image.py pack`: eight
+big-endian 32-bit words contain magic `0x4a325831`, entry, payload length,
+32-bit additive byte checksum, load address and three zero reserved words.
+XIP payload starts at `0x10000020`. DDR load ranges must fit entirely inside
+`0x80000000–0x8fffffff`. Load and entry are halfword aligned, and entry must
+address a complete instruction inside the payload. Subtraction-based bounds
+checks reject address wrapping. Uploads require an exact header/payload length;
+boot allows erased partition padding after the declared payload.
+
+The ROM stages uploads at `0x8ff00000`, checks their complete header and checksum
+before erasing, and confines all array operations to the SF3 application
+partition (`0–0xfffff` physically in the current profile). Erase uses 64 KiB
+sectors; page programs never cross a 256-byte boundary. WEL, WIP and Micron flag
+status are checked with bounded polling. The ROM uses quad commands `0xd8` and
+`0x02`, clears volatile error flags with `0x50`, and reads `0x05`/`0x70` status.
+See [Micron command set and flag status definitions](https://www.digikey.com/htmldatasheets/production/7446839/0/0/1/n25q256a.pdf).
+It refreshes the XIP cache before readback and boot. The header remains erased
+until every payload byte has been verified. An interrupted update can leave no
+bootable image in this single application slot; the ROM loader remains available.
+
+UART protocol at 19,200 baud:
+
+| Request after `Wukong loader` | Response |
+|---|---|
+| `J2RD` + big-endian offset and length | `Read flash`, exact raw bytes, `Read complete`, loader prompt |
+| `J2UP` + zero offset and total image length | `Send image`; send at most 256 bytes and wait for `Received xxxxxx` after each chunk |
+| Complete valid upload | `Erase flash`, `Program flash`, `Flash verified`, then application boot |
+| Bad bounds, checksum, receive timeout or flash error | Error message and a fresh loader prompt |
+
+`J2RD` is bounded to the application partition. The upload helper backs up every
+sector it will erase as `sf3-before.bin` before sending the new image. Bytes beyond
+the image but within its final erased sector are also included in that backup.
+No configuration-flash array or nonvolatile flash-register writes are used.
+
+```sh
+make wukong-apps
+make wukong-bitstream
+# Explicit --upload replaces SF3 application sectors; all FPGA downloads are volatile.
+python3 tools/check_wukong_boot.py --upload --image build/wukong-v1/app-ddr/flash.bin --output build/wukong-v1/boot/ddr-upload
+python3 tools/check_wukong_boot.py --image build/wukong-v1/app-ddr/flash.bin --output build/wukong-v1/boot/ddr-warm
+python3 tools/check_wukong_boot.py --upload --image build/wukong-v1/app-xip/flash.bin --output build/wukong-v1/boot/xip-upload
+python3 tools/check_wukong_boot.py --image build/wukong-v1/app-xip/flash.bin --output build/wukong-v1/boot/xip-warm
+```
+
+The simulator builds ROM/application images in separate `rom-sim` and
+`app-sim-*` directories, with a matching 1.6 Mbaud UART and shorter host-response
+timeouts. The FPGA retains 19,200 baud and production timeouts. Tests exercise
+cold XIP boot, warm-quad DDR loading, UART uploads for both destinations, backup
+reads, invalid ranges/staged headers/checksums, truncated transfers and injected
+program failures. The preloaded XIP/DDR cases run the existing cache, DDR, timer and ISA
+application suite. Upload cases use compact executable probes with page-boundary
+and partial-page coverage, plus UART inter-byte spacing to avoid overrunning the ROM at the
+accelerated baud. Hardware uploads use the full ISA application. The native host parser tests compile the same
+`image.c` used by the ROM and check boundaries, reserved fields and integer wrap.
+
+Application boot validation on 2026-11-18/19:
+
+- All 56 shared CPU/bus/peripheral tests and native image-parser boundary tests
+  passed. Five boot scenarios passed across the simulation runs: preloaded XIP,
+  preloaded DDR, XIP upload/recovery, DDR upload and corrupt-image rejection.
+- Both full ISA applications passed after UART upload and again after a fresh
+  volatile JTAG configuration. Each ran cache, memory, timer, atomics, fetch,
+  forwarding, multiply/MAC and exception/illegal-instruction checks.
+- Routed setup/hold slack remains **1.281 / 0.048 ns**, with no failing constrained
+  endpoints, critical CDC findings or DRC errors/critical warnings. Bus skew passes.
+- The FPGA currently runs the XIP-linked test application. Only application SF3
+  sectors were updated; FPGA configuration remained volatile.
+
+The original first 64 KiB of SF3 is preserved in
+`build/wukong-v1/boot/ddr-upload/sf3-before.bin`. The subsequent XIP upload also
+saved its affected sector in `boot/xip-upload/sf3-before.bin`. Logs, validation
+results and hashes are under `build/wukong-v1/boot/results.json`. The programmed
+bitstream SHA-256 is
+`45e22ea923dc758eb508b686fbd8b77d07d307ae8dbb8a330ef34ac676ee08a0`.
+
 ## Next steps
 
-1. Implement bounded SF3 application loading and XIP application boot.
-2. Run the full ISA suite on Wukong, broader DDR tests and both CoreMark seed sets for at least ten seconds.
+1. Run both CoreMark seed sets for at least ten seconds on Wukong.
+2. Broaden DDR retention/throughput testing and external SPI timing qualification.

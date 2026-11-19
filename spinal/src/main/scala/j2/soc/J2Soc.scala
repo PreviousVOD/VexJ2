@@ -46,7 +46,7 @@ final class J2Soc(
   private val pio   = new J2Pio
   private val timer = new J2Timer(clockHz, config.timerTickHz)
   private val uart = new WishboneUartCtrl(
-    UartCtrlMemoryMappedConfig(19200, txFifoDepth = 32, rxFifoDepth = 32)
+    UartCtrlMemoryMappedConfig(config.uartBaud, txFifoDepth = 32, rxFifoDepth = 32)
   )
 
   // Cache tags/refill commands use absolute addresses. Only the backend adapter

@@ -49,8 +49,8 @@ The **Wukong v1 / XC7A100T port** has a separate board target, platform ROM and
 Vivado implementation flow. Volatile JTAG, UART and SF3 quad ID/XIP reads on J11
 are validated. Standalone DDR3 calibration and full/masked readback also pass.
 CPU DDR accesses through the Wishbone/MIG clock crossing bridge also pass
-simulation and FPGA tests, including DDR execution and TAS.B. Application
-boot integration is the next stage. See
+simulation and FPGA tests, including DDR execution and TAS.B. The ROM now
+supports bounded SF3 updates, XIP boot and loading applications into DDR. See
 [Wukong port status and build instructions](docs/wukong-v1.md).
 
 The CPU is composed from native SpinalHDL FiberPlugins with typed services and

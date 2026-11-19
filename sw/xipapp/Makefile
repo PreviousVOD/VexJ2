@@ -4,8 +4,9 @@ CROSS ?= $(if $(shell command -v sh-elf-gcc),sh-elf-,sh-none-elf-)
 ENDIAN := $(if $(findstring sh-none-elf,$(CROSS)),-mb,)
 CC := $(CROSS)gcc
 J2_CLOCK_HZ ?= 32000000
+J2_UART_BAUD ?= 19200
 CFLAGS := -m2 $(ENDIAN) -Os -Wall -ffreestanding -fno-builtin -nostdlib \
-	-I$(ROOT)/sw/xiprom -DJ2_CLOCK_HZ=$(J2_CLOCK_HZ)
+	-I$(ROOT)/sw/xiprom -DJ2_CLOCK_HZ=$(J2_CLOCK_HZ) -DJ2_UART_BAUD=$(J2_UART_BAUD)
 LOAD_ADDRESS ?=
 LDFLAGS := -m2 $(ENDIAN) -nostdlib -T app.x -Wl,-Map,$(OUT)/main.map
 ifneq ($(LOAD_ADDRESS),)

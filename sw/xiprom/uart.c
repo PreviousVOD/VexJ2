@@ -5,7 +5,10 @@
 #ifndef J2_CLOCK_HZ
 #define J2_CLOCK_HZ 32000000
 #endif
-#define UART_CLOCK_DIVIDER (J2_CLOCK_HZ / (19200 * 5) - 1)
+#ifndef J2_UART_BAUD
+#define J2_UART_BAUD 19200
+#endif
+#define UART_CLOCK_DIVIDER (J2_CLOCK_HZ / (J2_UART_BAUD * 5) - 1)
 
 void uart_init(void) {
   UART_REG(2) = UART_CLOCK_DIVIDER;

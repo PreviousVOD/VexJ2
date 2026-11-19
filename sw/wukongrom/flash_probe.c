@@ -4,7 +4,7 @@
 #define SPI_REG(index) (*(volatile uint32_t *)(0xff002000u + (index) * 4u))
 #define SF3_ID 0x20ba19u
 
-/* All writes target volatile protocol settings. No array/NV register writes. */
+/* Initialization uses volatile protocol settings; array writes are bounded below. */
 static int enqueue(uint32_t command) {
   uint32_t timeout = 100000;
   while ((SPI_REG(1) & 0xffff) == 0)
@@ -114,5 +114,59 @@ int sf3_quad_init_and_test(void) {
       if (mapped[word] != expected) return 0;
     }
   }
+  return 1;
+}
+
+/* ROM runs outside XIP throughout updates. Offsets are relative to the
+ * application partition; neither bulk erase nor config-flash access exists. */
+void sf3_refresh_cache(void) {
+  volatile uint32_t *cache = (volatile uint32_t *)0xff004000u;
+  *cache = 1;
+  while (*cache & 2) {}
+}
+
+static int array_address(uint8_t opcode, uint32_t offset) {
+  uint32_t address = J2_FLASH_OFFSET + offset;
+  return begin(opcode) && enqueue(0x100u | (address >> 16)) &&
+    enqueue(0x100u | ((address >> 8) & 255)) && enqueue(0x100u | (address & 255));
+}
+
+static int array_ready(void) {
+  uint8_t status, flags;
+  /* Bounded, deliberately conservative for a 64 KiB sector erase at 4 MHz. */
+  uint32_t polls = 1000000;
+  do {
+    if (!read_reg(0x05, &status)) return 0;
+    if (!(status & 1)) {
+      if (!read_reg(0x70, &flags)) return 0;
+      return (flags & 0xfe) == 0x80; /* ready, no suspend/program/erase/VPP/protection error */
+    }
+  } while (--polls);
+  return 0;
+}
+
+static int array_write_enable(void) {
+  uint8_t status;
+  if (!begin(0x50) || !end() || !write_enable() || !read_reg(0x05, &status)) return 0;
+  return (status & 3) == 2; /* WEL set, no operation in progress */
+}
+
+int sf3_erase(uint32_t offset) {
+  if ((offset & 65535) || offset >= J2_XIP_BYTES || J2_XIP_BYTES - offset < 65536) return 0;
+  if (!array_write_enable()) return 0;
+  int ok = array_address(0xd8, offset);
+  if (!end() || !ok || !array_ready()) return 0;
+  sf3_refresh_cache();
+  return 1;
+}
+
+int sf3_program(uint32_t offset, const volatile uint8_t *data, uint32_t length) {
+  if (!length || length > 256 || offset >= J2_XIP_BYTES || length > J2_XIP_BYTES - offset ||
+      length > 256 - (offset & 255)) return 0;
+  if (!array_write_enable()) return 0;
+  int ok = array_address(0x02, offset);
+  for (uint32_t i = 0; ok && i < length; ++i) ok = enqueue(0x100u | data[i]);
+  if (!end() || !ok || !array_ready()) return 0;
+  sf3_refresh_cache();
   return 1;
 }

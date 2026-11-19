@@ -116,8 +116,7 @@ wukong-synth: wukong-mig wukong-generate
 wukong-bitstream: wukong-synth
 	VIVADO_HOME="$(VIVADO_HOME)" bash tools/implement_wukong.sh
 
-wukong-sim: wukong-rom microcode-data $(TOOL_SBT) $(TOOL_VERILATOR)
-	cd $(SPINAL_DIR) && $(SBT) -batch "Test / runMain j2.board.WukongSmokeSim"
+wukong-sim: wukong-boot-sim
 
 wukong-reset-sim: wukong-synth
 	mkdir -p build/wukong-v1/reset_sim
@@ -252,3 +251,41 @@ wukong-ddr-uart:
 .PHONY: wukong-bridge-sim
 wukong-bridge-sim: $(TOOL_SBT) $(TOOL_VERILATOR)
 	cd $(SPINAL_DIR) && $(SBT) -batch "testOnly j2.bus.J2WishboneDdrBridgeSpec"
+
+# The simulation firmware changes only baud and host-response timeouts, keeping
+# FPGA and simulated ROMs in separate output trees.
+.PHONY: wukong-apps wukong-boot-sim wukong-image-test
+wukong-apps: $(TOOL_SH_GCC)
+	$(MAKE) -C sw/xipapp OUT=$(CURDIR)/build/wukong-v1/app-xip
+	python3 tools/xip_image.py pack build/wukong-v1/app-xip/main.bin build/wukong-v1/app-xip/flash.bin
+	$(MAKE) -C sw/xipapp OUT=$(CURDIR)/build/wukong-v1/app-ddr LOAD_ADDRESS=0x80400000
+	python3 tools/xip_image.py pack build/wukong-v1/app-ddr/main.bin build/wukong-v1/app-ddr/flash.bin --load-address 0x80400000
+
+wukong-boot-sim: wukong-probes wukong-rom microcode-data $(TOOL_SBT) $(TOOL_VERILATOR)
+	$(MAKE) -C sw/wukongrom OUT=$(CURDIR)/build/wukong-v1/rom-sim J2_UART_BAUD=1600000 EXTRA_CFLAGS='-DBOOT_WAIT_US=1000 -DRECEIVE_WAIT_US=10000'
+	$(MAKE) -C sw/xipapp OUT=$(CURDIR)/build/wukong-v1/app-sim-xip J2_UART_BAUD=1600000
+	python3 tools/xip_image.py pack build/wukong-v1/app-sim-xip/main.bin build/wukong-v1/app-sim-xip/flash.bin
+	$(MAKE) -C sw/xipapp OUT=$(CURDIR)/build/wukong-v1/app-sim-ddr LOAD_ADDRESS=0x80400000 J2_UART_BAUD=1600000
+	python3 tools/xip_image.py pack build/wukong-v1/app-sim-ddr/main.bin build/wukong-v1/app-sim-ddr/flash.bin --load-address 0x80400000
+	cd $(SPINAL_DIR) && $(SBT) -batch "Test / runMain j2.board.WukongBootSim"
+
+wukong-image-test: wukong-rom
+	python3 tools/test_wukong_image.py
+
+.PHONY: wukong-probes
+wukong-probes: $(TOOL_SH_GCC)
+	mkdir -p build/wukong-v1/probe-xip build/wukong-v1/probe-ddr
+	sh-none-elf-gcc -m2 -mb -nostdlib -T sw/xipapp/app.x sw/wukongrom/test/probe.S -o build/wukong-v1/probe-xip/main.elf
+	sh-none-elf-objcopy -O binary build/wukong-v1/probe-xip/main.elf build/wukong-v1/probe-xip/main.bin
+	python3 tools/xip_image.py pack build/wukong-v1/probe-xip/main.bin build/wukong-v1/probe-xip/flash.bin
+	sh-none-elf-gcc -m2 -mb -nostdlib -T sw/xipapp/app.x -Wl,--defsym=LOAD_ADDRESS=0x80400000 sw/wukongrom/test/probe.S -o build/wukong-v1/probe-ddr/main.elf
+	sh-none-elf-objcopy -O binary build/wukong-v1/probe-ddr/main.elf build/wukong-v1/probe-ddr/main.bin
+	python3 tools/xip_image.py pack build/wukong-v1/probe-ddr/main.bin build/wukong-v1/probe-ddr/flash.bin --load-address 0x80400000
+
+# Replaces only SF3 application sectors after saving a read-only sector backup.
+.PHONY: wukong-boot-hw
+wukong-boot-hw: wukong-bitstream wukong-apps
+	VIVADO_HOME="$(VIVADO_HOME)" python3 tools/check_wukong_boot.py --upload --image build/wukong-v1/app-ddr/flash.bin --output build/wukong-v1/boot/ddr-upload
+	VIVADO_HOME="$(VIVADO_HOME)" python3 tools/check_wukong_boot.py --image build/wukong-v1/app-ddr/flash.bin --output build/wukong-v1/boot/ddr-warm
+	VIVADO_HOME="$(VIVADO_HOME)" python3 tools/check_wukong_boot.py --upload --image build/wukong-v1/app-xip/flash.bin --output build/wukong-v1/boot/xip-upload
+	VIVADO_HOME="$(VIVADO_HOME)" python3 tools/check_wukong_boot.py --image build/wukong-v1/app-xip/flash.bin --output build/wukong-v1/boot/xip-warm

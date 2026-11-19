@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import select
 import subprocess
+import struct
 import termios
 import time
 import tty
@@ -34,8 +35,8 @@ def main():
         (out / name).unlink(missing_ok=True)
     banner = ("Wukong-v1 platform ROM\r\nApplication flash offset: "
               f'{int(profile["flashOffset"], 0):08x}'
-              "\r\nSF3 quad ID: 20ba19\r\nSF3 quad XIP: PASS\r\nDDR3 CPU: PASS 00\r\nApplication boot pending\r\n").encode()
-    echo = b"Wukong UART check\r\n"
+              "\r\nSF3 quad ID: 20ba19\r\nSF3 quad XIP: PASS\r\nDDR3 CPU: PASS 00\r\nSend U to load\r\n").encode()
+    echo = b"Bad image range\r\n"
     if args.ddr:
         banner = b"Wukong DDR3: PASS\r\n"
         echo = b""
@@ -57,6 +58,7 @@ def main():
             try:
                 deadline = time.monotonic() + args.timeout
                 echo_start = None
+                probe_sent = False
                 while time.monotonic() < deadline:
                     ready, _, _ = select.select([fd], [], [], 0.1)
                     if ready:
@@ -70,11 +72,15 @@ def main():
                         raise RuntimeError("Vivado programming failed; see hardware/program.log")
                     if banner in captured and echo_start is None:
                         echo_start = len(captured)
-                        os.write(fd, echo)
+                        if not args.ddr:
+                            os.write(fd, b"U")
+                    if not args.ddr and b"Wukong loader\r\n" in captured and not probe_sent:
+                        os.write(fd, b"J2RD" + struct.pack(">II", int(profile["xipBytes"], 0), 1))
+                        probe_sent = True
                     if code == 0 and echo_start is not None and echo in captured[echo_start:]:
                         report = dict(complete=True, device=device, programming="volatile JTAG",
                                       bitstream_sha256=digest, clock_hz=int(profile["clockHz"]),
-                                      uart_baud=int(profile["uartBaud"]), banner=True, echo=True,
+                                      uart_baud=int(profile["uartBaud"]), banner=True, echo=False, loader_uart_probe=not args.ddr,
                                       flash_written=False, flash_volatile_config_written=True, sf3_quad_id="20ba19", sf3_quad_xip=True, ddr_cpu=True)
                         if args.ddr:
                             report.update(echo=False, flash_volatile_config_written=False,
@@ -84,7 +90,7 @@ def main():
                             del report["sf3_quad_id"], report["sf3_quad_xip"], report["ddr_cpu"]
                         (out / "results.json").write_text(json.dumps(report, indent=2) + "\n")
                         print("WUKONG_DDR_HARDWARE_PASS: calibration, full/masked writes and readback" if args.ddr else
-                              "WUKONG_HARDWARE_PASS: volatile JTAG, ROM banner, SF3 quad ID/XIP, DDR CPU and UART echo")
+                              "WUKONG_HARDWARE_PASS: volatile JTAG, ROM banner, SF3 quad ID/XIP, DDR CPU and loader UART")
                         return
                 raise TimeoutError("Wukong programming/UART timeout; see hardware logs")
             finally:

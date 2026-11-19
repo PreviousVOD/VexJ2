@@ -12,9 +12,11 @@ final case class J2SocConfig(
     flashOffset: BigInt = 0,
     flashBytes: BigInt = 0x01000000L,
     memoryBase: BigInt = 0x80000000L,
-    memoryBytes: BigInt = 0x00800000L
+    memoryBytes: BigInt = 0x00800000L,
+    uartBaud: Int = 19200
 ) {
   require(clockHz > 0 && timerTickHz > 0)
+  require(uartBaud > 0 && clockHz / uartBaud >= 5)
   require(flashOffset >= 0 && flashOffset % 32 == 0)
   require(xipBytes > 0 && flashOffset + xipBytes <= flashBytes)
   require(flashOffset + xipBytes <= 0x01000000L, "SPI backend uses 24-bit flash addresses")
