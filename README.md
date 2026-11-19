@@ -52,6 +52,7 @@ Wukong v1 / Xilinx XC7A100T with DDR3 and Pmod SF3 application flash.
 | CPU ownership, services and timing contracts | [CPU architecture](docs/cpu-architecture.md) |
 | SH-2 stages, instruction issue, MUL/MAC and fetch | [SH-2 pipeline](docs/sh2-pipeline.md) |
 | Bus matrix, memory map, cache, boot images and registers | [SoC reference](docs/soc.md) |
+| Generic AHB5 interfaces, interconnects and BIUs | [AHB5 IP library](docs/ahb5.md) |
 | Toolchain, source layout and verification commands | [Development](docs/development.md) |
 | Tang Primer clocks, pins, build and programming | [Tang Primer](docs/tang-primer.md) |
 | Wukong clocks, SF3, DDR3, build and programming | [Wukong v1](docs/wukong-v1.md) |
