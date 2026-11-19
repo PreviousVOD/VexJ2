@@ -16,6 +16,15 @@ OBJS := $(addprefix $(OUT)/,entry.o main.o uart.o isa.o isa_asm.o)
 
 all: $(OUT)/main.bin $(OUT)/main.lst
 
+# Command-line clock/baud/load changes must invalidate reused output directories.
+.PHONY: FORCE
+FORCE:
+$(OUT)/build-config: FORCE
+	@mkdir -p $(@D)
+	@printf '%s\n' '$(CC)' '$(CFLAGS)' '$(LDFLAGS)' > $@.tmp
+	@cmp -s $@.tmp $@ && rm $@.tmp || mv $@.tmp $@
+$(OBJS): $(OUT)/build-config
+
 $(OUT)/entry.o: entry.S Makefile
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@

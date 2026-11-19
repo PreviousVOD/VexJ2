@@ -13,7 +13,7 @@ def load():
             key, value = line.split("=", 1)
             values[key.strip()] = value.strip()
     number = lambda key: int(values[key], 0)
-    if values["part"] != "xc7a100tfgg676-2" or number("clockHz") != 32000000:
+    if values["part"] != "xc7a100tfgg676-2" or number("clockHz") != 72000000:
         raise ValueError("part/clock changes require a validated board clock implementation")
     if number("inputClockHz") != 50000000 or number("uartBaud") != 19200:
         raise ValueError("unsupported board oscillator/UART configuration")
@@ -41,6 +41,7 @@ def main():
     (out / "board.tcl").write_text(
         'set board_part "xc7a100tfgg676-2"\n' +
         f'set board_clock_period {1e9 / int(values["inputClockHz"], 0):.6f}\n' +
+        f'set board_soc_clock_period {1e9 / int(values["clockHz"], 0):.9f}\n' +
         f'set configuration_slot_bytes {int(values["configurationSlotBytes"], 0)}\n')
 
 

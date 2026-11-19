@@ -6,6 +6,7 @@ set_property target_language Verilog [current_project]
 read_ip [file join $out ip wukong_reset wukong_reset.xci]
 add_files -fileset sim_1 [file join $root fpga wukong-v1 reset_tb.sv]
 set_property top wukong_reset_tb [get_filesets sim_1]
+set_property generic "SOC_PERIOD_NS=$board_soc_clock_period" [get_filesets sim_1]
 set_property xsim.simulate.runtime all [get_filesets sim_1]
 launch_simulation -simset sim_1 -mode behavioral
 close_sim

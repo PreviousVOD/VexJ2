@@ -83,8 +83,9 @@ int sf3_quad_init_and_test(void) {
   SPI_REG(2) = 0x10; /* mode 0, quad half duplex */
   SPI_REG(3) = 0;
   SPI_REG(4) = 0;
-  SPI_REG(8) = 3; /* 4 MHz */
-  SPI_REG(9) = SPI_REG(10) = SPI_REG(11) = 3;
+  /* Keep SCK at 4 MHz and CS setup/hold/disable at 125 ns. */
+  SPI_REG(8) = J2_CLOCK_HZ / 8000000u - 1u;
+  SPI_REG(9) = SPI_REG(10) = SPI_REG(11) = J2_CLOCK_HZ / 8000000u - 1u;
   SPI_REG(12) = 0;
   if (read_id(0xaf) == SF3_ID) {
     if (!read_reg(0x65, &evcr) || !write_reg(0x61, evcr | 0xc0)) return 0;

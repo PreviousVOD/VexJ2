@@ -8,6 +8,19 @@ final class XilinxBufg extends BlackBox {
   setDefinitionName("BUFG")
 }
 
+/** 50 MHz input, 900 MHz VCO, fractional divide by 12.5: exactly 72 MHz. */
+final class WukongSocMmcm extends BlackBox {
+  val CLKIN1, CLKFBIN, PWRDWN, RST = in Bool ()
+  val CLKOUT0, CLKFBOUT, LOCKED    = out Bool ()
+  setDefinitionName("MMCME2_BASE")
+  addGeneric("CLKIN1_PERIOD", 20.0)
+  addGeneric("DIVCLK_DIVIDE", 1)
+  addGeneric("CLKFBOUT_MULT_F", 18.0)
+  addGeneric("CLKOUT0_DIVIDE_F", 12.5)
+  addGeneric("STARTUP_WAIT", "FALSE")
+}
+
+// Standalone DDR diagnostic retains its independent 32 MHz UART clock.
 final class WukongPll extends BlackBox {
   val CLKIN1, CLKFBIN, PWRDWN, RST = in Bool ()
   val CLKOUT0, CLKFBOUT, LOCKED    = out Bool ()

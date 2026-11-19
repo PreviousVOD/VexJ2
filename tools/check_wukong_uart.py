@@ -79,7 +79,7 @@ def main():
                         probe_sent = True
                     if code == 0 and echo_start is not None and echo in captured[echo_start:]:
                         report = dict(complete=True, device=device, programming="volatile JTAG",
-                                      bitstream_sha256=digest, clock_hz=int(profile["clockHz"]),
+                                      bitstream_sha256=digest, clock_hz=32000000 if args.ddr else int(profile["clockHz"]),
                                       uart_baud=int(profile["uartBaud"]), banner=True, echo=False, loader_uart_probe=not args.ddr,
                                       flash_written=False, flash_volatile_config_written=True, sf3_quad_id="20ba19", sf3_quad_xip=True, ddr_cpu=True)
                         if args.ddr:

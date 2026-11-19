@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
-module wukong_reset_tb;
+module wukong_reset_tb #(parameter real SOC_PERIOD_NS = 1000.0 / 72.0);
   reg clk = 0;
-  always #15.625 clk = ~clk;
+  always #(SOC_PERIOD_NS / 2.0) clk = ~clk;
   reg button = 0;
   reg locked = 0;
   wire [0:0] reset;

@@ -141,7 +141,8 @@ def main():
             serial.until(b"XIP CPU tests passed\r\n", args.timeout)
             if proc.wait(timeout=15) != 0 or not (out / "program.pass").is_file():
                 raise RuntimeError("Vivado volatile programming failed")
-        report = dict(complete=True, device=profile["uartDevice"], programming="volatile JTAG",
+        report = dict(complete=True, clock_hz=int(profile["clockHz"]),
+            uart_baud=int(profile["uartBaud"]), device=profile["uartDevice"], programming="volatile JTAG",
             uploaded=args.upload, configuration_flash_written=False,
             application_partition_offset=int(profile["flashOffset"], 0),
             application_partition_bytes=int(profile["xipBytes"], 0),

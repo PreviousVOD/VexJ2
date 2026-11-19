@@ -36,19 +36,22 @@ object WukongBootSim extends App {
       flash.preload(initial)
       dut.io.uartRx #= true; dut.io.spiData.read #= 15
       dut.io.clock  #= false; dut.io.memoryClock #= false; dut.io.reset #= true
+      // 250 / 216 ticks preserve the exact 72 MHz CPU / 83 1/3 MHz MIG ratio.
+      val busPeriod = 250L
+      require(config.clockHz == 72000000)
       fork {
-        sleep(1); while (true) { sleep(2); dut.io.memoryClock #= !dut.io.memoryClock.toBoolean }
+        sleep(1); while (true) { sleep(108); dut.io.memoryClock #= !dut.io.memoryClock.toBoolean }
       }
       val memory = new MigModel(dut.io.native, dut.memoryDomain, seed = 134 + index)
       memory.start()
       fork {
         while (true) {
-          sleep(5); flash.tick(); dut.io.clock #= true; sleep(5); flash.tick();
+          sleep(busPeriod / 2); flash.tick(); dut.io.clock #= true; sleep(busPeriod / 2); flash.tick();
           dut.io.clock                         #= false
         }
       }
       val received  = new StringBuilder
-      val bitPeriod = 200L // 32 MHz / 1.6 Mbaud; 10 simulation units per CPU cycle
+      val bitPeriod = (config.clockHz / (config.uartBaud * 5)).toLong * 5 * busPeriod
       fork {
         waitUntil(!dut.io.reset.toBoolean); dut.busDomain.waitSampling(2)
         while (true) {
@@ -63,15 +66,15 @@ object WukongBootSim extends App {
             println(s"$scenario UART: " + received.toString.split("\r\n").lastOption.getOrElse(""))
         }
       }
-      fork { sleep(300000000L); simFailure(s"$scenario timeout: $received") }
-      sleep(101); dut.io.reset #= false
+      fork { sleep(30000000L * busPeriod); simFailure(s"$scenario timeout: $received") }
+      sleep(10 * busPeriod + 1); dut.io.reset #= false
       def expect(message: String, from: Int = 0): Unit =
         waitUntil(received.toString.indexOf(message, from) >= 0)
       def send(data: Array[Byte]): Unit = for (value <- data) {
         dut.io.uartRx #= false; sleep(bitPeriod)
         for (bit <- 0 until 8) { dut.io.uartRx #= ((value >> bit) & 1) != 0; sleep(bitPeriod) }
         dut.io.uartRx #= true;
-        sleep(bitPeriod + 4000) // Allow ROM service time at the accelerated baud.
+        sleep(bitPeriod + 400 * busPeriod) // Allow ROM service time at the accelerated baud.
       }
       def word(value: Long): Array[Byte] = Array(24, 16, 8, 0).map(shift => (value >> shift).toByte)
       def command(magic: String, offset: Long, length: Int): Unit =

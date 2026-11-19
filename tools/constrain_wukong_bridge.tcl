@@ -1,7 +1,10 @@
 # Toggle mailboxes hold source data until destination capture is acknowledged.
 # Bound bundled-data paths to one receiving clock period, which is shorter than
 # the two-stage synchronized toggle latency; leave destination logic timed.
-foreach {channel period} {requests 12.000 responses 31.250} {
+foreach {channel clock_name} {requests clk_pll_i responses pll_CLKOUT0} {
+    set clock [get_clocks $clock_name]
+    if {[llength $clock] != 1} { error "Expected one receiving clock: $clock_name" }
+    set period [get_property PERIOD $clock]
     set source_regs [get_cells -hier -filter "NAME =~ bridge/$channel/pushArea_data*_reg*"]
     set target_regs [get_cells -hier -filter "NAME =~ bridge/$channel/popArea_stream_rData*_reg*"]
     if {![llength $source_regs] || ![llength $target_regs]} {

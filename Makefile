@@ -9,6 +9,7 @@ SPINAL_DIR := spinal
 SPINAL_OUT := build/spinal/verilog
 TD_HOME ?=
 J2_CLOCK_HZ ?= 32000000
+WUKONG_CLOCK_HZ = $(shell sed -n 's/^clockHz=//p' fpga/wukong-v1/board.properties)
 export J2_CLOCK_HZ
 TESTROM := $(CURDIR)/build/sw/testrom/main.bin
 TESTROM16550 := $(CURDIR)/build/sw/testrom16550/main.bin
@@ -256,16 +257,16 @@ wukong-bridge-sim: $(TOOL_SBT) $(TOOL_VERILATOR)
 # FPGA and simulated ROMs in separate output trees.
 .PHONY: wukong-apps wukong-boot-sim wukong-image-test
 wukong-apps: $(TOOL_SH_GCC)
-	$(MAKE) -C sw/xipapp OUT=$(CURDIR)/build/wukong-v1/app-xip
+	$(MAKE) -C sw/xipapp J2_CLOCK_HZ=$(WUKONG_CLOCK_HZ) OUT=$(CURDIR)/build/wukong-v1/app-xip
 	python3 tools/xip_image.py pack build/wukong-v1/app-xip/main.bin build/wukong-v1/app-xip/flash.bin
-	$(MAKE) -C sw/xipapp OUT=$(CURDIR)/build/wukong-v1/app-ddr LOAD_ADDRESS=0x80400000
+	$(MAKE) -C sw/xipapp J2_CLOCK_HZ=$(WUKONG_CLOCK_HZ) OUT=$(CURDIR)/build/wukong-v1/app-ddr LOAD_ADDRESS=0x80400000
 	python3 tools/xip_image.py pack build/wukong-v1/app-ddr/main.bin build/wukong-v1/app-ddr/flash.bin --load-address 0x80400000
 
 wukong-boot-sim: wukong-probes wukong-rom microcode-data $(TOOL_SBT) $(TOOL_VERILATOR)
 	$(MAKE) -C sw/wukongrom OUT=$(CURDIR)/build/wukong-v1/rom-sim J2_UART_BAUD=1600000 EXTRA_CFLAGS='-DBOOT_WAIT_US=1000 -DRECEIVE_WAIT_US=10000'
-	$(MAKE) -C sw/xipapp OUT=$(CURDIR)/build/wukong-v1/app-sim-xip J2_UART_BAUD=1600000
+	$(MAKE) -C sw/xipapp J2_CLOCK_HZ=$(WUKONG_CLOCK_HZ) OUT=$(CURDIR)/build/wukong-v1/app-sim-xip J2_UART_BAUD=1600000
 	python3 tools/xip_image.py pack build/wukong-v1/app-sim-xip/main.bin build/wukong-v1/app-sim-xip/flash.bin
-	$(MAKE) -C sw/xipapp OUT=$(CURDIR)/build/wukong-v1/app-sim-ddr LOAD_ADDRESS=0x80400000 J2_UART_BAUD=1600000
+	$(MAKE) -C sw/xipapp J2_CLOCK_HZ=$(WUKONG_CLOCK_HZ) OUT=$(CURDIR)/build/wukong-v1/app-sim-ddr LOAD_ADDRESS=0x80400000 J2_UART_BAUD=1600000
 	python3 tools/xip_image.py pack build/wukong-v1/app-sim-ddr/main.bin build/wukong-v1/app-sim-ddr/flash.bin --load-address 0x80400000
 	cd $(SPINAL_DIR) && $(SBT) -batch "Test / runMain j2.board.WukongBootSim"
 

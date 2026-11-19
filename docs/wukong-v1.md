@@ -15,7 +15,7 @@ example used for the pin audit are in `../Wukong/`.
 |---|---|
 | FPGA | `xc7a100tfgg676-2` |
 | Oscillator | 50 MHz, M22 |
-| Initial SoC clock | 32 MHz, PLL VCO 800 MHz / 25 |
+| SoC clock | 72 MHz, MMCM VCO 900 MHz / 12.5 |
 | UART | `/dev/ttyUSB0`, 19,200 baud, 8N1; FPGA RX F3, TX E3 |
 | Reset button | KEY0, H7, active low |
 | LEDs | J6: DDR calibration; H6: system-clock heartbeat; active low |
@@ -27,8 +27,9 @@ example used for the pin audit are in `../Wukong/`.
 The oscillator uses the **N side** of a clock-capable pair. Vivado reports
 PLCK-12/PLIO-9 without the input routing exception also present in the QMTECH
 example. `clock_route.xdc` applies `CLOCK_DEDICATED_ROUTE FALSE` only to
-`clk50_IBUF`, after synthesis creates that net. PLL feedback and output use
-BUFGs. Routed timing is checked at the initial 32 MHz SoC clock.
+`clk50_IBUF`, after synthesis creates that net. MMCM feedback and output use
+BUFGs. The SoC MMCM multiplies 50 MHz by 18 and divides by 12.5.
+Routed timing is checked at 72 MHz. The independent DDR clocks are unchanged.
 
 ## Separate configuration and application flash
 
@@ -82,13 +83,13 @@ loader's Winbond-specific QE/status initialization.
 
 ```mermaid
 flowchart LR
-  P["Board PLL + reset + I/O"] --> S["Shared J2Soc"]
+  P["Board MMCM + reset + I/O"] --> S["Shared J2Soc"]
   S --> R["Boot ROM / SRAM / microcode<br/>Xilinx block RAM inference"]
   S --> U["UART / timer / GPIO"]
   S --> C["XIP cache<br/>physical application offset"]
   C --> F["SPI on J11<br/>Pmod SF3 application flash"]
   S --> B["External-memory Wishbone port<br/>byte addresses + LOCK + ERR"]
-  B --> E["Wishbone / native burst adapter<br/>toggle mailboxes: 32 ↔ 83.333 MHz"]
+  B --> E["Wishbone / native burst adapter<br/>toggle mailboxes: 72 ↔ 83.333 MHz"]
   E --> M["MIG 4.2 / 128-bit UI"]
   M --> D["256 MiB DDR3L"]
 ```
@@ -104,7 +105,7 @@ selects, lock ownership and error responses. Wukong maps its full 256 MiB DDR
 window at `0x80000000–0x8fffffff` through `J2WishboneDdrBridge`. Tang retains
 its existing SDRAM window.
 
-The board uses Vivado's `proc_sys_reset` v5.0 IP. Its clock is the 32 MHz PLL
+The board uses Vivado's `proc_sys_reset` v5.0 IP. Its clock is the 72 MHz MMCM
 output, its external reset is KEY0, and its lock input requires both clock
 generator locks, configuration EOS and synchronized MIG readiness. The CPU
 stays in reset until DDR calibration completes. Readiness is registered in the
@@ -316,9 +317,10 @@ MIG accepted the command. MIG’s per-bank ordering preserves read-after-write
 behavior for the same address; its normal mode may reorder independent banks.
 This bridge is the only master of the native MIG port.
 
-Request and response toggle mailboxes cross the 32 MHz SoC and 83.333 MHz UI
+Request and response toggle mailboxes cross the 72 MHz SoC and 83.333 MHz UI
 clocks. The source holds bundled data until capture is acknowledged. Constraints
-bound request data to 12 ns and response data to 31.25 ns, including bus skew;
+derive their bounds from receiving clocks: 12 ns for requests and 13.889 ns
+for responses, including bus skew;
 only first-stage toggle inputs are false-pathed. Reset chains asynchronously
 assert and synchronously release in their destination domains, with exceptions
 limited to their asynchronous preset pins. Reset of both mailboxes and MIG must
@@ -480,7 +482,106 @@ results and hashes are under `build/wukong-v1/boot/results.json`. The programmed
 bitstream SHA-256 is
 `45e22ea923dc758eb508b686fbd8b77d07d307ae8dbb8a330ef34ac676ee08a0`.
 
+## CPU/SoC Fmax timing study
+
+Vivado 2025.2 on XC7A100T-FGG676-2, 2026-11-19: **88.889 MHz is the highest
+passing tested PLL setting**, with an approximately **93.2 MHz internal timing
+ceiling** estimated from the best routed paths. Hardware remains validated at
+32 MHz during this study; it did not generate or download a faster bitstream.
+The subsequent 72 MHz port uses an MMCM and is qualified separately below.
+
+| SoC target | Placement/routing | SoC setup slack | Global hold slack | Result |
+|---|---|---:|---:|---|
+| 32 MHz | Existing validated build | +14.942 ns | +0.048 ns | Pass |
+| 80 MHz | Fresh implementation targeting 80 MHz | +0.316 ns | +0.060 ns | Pass |
+| 88.889 MHz | Fresh implementation targeting 88.889 MHz | -0.017 ns | +0.060 ns | Fail |
+| 100 MHz | Fresh implementation targeting 100 MHz | -0.734 ns | +0.045 ns | Fail |
+| **88.889 MHz** | **100 MHz routing, PLL output divider changed to 9** | **+0.515 ns** | **+0.045 ns** | **Pass** |
+
+The original 32 MHz placement gives `1000 / (31.250 - 14.942) = 61.3 MHz`.
+Tighter implementation targets substantially improve placement and routing.
+The best implementation gives `1000 / (11.250 - 0.515) = 93.15 MHz`; this is
+an extrapolation of its full-cycle setup paths, not a hardware frequency test.
+The 800 MHz PLL VCO supplies 88.889 MHz at divide-by-nine; divide-by-eight
+(100 MHz) fails in the tested flow. Marginal results depend on implementation
+strategy and placement, as the two 88.889 MHz results demonstrate.
+
+The critical chain is EX register selection → register-file operand/bypass mux
+→ ALU/status generation → forwarded SR.T → conditional branch/fetch control →
+IF instruction-buffer data/enable. The best route's endpoints are
+`J2SchedulePlugin_allocation_graph_stages_1_up_EX_regX_reg[1]` and
+`J2FetchPlugin_allocation_next_reg[4]/CE`. `next` is the instruction response
+buffer, not the PC. The 100 MHz run reports 19 logic levels and 10.573 ns data
+delay (3.326 ns logic, 7.247 ns routing). The forward path through
+`J2ArchitecturalPlugin.nextStatus` and `J2DecodePlugin`'s `tBcc` is the first
+place to examine for further Fmax improvement; changing its cycle boundary
+must preserve dependent conditional branches and delay-slot behavior.
+
+Method: reuse the existing synthesized checkpoint; change only the SoC PLL's
+output divider; rerun `opt_design`, `place_design`, `phys_opt_design` and
+`route_design`. A second mode reuses a routed candidate and checks it at a
+lower frequency. Keep the oscillator at 50 MHz, DDR UI at 83.333 MHz, DDR clock
+at 333.333 MHz and IDELAY reference at 200 MHz. Tighten the response mailbox's
+max-delay/bus-skew bound to the receiving SoC period. Passing cases satisfy
+setup, hold, pulse-width, bus-skew, critical CDC and DRC checks.
+
+```sh
+# Reproduce the historical 800 MHz PLL study from its preserved source:
+export WUKONG_FMAX_CHECKPOINT="$PWD/build/wukong-v1/clock-32mhz/vivado/synthesized.dcp"
+bash tools/check_wukong_fmax.sh 10  # place/route at 80 MHz
+bash tools/check_wukong_fmax.sh 8   # place/route at 100 MHz
+bash tools/check_wukong_fmax.sh 9   # independent 88.889 MHz implementation
+bash tools/check_wukong_fmax.sh 9 8 # retime the better 100 MHz routing to 88.889 MHz
+```
+
+Results, detailed critical paths and routed checkpoints are isolated under
+`build/wukong-v1/fmax/`; `results.json` records source/checkpoint hashes and the
+comparison. These are timing-only experiments on the existing netlist, not
+freshly generated SoCs with new UART/timer/SPI divisors. Before adopting a faster
+clock, regenerate those settings and qualify SPI timing and application operation
+on the FPGA. External GPIO/SPI timing remains outside this internal Fmax result.
+This is not an exhaustive search of synthesis/implementation strategies.
+
 ## Next steps
 
 1. Run both CoreMark seed sets for at least ten seconds on Wukong.
 2. Broaden DDR retention/throughput testing and external SPI timing qualification.
+
+## 72 MHz operating profile
+
+The main SoC uses `MMCME2_BASE` with a 900 MHz VCO and fractional output
+÷12.5. The standalone DDR diagnostic retains its 32 MHz UART/status PLL.
+The board profile drives firmware builds, UART/timer configuration, reset
+simulation, and destination-period constraints for the DDR mailboxes.
+UART remains 19,200 baud; SF3 remains 4 MHz, with 125 ns CS setup/hold/disable.
+Application builds track compiler/linker settings so changes to clock, baud or
+load address rebuild existing output directories. Boot simulation uses the
+72 MHz CPU / 83⅓ MHz MIG clock ratio and derives UART timing from its divider.
+
+The prior 32 MHz bitstream, netlists, ROM, profile and boot results are preserved
+under `build/wukong-v1/clock-32mhz/`. The timing experiment tool supports both
+PLL integer and MMCM fractional output divisors; with the current 900 MHz VCO,
+divide-by-12.5 means 72 MHz. These timing experiments still generate no bitstream.
+
+Validation on 2026-11-19:
+
+- Routed setup WNS **+0.166 ns**, hold WHS **+0.039 ns**, pulse-width slack
+  **+0.251 ns**; all timing constraints met. Bus skew, CDC and DRC checks pass.
+  The longest SoC path remains register selection through the ALU/status and
+  branch controls to the fetch buffer enable. Utilization: 8,654 LUTs, 6,570
+  registers, 17 RAMB36 + 4 RAMB18, 5 DSPs, 3 MMCMs and 1 PLL (including MIG).
+- All five `make wukong-boot-sim` scenarios pass: XIP execution, DDR execution,
+  upload to XIP, upload to DDR, and bad-checksum rejection. XIP and DDR execute
+  the full cache/memory/timer/ISA regression; loader cases include staged-image
+  rejection, receive timeout, program-error recovery, and cache invalidation.
+- Xilinx XSim reset checks pass at 72 MHz; both host image-parser tests pass.
+- Four FPGA runs pass over `/dev/ttyUSB0`: DDR upload, DDR warm boot, XIP upload
+  and XIP warm boot. Each reaches `XIP CPU tests passed`. Downloads use volatile
+  JTAG; each SF3 update saves the affected 64 KiB sector before writing.
+  The final board state is the 72 MHz SoC running the XIP ISA application.
+
+Results, UART transcripts, sector backups, timing reports, the routed checkpoint
+and bitstream are under `build/wukong-v1/clock-72mhz/`; `results.json` records
+clock settings, test results and hashes. Full boot-simulation and build logs are
+`build/wukong-v1/clock-72-sim.log` and `clock-72-build.log`. The bitstream SHA-256
+is `fd9e6d5308ea608f09dfb4f2feb20c8bce0d265a23f50a093f7e4885f5702db7`.

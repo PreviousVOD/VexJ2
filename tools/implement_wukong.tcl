@@ -2,6 +2,15 @@ set root [file normalize [file join [file dirname [info script]] ..]]
 set out [file join $root build wukong-v1]
 source [file join $out board.tcl]
 open_checkpoint [file join $out vivado synthesized.dcp]
+# Verify generated clock configuration against the shared board profile.
+set soc_period [get_property PERIOD [get_clocks pll_CLKOUT0]]
+if {abs($soc_period - $board_soc_clock_period) > 0.001} {
+    error "SoC generated clock does not match board profile"
+}
+if {abs([get_property PERIOD [get_clocks clk_pll_i]] - 12.0) > 0.001} {
+    error "Unexpected DDR UI clock period"
+}
+report_clocks -file [file join $out vivado clocks.rpt]
 opt_design
 place_design
 phys_opt_design

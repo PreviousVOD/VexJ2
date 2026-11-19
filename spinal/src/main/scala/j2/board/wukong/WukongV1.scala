@@ -20,8 +20,8 @@ object WukongV1 {
     require(properties.getProperty("name") == "wukong-v1")
     require(properties.getProperty("part") == "xc7a100tfgg676-2")
     require(
-      number("inputClockHz") == 50000000 && number("clockHz") == 32000000,
-      "update and validate the PLL before changing Wukong clock frequencies"
+      number("inputClockHz") == 50000000 && number("clockHz") == 72000000,
+      "update and validate the MMCM before changing Wukong clock frequencies"
     )
     require(number("uartBaud") == 19200)
     require(2 * number("configurationSlotBytes") <= number("configurationFlashBytes"))

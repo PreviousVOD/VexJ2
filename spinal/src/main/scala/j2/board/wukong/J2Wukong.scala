@@ -7,7 +7,7 @@ import j2.bus.J2WishboneDdrBridge
 
 /** Wukong SoC with a serialized Wishbone/CDC bridge to the native MIG interface. */
 final class J2Wukong(config: J2SocConfig) extends Component {
-  require(config.clockHz == 32000000)
+  require(config.clockHz == 72000000)
   setDefinitionName("j2_wukong_v1")
   val io = new Bundle {
     val clk50, reset_n, uart_rx                         = in Bool ()
@@ -25,7 +25,7 @@ final class J2Wukong(config: J2SocConfig) extends Component {
     val ddr3_dqs_n, ddr3_dqs_p                          = inout(Analog(Bits(2 bits)))
   }
   noIoPrefix()
-  val pll                         = new WukongPll
+  val pll                         = new WukongSocMmcm
   val clockBuffer, feedbackBuffer = new XilinxBufg
   pll.CLKIN1       := io.clk50
   pll.RST          := !io.reset_n

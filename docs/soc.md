@@ -1,0 +1,129 @@
+# SoC architecture and software interface
+
+[Project overview](../README.md) · [CPU architecture](cpu-architecture.md)
+
+`J2Soc` combines the shared CPU, Wishbone matrix, memories and native
+SpinalHDL peripherals. Board wrappers supply clocks, reset, memory primitives
+and external-memory controllers. Source paths and commands below are relative
+to the repository root.
+
+## Bus matrix
+
+`J2WishboneIntercon` generates native per-master decoders and atomic-safe
+per-slave arbiters. The D-bus reaches all slaves; the read-only I-bus reaches
+only memories and may borrow idle beats during its paired D-bus atomic cycles.
+The matrix supports multiple explicit I/D pairs, independent of registration
+order; unrelated masters remain excluded while a data owner holds a lock.
+Unmapped accesses return a Wishbone error.
+
+## Memory map
+
+These are the board profiles' current mappings. `J2SocConfig` configures the XIP
+base, range and physical flash offset, external-memory range, clock and UART.
+The two external-memory entries below are alternatives selected by the board.
+
+| Region | Address range |
+|---|---:|
+| Internal ROM | `0x00000000`–`0x00007fff` |
+| Internal SRAM | `0x00008000`–`0x0000ffff` |
+| SPI flash XIP, 1 MiB | `0x10000000`–`0x100fffff` |
+| Tang Primer SiP SDRAM, 8 MiB | `0x80000000`–`0x807fffff` |
+| Wukong DDR3, 256 MiB | `0x80000000`–`0x8fffffff` |
+| GPIO | `0xff000000` |
+| UART | `0xff001000` |
+| SPI flash control | `0xff002000` |
+| Architecture timer | `0xff003000` |
+| XIP cache control | `0xff004000` |
+
+ROM and SRAM use synchronous one-cycle reads. Memory backends provide
+board-specific block RAM implementations; simulation uses inferred memories.
+
+## SPI XIP and read cache
+
+`J2SpiFlash` wraps native `Apb3SpiXdrMasterCtrl`. Responses are assembled in
+big-endian order and aligned to 32-bit words before the CPU selects a byte
+or halfword lane. The physical `toSpi()` adapter registers outputs and inputs
+to match the controller's receive pipeline; the raw XDR interface must not
+drive pins directly. Flash protocol setup differs between
+[Tang Primer's Winbond device](tang-primer.md#application-flash) and
+[Wukong's SF3](wukong-v1.md#integration-boundary).
+
+A shared 4 KiB, two-way XIP read cache uses 64 sets, 32-byte lines and exact LRU
+replacement. The reusable `J2ReadCache` module sits between the flash arbiter and
+the SPI controller, using a generic word-burst refill interface.
+`J2ReadCacheConfig` sets capacity, line size, base address and mapped range; the
+SoC derives its XIP mapping from the same configuration. Misses refill a
+complete line in one quad-SPI transaction; hits serve both instruction and data
+reads from synchronous RAM. Reset and accepted
+flash-control writes invalidate all lines. Control accesses wait for an active
+refill and CS release. Writing `1` to `0xff004000` explicitly invalidates both
+ways; reads return busy in bit 1 and zero in other bits. See the
+[cache architecture and validation](cpu-architecture.md#two-way-xip-read-cache-2026-11-17).
+
+## Application image and boot modes
+
+`tools/xip_image.py pack` prefixes each application with a 32-byte big-endian
+header. All reserved words must be zero.
+
+| Offset | Field | Meaning |
+|---:|---|---|
+| `0x00` | Magic | `J2X1` (`0x4a325831`) |
+| `0x04` | Entry address | Halfword-aligned address inside the application |
+| `0x08` | Application length | Payload bytes, excluding the header |
+| `0x0c` | Checksum | Sum of all payload bytes, modulo 32 bits |
+| `0x10` | Load address | Destination selected by the pack command |
+| `0x14`–`0x1f` | Reserved | Three zero words |
+
+When the load address is the XIP payload address `0x10000020`, the BootROM runs
+the application directly from flash. Any other load address must fit with the
+complete application inside the board's external-memory region (see the map
+above); the BootROM copies the verified payload there and jumps to its entry
+address. Wukong additionally validates complete staged uploads before erasing
+SF3 and programs the header last; its [loader guide](wukong-v1.md#sf3-application-loading-and-boot)
+describes the bounds and UART protocol.
+
+For Tang Primer, build the validation application for SDRAM instead of XIP
+with the repository tools on `PATH` (`. tools/env.sh`):
+
+```sh
+make -C sw/xipapp OUT="$PWD/build/sw/sdramapp" LOAD_ADDRESS=0x80400000
+tools/xip_image.py pack build/sw/sdramapp/main.bin \
+  build/sw/sdramapp/flash.bin --load-address 0x80400000
+```
+
+Use the resulting `flash.bin` with the normal simulator or UART upload flow.
+
+For Wukong, `make wukong-apps` builds both XIP and DDR images using the
+board profile's clock settings. Use the Wukong loader workflow, not the
+Tang Primer UART uploader.
+
+## 32-bit GPIO
+
+`J2Pio` wraps native `WishboneGpio` with 32 bidirectional pins:
+
+| Offset | Function |
+|---:|---|
+| `0x00` | Input values |
+| `0x04` | Output values |
+| `0x08` | Output enable, one bit per pin; reset to zero/input |
+
+Pad primitives and pin assignments are board-specific; see
+[Tang Primer GPIO](tang-primer.md#gpio-pads) and
+[Wukong board wiring](wukong-v1.md#board-profile).
+
+## Architecture timer
+
+`J2Timer` wraps the native SpinalHDL `Timer` with a `WishboneSlaveFactory`.
+Its 32-bit counter ticks at 1 MHz, derived from the parameterized SoC clock, and
+stops at the programmable limit. The interrupt is a level request on vector
+`0x40` at priority 14; software must stop, clear, or rearm the timer in the ISR.
+The CPU IRQ is registered: assertion and deassertion follow the enabled compare
+result by one system clock. Pending status still reports the current comparison.
+This keeps the timer comparator behind a register before CPU event selection.
+
+| Offset | Function |
+|---:|---|
+| `0x00` | Bit 0 enables counter ticks |
+| `0x04` | Read/write limit; writing clears the counter |
+| `0x08` | Read counter; any write clears it |
+| `0x0c` | Bit 0 enables the interrupt; bit 8 is read-only pending status |
