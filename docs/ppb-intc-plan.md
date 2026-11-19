@@ -1,9 +1,11 @@
 # Core-private PPB and NVIC-style INTC generator
 
-Status: steps 1–4 are implemented. Private PPB routing is committed as `eca56d6`
-and the standalone controller as `2738265`. The core now instantiates INTC in
-its private window, accepts IRQ/NMI descriptors and connects the six SoC sources.
-System validation is described below.
+Status: steps 1–4 and BootROM interrupt-driven reception are implemented.
+Private PPB routing is committed as `eca56d6`, the standalone controller as
+`2738265`, and core/SoC integration plus BootROM RX as `d3d0f3a`. Both boards
+pass application simulation, FPGA timing and upload/reboot validation. Step 5
+still has the targeted coverage and Wukong CoreMark follow-ups listed in
+[Plan review and following steps](#plan-review-and-following-steps).
 APB4 is committed as `b0867a0`; CMT/SCI and their software migration as `cc7dc4a`.
 The CMT and SCI peripherals keep their existing register interfaces.
 
@@ -120,7 +122,7 @@ Each core has independent enable, software pending, priority, NMI and accepted
 descriptor state. Peripheral flags remain shared at their owning devices.
 Shared routing, worker startup and IPI hardware are outside this plan.
 
-## Proposed register map
+## Register map
 
 All registers are 32 bits; offsets are relative to INTC base `0xffffe900`.
 Control banks reserve eight words each, independent of the configured count.
@@ -206,8 +208,10 @@ Arbitrate and register candidates while the CPU runs, stalls or sleeps. At a
 legal instruction boundary, recheck enable, effective pending, priority and
 current SR.I. A stale candidate must not survive ICER, ICPR, priority changes
 or hardware withdrawal when no software request remains. Allow a recomputation
-bubble. Capture source, vector, mask level and NMI status as one descriptor and
-hold it throughout entry. Block duplicate acceptance during entry.
+bubble. Sample the candidate together at acceptance: source/NMI status identifies
+which pending state to acknowledge, while the core retains vector and mask level
+throughout entry. Source/NMI need not be stored again after that acknowledgement.
+Block duplicate acceptance during entry.
 
 Clear pending on architectural acceptance, not the existing microcode entry-
 completion acknowledgement. Preserve newly posted software requests while an
@@ -311,8 +315,8 @@ The INTC address must be translated as `absoluteAddress - 0xffffe900` before
 narrowing to nine bits. Simple truncation is incorrect because the base is not
 512-byte aligned. `J2IntcPpbSpec` exercises the actual PPB bridge/matrix with this
 translation, BE32 word accesses and subword rejection. The production PPB plugin
-uses the same address translation and connects the controller through `J2InterruptService`. Only unimplemented registers/fields
-remain reserved-zero.
+uses the same address translation and connects the controller through
+`J2InterruptService`. Only unimplemented registers/fields remain reserved-zero.
 
 Generate standalone RTL and a header from `spinal/`:
 
@@ -324,7 +328,8 @@ Generate standalone RTL and a header from `spinal/`:
 The optional ordered source names produce IRQ/vector constants. Register offsets,
 bank capacities and index/mask/priority helpers come from the same constants as
 RTL. The generated header has no fixed peripheral base address.
-`J2SocInterrupts.names` defines the ordered SoC ABI. The checked-in generated header `sw/include/j2_intc_regs.h` is checked against that list in the Scala
+`J2SocInterrupts.names` defines the ordered SoC ABI. The checked-in generated
+header `sw/include/j2_intc_regs.h` is checked against that list in the Scala
 suite. `sw/include/intc.h` supplies the private base address and firmware helpers.
 
 Standalone validation covers all planned count boundaries, register reset and
@@ -374,7 +379,6 @@ zero/waited external buses, source withdrawal during entry, saved PC/SR and no
 duplicate acceptance. A sequencer test changes vector/level during a hazard
 retry and checks that the accepted metadata survives.
 
-
 ## Integrated validation (2026-11-19)
 
 The final core passes all 123 Scala regressions. The additional two-private-PPB
@@ -414,3 +418,59 @@ Logs: `build/intc-final-tests.log`, `build/intc-private-isolation-test.log`,
 `build/intc-wukong-sim.log`, `build/intc-wukong-final-sim.log`,
 `build/intc-tang-fpga.log`, `build/intc-wukong-fpga.log`,
 `build/intc-wukong-hw/{upload,warm}/`, and `build/coremark/intc-final/`.
+
+
+## Plan review and following steps
+
+Review of the implementation and recorded results on 2026-11-19:
+
+| Planned step | Status | Evidence / remaining work |
+| --- | --- | --- |
+| 1. Private PPB routing | Complete | Local data routing, instruction faults, access checks and lock/response isolation tests |
+| 2. Standalone INTC | Complete | Count boundaries, register aliases, priorities, NMI, stale candidates and generated-header checks |
+| 3. CPU acceptance | Implemented and tested | IRQ/NMI wake, entry metadata, fault precedence and waited buses; targeted nesting/boundary tests below remain |
+| 4. SoC and firmware | Complete | Six CMT/SCI sources, application/CoreMark setup and BootROM RXI/ERI queue |
+| 5. System validation | Substantially complete | Both boards pass boot/upload/reboot and timing; Tang CoreMark passes; closeout below remains |
+
+BootROM RX was an additional completed firmware step. Its framing-error recovery
+and application handoff are tested through the real SCI/INTC/core path; see
+[SCI validation](sci.md#bootrom-rx-interrupt-validation-2026-11-19).
+
+The following are coverage gaps or follow-on proposals, not confirmed hardware
+failures. Complete validation before treating the foundation as qualified for
+a two-core SoC:
+
+1. **Close CPU interrupt boundary coverage.** Extend `J2IntcCoreSpec` with a
+   higher-priority IRQ preempting an ordinary handler, NMI during an ordinary
+   handler, and a held request retriggering after RTE until its peripheral is
+   cleared. Check stacked PC/SR, nesting order and final resumption. Exercise
+   IRQ arrival directly against LDC/LDC.L SR updates, RTE, delay slots and TAS
+   under memory wait states. Existing standalone tests check mask changes and
+   held levels, and architectural tests cover those instructions separately;
+   they do not replace these combined real-INTC boundary cases.
+2. **Stress the BootROM receive queue.** Add explicit software-queue-full and
+   hardware ORER/PER cases while foreground work is busy, then verify failure
+   reporting, source clearing and successful retry. Current tests cover normal
+   queue wrap, FER injection, receive timeout and handoff; they do not directly
+   force all of those error paths.
+3. **Finish Wukong CoreMark qualification.** `sw/coremark/Makefile` and
+   `tools/coremark.py` still select Tang properties/programming paths. Make the
+   benchmark workflow board-aware, then run both seeds on Wukong at 72 MHz,
+   selecting iterations so each measured run exceeds ten seconds. Verify CRCs,
+   clock/timer reporting and repeated CMT interrupts, archive results, and restore
+   the validation application. Tang's 100-iteration duration does not establish
+   Wukong's duration. This also closes the existing first item in
+   [Wukong next steps](wukong-v1.md#next-steps).
+4. **Then review a separate dual-core architecture plan.** Preserve the chosen
+   CPU0-boot/CPU1-worker model. Define CPU1 reset/release and PC/SP/VBR setup,
+   per-core AHB manager IDs and standalone BIU lock/access domains, shared
+   peripheral interrupt ownership, and any mailbox/IPI requirement. Resolve
+   shared-memory/cache visibility and atomic access rules before implementation.
+   The current isolation test instantiates two private PPB/INTC instances; it
+   does not validate two executing CPUs or shared interrupt routing.
+
+No extra private peripherals, TX interrupt conversion or DMA are needed to
+finish this plan. GPIO/EXTI remains outside scope. The core stays at 8-bit
+vectors and at most 192 ordinary sources; the reserved extension holes remain
+inactive. Wukong DDR retention/throughput and external SPI timing qualification
+remain separate board-level follow-ups.
