@@ -86,4 +86,66 @@ class J2IntcPpbSpec extends munit.FunSuite {
       assertEquals(access(0x28), 0L)
     }
   }
+
+  test("two private PPBs keep identical INTC addresses and acceptance independent") {
+    val compiled = SimConfig.withVerilator.compile(new Component {
+      val io = new Bundle {
+        val buses      = Vec(slave(J2Ahb.manager()), 2)
+        val candidates = Vec(master(Flow(new IntcCandidate)), 2)
+        val accept     = in Bits (2 bits)
+      }
+      for (n <- 0 until 2) {
+        val privatePpb = new Probe
+        privatePpb.io.bus <> io.buses(n)
+        io.candidates(n) <> privatePpb.io.candidate
+        privatePpb.io.accept := io.accept(n)
+      }
+    })
+    compiled.doSim { dut =>
+      dut.clockDomain.clockSim #= false
+      dut.io.accept            #= 0
+      for (b <- dut.io.buses) {
+        b.address.HADDR   #= 0; b.address.HTRANS    #= 0; b.address.HWRITE #= false
+        b.address.HSIZE   #= 2; b.address.HBURST    #= 0; b.address.HPROT  #= 3
+        b.address.HMASTER #= 1; b.address.HMASTLOCK #= false; b.HWDATA     #= 0
+      }
+      def edge(): Unit = {
+        dut.clockDomain.clockSim #= true; sleep(5)
+        dut.clockDomain.clockSim #= false; sleep(5)
+      }
+      dut.clockDomain.assertReset(); for (_ <- 0 until 4) edge()
+      dut.clockDomain.deassertReset(); for (_ <- 0 until 6) edge()
+      def access(core: Int, offset: Int, data: Option[Long] = None): Long = {
+        val b = dut.io.buses(core)
+        b.address.HADDR  #= (0xffffe900L + offset)
+        b.address.HWRITE #= data.nonEmpty; b.address.HTRANS #= 2
+        sleep(1); assert(b.HREADY.toBoolean); edge()
+        b.address.HTRANS #= 0; b.HWDATA #= data.getOrElse(0L)
+        var cycles = 0
+        while ({ sleep(1); !b.HREADY.toBoolean } && cycles < 12) { edge(); cycles += 1 }
+        assert(cycles < 12); assert(!b.HRESP.toBoolean)
+        val result = b.HRDATA.toLong
+        edge(); result
+      }
+      access(0, 0x100, Some(5)); access(0, 0x10, Some(1)); access(0, 0x50, Some(1))
+      assertEquals(access(1, 0x10), 0L)
+      assertEquals(access(1, 0x50), 0L)
+      assertEquals(access(1, 0x100), 0L)
+      assert(dut.io.candidates(0).valid.toBoolean)
+      assert(!dut.io.candidates(1).valid.toBoolean)
+      access(1, 0x100, Some(9)); access(1, 0x10, Some(1)); access(1, 0x50, Some(1))
+      for (_ <- 0 until 2) edge()
+      assertEquals(dut.io.candidates(0).payload.level.toInt, 5)
+      assertEquals(dut.io.candidates(1).payload.level.toInt, 9)
+      dut.io.accept #= 1; edge(); dut.io.accept #= 0
+      assertEquals(access(0, 0x50), 0L)
+      assertEquals(access(1, 0x50), 1L)
+      assert(dut.io.candidates(1).valid.toBoolean)
+      access(0, 0x30, Some(1))
+      assertEquals(access(1, 0x10), 1L)
+      dut.io.accept #= 2; edge(); dut.io.accept #= 0
+      assertEquals(access(1, 0x50), 0L)
+    }
+  }
+
 }

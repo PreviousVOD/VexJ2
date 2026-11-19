@@ -2,14 +2,19 @@
 .align 2
 .long _start
 .long _stack_top
-.rept 62
+.rept 64
 .long boot_halt
 .endr
+/* SCI ERI/RXI: vectors 66/67. Other sources remain disabled in BootROM. */
+.long _boot_uart_rx_isr
+.long _boot_uart_rx_isr
 
 .section .text
 .align 2
 .global _start
 _start:
+  mov #0, r0
+  ldc r0, vbr
   mov.l data_source, r0
   mov.l data_start, r1
   mov.l data_end, r2

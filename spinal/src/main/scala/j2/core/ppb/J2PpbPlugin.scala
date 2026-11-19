@@ -28,9 +28,18 @@ final class J2PpbPlugin extends FiberPlugin with J2CoreBusService {
     fabric.io.bus <> data.io.privateBus
     fetchError.io.bus <> fetch.io.privateBus
 
-    // Step 1: all valid words in the future INTC window are reserved, read-only zero.
-    fabric.io.intc.PREADY  := True
-    fabric.io.intc.PRDATA  := 0
-    fabric.io.intc.PSLVERR := False
+    val source = fabric.io.intc
+    val target = host[J2InterruptService].registers
+    // The base is not aligned to 512 bytes; truncate only after subtraction.
+    target.PADDR   := (source.PADDR - U(J2Ppb.intc.base, 32 bits)).resized
+    target.PSEL    := source.PSEL
+    target.PENABLE := source.PENABLE
+    target.PWRITE  := source.PWRITE
+    target.PWDATA  := source.PWDATA
+    target.PSTRB   := source.PSTRB
+    target.PPROT   := source.PPROT
+    source.PREADY  := target.PREADY
+    source.PSLVERR := target.PSLVERR
+    source.PRDATA  := target.PRDATA
   }
 }

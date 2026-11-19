@@ -46,7 +46,7 @@ class Serial:
 
     def until(self, marker, timeout=120):
         deadline = time.monotonic() + timeout
-        errors = [b"Platform failure", b"Bad image range", b"Invalid image header", b"Receive timeout",
+        errors = [b"Platform failure", b"Bad image range", b"Invalid image header", b"Receive timeout", b"Receive error",
                   b"Erase error", b"Program error", b"Header error", b"Verify error", b"checksum error",
                   b"DDR copy error", b"tests failed", b"ISA FAIL", b"Application returned"]
         while marker not in self.buffer:
@@ -136,6 +136,8 @@ def main():
             boot = b"Booting XIP image\r\n" if info["load_address"] == int(profile["xipBase"], 0)+32 else b"Booting loaded image\r\n"
             serial.until(boot, args.timeout)
             serial.until(b"XIP CPU tests passed\r\n", args.timeout)
+            if b"INTC tests passed\r\n" not in serial.transcript:
+                raise RuntimeError("missing INTC validation marker")
             if proc.wait(timeout=15) != 0 or not (out / "program.pass").is_file():
                 raise RuntimeError("Vivado volatile programming failed")
         report = dict(complete=True, clock_hz=int(profile["clockHz"]),

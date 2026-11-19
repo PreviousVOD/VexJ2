@@ -1,6 +1,7 @@
 package j2.core
 
 import j2.core.fetch._
+import j2.core.intc.J2IntcPlugin
 import j2.core.ppb.J2PpbPlugin
 import j2.core.decode._
 import j2.core.execute._
@@ -13,6 +14,7 @@ import scala.reflect.ClassTag
 object J2CorePlugins {
   def apply(config: J2CoreConfig): Seq[FiberPlugin] = Seq(
     new J2PpbPlugin,
+    new J2IntcPlugin(config),
     new J2FetchPlugin,
     new J2MemoryPlugin,
     new J2DecodePlugin,
@@ -34,6 +36,7 @@ object J2CorePlugins {
     }
     exactlyOne[J2ExternalService]()
     exactlyOne[J2CoreBusService]()
+    exactlyOne[J2InterruptService]()
     exactlyOne[J2FetchService]()
     exactlyOne[J2MemoryService]()
     exactlyOne[J2DecodeService]()

@@ -53,6 +53,11 @@ class J2IntcSpec extends munit.FunSuite {
   }
 
   test("configuration bounds and generated register/source definitions") {
+    val names = j2.soc.J2SocInterrupts.names
+    assertEquals(
+      java.nio.file.Files.readString(java.nio.file.Paths.get("../sw/include/j2_intc_regs.h")),
+      IntcRegisters.header(IntcConfig(names.size), names)
+    )
     for (count <- Seq(-1, 193, 256)) intercept[IllegalArgumentException](IntcConfig(count))
     val header =
       IntcRegisters.header(IntcConfig(6), Seq("CMT0", "CMT1", "ERI", "RXI", "TXI", "TEI"))

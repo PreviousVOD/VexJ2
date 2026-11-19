@@ -6,14 +6,18 @@ import j2.bus.J2Ahb
 import j2.core.microcode.J2Operation
 
 final case class J2CoreConfig(
-    exposeDebug: Boolean = true
+    exposeDebug: Boolean = true,
+    interruptCount: Int = 6,
+    eventInjection: Boolean = false
 )
 
 final class J2CoreIo(config: J2CoreConfig) extends Bundle {
   val ibus              = master(J2Ahb.manager())
   val dbus              = master(J2Ahb.manager())
-  val event             = slave(Stream(new J2Event))
-  val eventAck          = out Bool ()
+  val interrupts        = in Bits (config.interruptCount bits)
+  val nmi               = in Bool ()
+  val event             = if (config.eventInjection) slave(Stream(new J2Event)) else null
+  val eventAck          = if (config.eventInjection) out Bool () else null
   val pc                = if (config.exposeDebug) out UInt (32 bits) else null
   val sr                = if (config.exposeDebug) out UInt (32 bits) else null
   val sleep             = if (config.exposeDebug) out Bool () else null
@@ -31,6 +35,10 @@ trait J2ExternalService { def external: J2CoreIo }
 trait J2CoreBusService {
   def instructionBus: j2.bus.ahb5.Ahb5Master
   def dataBus: j2.bus.ahb5.Ahb5Master
+}
+trait J2InterruptService {
+  def interrupt: Stream[J2Event]
+  def registers: j2.bus.apb.Apb4
 }
 trait J2FetchService { def fetch: J2FetchPort }
 trait J2MemoryService { def memory: J2MemoryPort }
@@ -62,9 +70,9 @@ final class J2DecodePort extends Bundle {
   val control                                                        = new J2MicrocodeControl
   val operation                                                      = new J2Operation
   val nextIdStall, instructionIssue, instructionAddress, incrementPc = Bool()
-  val eventAck, maskInterrupt, delaySlot, startInstruction           = Bool()
-  val interruptLevel                                                 = UInt(4 bits)
-  val legal, delaySlotIllegal                                        = Bool()
+  val eventAck, eventStart, systemStart, maskInterrupt, delaySlot, startInstruction = Bool()
+  val interruptLevel                                                                = UInt(4 bits)
+  val legal, delaySlotIllegal                                                       = Bool()
 }
 final class J2InstructionMetadata extends Bundle {
   val pc, resumePc = UInt(32 bits)

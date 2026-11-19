@@ -18,8 +18,8 @@ class J2ReviewRegressionSpec extends munit.FunSuite {
         val competitor                              = slave(J2Ahb.manager())
       }
       val cpu = new J2MicrocodedCore
-      cpu.io.event.valid := False
-      cpu.io.event.payload.assignFromBits(B(0, cpu.io.event.payload.getBitsWidth bits))
+      cpu.io.interrupts := 0
+      cpu.io.nmi        := True
       val matrix = new Ahb5Interconnect(J2Ahb.config, 3, Seq(SizeMapping(0, 0x1000)))
       matrix.io.managers(0) <> cpu.io.ibus
       matrix.io.managers(1) <> cpu.io.dbus

@@ -7,7 +7,7 @@ import xip_image
 
 
 class UploadTests(unittest.TestCase):
-    def run_upload(self, reject=False):
+    def run_upload(self, reject=False, receive_error=False):
         frames, markers = [], []
         image = bytes(range(256)) * 2
         def write(fd, data):
@@ -15,6 +15,10 @@ class UploadTests(unittest.TestCase):
             return len(data)
         def receive(fd, wanted, timeout, output):
             markers.append(wanted[0])
+            if receive_error and wanted[0] == b"Received 000000":
+                self.assertIn(b"Receive error", wanted)
+                output.extend(b"Receive error")
+                return output
             output.extend(b"Invalid image header" if reject and wanted[0] == b"Flash verified" else wanted[0])
             return output
         with tempfile.TemporaryDirectory() as tmp:
@@ -38,6 +42,10 @@ class UploadTests(unittest.TestCase):
     def test_rejected_image_is_reported(self):
         with self.assertRaisesRegex(RuntimeError, "upload"):
             self.run_upload(reject=True)
+
+    def test_receive_error_aborts_upload(self):
+        with self.assertRaisesRegex(RuntimeError, "upload"):
+            self.run_upload(receive_error=True)
 
 
 if __name__ == "__main__":

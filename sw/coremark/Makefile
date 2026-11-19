@@ -65,3 +65,5 @@ $(OUT)/main.lst: $(OUT)/main.elf
 $(OBJS) $(SIM_OUT)/sim_entry.o: $(ROOT)/fpga/tang-primer/board.properties $(ROOT)/tools/board_config.py
 
 $(OBJS): $(ROOT)/sw/include/cmt.h $(ROOT)/sw/include/sci.h
+
+$(OBJS): $(ROOT)/sw/include/intc.h $(ROOT)/sw/include/j2_intc_regs.h

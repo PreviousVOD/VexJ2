@@ -6,6 +6,7 @@
 #include "flash.h"
 #include "image.h"
 #include "uart.h"
+#include "uart_irq.h"
 
 #define PAGE_BYTES 256u
 static uint8_t page[PAGE_BYTES];
@@ -18,13 +19,17 @@ static uint8_t header[IMAGE_HEADER_BYTES];
 #endif
 
 /* Convert constant timeouts at compile time. Runtime 64-bit division for every
- * received byte would overrun SCI's single receive register at high baud rates. */
+ * received byte would waste the foreground budget even with an RX queue. */
 #define TIMEOUT_TICKS(us) (((uint64_t)(us) * J2_CLOCK_HZ + 512000000u - 1u) / 512000000u)
 
 static int receive(uint8_t *value, uint32_t remaining) {
     /* Poll often enough to extend the free-running 16-bit PCLK/512 counter. */
     uint16_t previous = CMT_CMCNT(0);
     while (!uart_rx_ready()) {
+        if (uart_rx_irq_failed()) {
+            return 0;
+        }
+
         uint16_t now   = CMT_CMCNT(0);
         uint16_t delta = now - previous;
         previous       = now;
@@ -34,9 +39,17 @@ static int receive(uint8_t *value, uint32_t remaining) {
 
         remaining -= delta;
     }
+    if (uart_rx_irq_failed()) {
+        return 0;
+    }
+
     *value = uart_rx();
 
     return 1;
+}
+
+static void receive_error(void) {
+    uart_puts(uart_rx_irq_failed() ? "Receive error\n" : "Receive timeout\n");
 }
 
 static int receive_word(uint32_t *value) {
@@ -69,33 +82,35 @@ static int boot(void) {
         return 0;
     }
 
+    uart_rx_irq_stop();
     CMT_CMSTR    = 0;
     CMT_CMCSR(0) = 0;
     CMT_CMCNT(0) = 0;
     uart_puts("Booting XIP image\n");
     ((void (*)(void))image_word(image, 1))();
     uart_puts("Application returned\n");
-    /* Application startup owns VBR, stack and writable data initialization. */
-
-    return 0;
+    /* Application startup owns VBR, stack and writable data initialization.
+     * Returning after replacing those is unsupported. */
+    for (;;) {
+    }
 }
 
 static int upload(void) {
     uint32_t magic, offset, total;
     if (!receive_word(&magic)) {
-        uart_puts("Receive timeout\n");
+        receive_error();
 
         return 0;
     }
 
     if (!receive_word(&offset)) {
-        uart_puts("Receive timeout\n");
+        receive_error();
 
         return 0;
     }
 
     if (!receive_word(&total)) {
-        uart_puts("Receive timeout\n");
+        receive_error();
 
         return 0;
     }
@@ -162,7 +177,7 @@ static int upload(void) {
 
         for (uint32_t j = 0; j < count; ++j) {
             if (!receive(page + j, TIMEOUT_TICKS(RECEIVE_WAIT_US))) {
-                uart_puts("Receive timeout\n");
+                receive_error();
 
                 return 0;
             }
@@ -253,6 +268,7 @@ void application_loader(void) {
     }
 
     for (;;) {
+        uart_rx_irq_discard();
         timeout_start();
         uart_puts("J2 loader\n");
         if (upload()) {

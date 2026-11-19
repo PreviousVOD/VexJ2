@@ -97,6 +97,11 @@ _xip_vectors:
   .long xip_halt
   .endr
   .long _xip_timer_isr
+  .long _xip_cmt1_isr
+  .long _xip_sci_eri_isr
+  .long _xip_sci_rxi_isr
+  .long _xip_sci_txi_isr
+  .long _xip_sci_tei_isr
 
 .align 2
 stack_top: .long (0x00008000 + J2_SRAM_BYTES - 4)

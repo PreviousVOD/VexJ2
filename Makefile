@@ -20,7 +20,7 @@ BOOTROM := $(CURDIR)/build/tang-primer/rom/main.bin
 XIP_ROM := $(CURDIR)/build/verilog/xip/j2_validation_rom.hex
 XIPAPP := $(CURDIR)/build/sw/xipapp/main.bin
 XIP_IMAGE := $(CURDIR)/build/sw/xipapp/flash.bin
-# About 16 seconds per seed set on the cached 32 MHz core.
+# Keep each seed set above CoreMark's 10-second reporting minimum.
 COREMARK_ITERATIONS ?= 300
 COREMARK_LABEL ?= refactored
 COREMARK_RESULTS ?= build/coremark/$(COREMARK_LABEL)
@@ -221,7 +221,7 @@ $(BOOTROM): force-tang-rom $(wildcard sw/bootrom/*) fpga/tang-primer/board.prope
 $(XIP_ROM): $(BOOTROM) tools/gen_verilog_rom.py
 	python3 tools/gen_verilog_rom.py $(BOOTROM) $@
 
-$(XIPAPP): $(wildcard sw/xipapp/*) fpga/tang-primer/board.properties tools/board_config.py
+$(XIPAPP): $(wildcard sw/xipapp/* sw/include/*.h) fpga/tang-primer/board.properties tools/board_config.py
 	$(MAKE) -C sw/xipapp
 
 $(XIP_IMAGE): $(XIPAPP) tools/xip_image.py

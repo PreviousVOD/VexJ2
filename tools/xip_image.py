@@ -70,7 +70,7 @@ def upload(image_path, device, wait_for_banner=True, success_marker=b"XIP CPU te
         written = 0
         while written < len(header):
             written += os.write(fd, header[written:])
-        failures = [b"Bad image range", b"Receive timeout", b"Invalid image header",
+        failures = [b"Bad image range", b"Receive timeout", b"Receive error", b"Invalid image header",
                     b"Erase error", b"Program error", b"Header error", b"Verify error",
                     b"checksum error", b"Platform failure"]
 

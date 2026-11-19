@@ -1,9 +1,9 @@
 # Core-private PPB and NVIC-style INTC generator
 
-Status: plan approved. Step 1 (private PPB routing and access checks) is committed
-as `eca56d6`. Step 2 (standalone INTC) is implemented and tested. CPU acceptance
-and SoC wiring remain pending, so the live core still exposes a reserved-zero
-INTC window and uses its existing external event input.
+Status: steps 1–4 are implemented. Private PPB routing is committed as `eca56d6`
+and the standalone controller as `2738265`. The core now instantiates INTC in
+its private window, accepts IRQ/NMI descriptors and connects the six SoC sources.
+System validation is described below.
 APB4 is committed as `b0867a0`; CMT/SCI and their software migration as `cc7dc4a`.
 The CMT and SCI peripherals keep their existing register interfaces.
 
@@ -75,8 +75,9 @@ need to know INTC addresses.
 
 ```mermaid
 flowchart LR
-  MOD[CMT / SCI / other sources] --> PENDING[Request levels OR software pending]
+  MOD[CMT / SCI / other sources]
   subgraph CORE[One SH-2 core]
+    PENDING[Request levels OR software pending]
     MA[Memory plugin] --> ROUTE[Private D-bus router]
     ROUTE --> CHECK[PPB access checks]
     CHECK --> BRIDGE[AHB5 to APB4]
@@ -89,14 +90,18 @@ flowchart LR
     DETECT --> SELECT
     PENDING --> SELECT
     SELECT --> CAND[Registered candidate]
-    CAND --> ACCEPT[Instruction-boundary acceptance]
-    ACCEPT --> ENTRY[Captured source / vector / level]
+    CAND --> RECHECK[Live source / priority / mask recheck]
+    RECHECK --> ACCEPT[Instruction-boundary acceptance]
+    SR[Registered SR.I / SR-write guard] --> SELECT
+    SR --> ACCEPT
+    ACCEPT --> ENTRY[Captured vector / level]
     ACCEPT -->|Clear accepted software pending| PENDING
     ACCEPT -->|NMI accepted| DETECT
     ENTRY --> TRAP[SH-2 exception entry / RTE]
   end
   ROUTE -->|external address| SOC[Shared SoC / BIU / peripheral APB]
   SOC --> MOD
+  MOD --> PENDING
 ```
 
 Keep the private aperture at `0xffffe000`–`0xffffefff`, with a 512-byte INTC
@@ -212,12 +217,11 @@ The processor remains SH-2: exception precedence, saved PC/SR, delay slots,
 SLEEP, TRAPA and RTE follow the
 [SH-2 ISA reference](isa/REN_rej09b0171_superh_MAH_20040630.pdf).
 NMI bypasses priority masking, not instruction atomicity or delay-slot rules.
-Address errors and illegal instructions remain core exceptions. Audit current
-external-event-before-illegal-instruction ordering during integration.
+Address errors and illegal instructions remain core exceptions. The integration
+uses the SH7125 instruction-exception-before-interrupt ordering described below.
 
-Entry uses `VBR + 4*vector`. The existing CMI0 route remains vector 64 / priority
-14 until integration, then keeps vector 64 with programmable priority and an
-explicit enable bit. Keep arbitration off the microcode read path and measure
+Entry uses `VBR + 4*vector`. CMI0 keeps vector 64 with programmable priority and an explicit enable bit.
+The XIP tests and CoreMark initialize its priority to 14. Keep arbitration off the microcode read path and measure
 post-route timing before claiming an Fmax improvement.
 
 Future vector widening must cover `J2Event`, decode/acceptance metadata,
@@ -307,8 +311,8 @@ The INTC address must be translated as `absoluteAddress - 0xffffe900` before
 narrowing to nine bits. Simple truncation is incorrect because the base is not
 512-byte aligned. `J2IntcPpbSpec` exercises the actual PPB bridge/matrix with this
 translation, BE32 word accesses and subword rejection. The production PPB plugin
-will acquire this connection during CPU integration; its zero responder remains
-in place for now.
+uses the same address translation and connects the controller through `J2InterruptService`. Only unimplemented registers/fields
+remain reserved-zero.
 
 Generate standalone RTL and a header from `spinal/`:
 
@@ -319,8 +323,9 @@ Generate standalone RTL and a header from `spinal/`:
 
 The optional ordered source names produce IRQ/vector constants. Register offsets,
 bank capacities and index/mask/priority helpers come from the same constants as
-RTL. The generated header has no fixed peripheral base address. Actual SoC
-wiring and firmware initialization remain step 4.
+RTL. The generated header has no fixed peripheral base address.
+`J2SocInterrupts.names` defines the ordered SoC ABI. The checked-in generated header `sw/include/j2_intc_regs.h` is checked against that list in the Scala
+suite. `sw/include/intc.h` supplies the private base address and firmware helpers.
 
 Standalone validation covers all planned count boundaries, register reset and
 aliases, reserved extension slots, all write strobes, software/hardware pending
@@ -330,5 +335,82 @@ tests (16 new INTC tests). Standalone RTL/header generation succeeds; the header
 matches `sw/.clang-format` and passes C11 compilation with static assertions for
 register offsets, source/vector assignments and the highest supported IRQ.
 Logs and generated RTL/header are under `build/intc*`, including
-`build/intc-full-validation.log`. No new INTC hardware is connected to either
-board yet.
+`build/intc-full-validation.log`. These standalone checks preceded core integration.
+
+## Core and SoC integration
+
+`J2IntcPlugin` owns the controller and provides the core event service. Normal
+cores expose counted held-level `interrupts` and a dedicated `nmi` input instead
+of externally chosen vectors/levels. `J2CoreConfig.eventInjection` defaults to
+false; legacy architectural test fixtures enable it explicitly. The SoC wires
+CMT0/CMT1 then SCI ERI/RXI/TXI/TEI and ties unused NMI high. Sources and priorities
+reset disabled/zero; firmware must configure both priority and enable.
+
+The sequencer publishes first-selection `eventStart` and `systemStart` signals.
+Vector and interrupt level are captured on the same accepted slot, including a
+first-row hazard retry. Later live candidates cannot replace either field.
+`eventStart` acknowledges the exact INTC source and clears its software pending
+latch. The old microcode acknowledgement is not used for that handshake. Entry
+is protected until dispatch to the handler; higher-priority nesting is allowed
+after entry according to SR.I. Faults during entry halt the core until reset.
+
+INTC and decode use registered SR.I. An older SR-writing slot defers interrupt
+acceptance until its new mask commits, keeping ALU/writeback SR forwarding off
+the interrupt-to-ROM path.
+Illegal/slot-illegal instructions and TRAPA precede ordinary and NMI requests,
+following SH7124/SH7125 table 5.1 (printed page 73); older pending pipeline faults
+remain protected from younger decode. SLEEP wakes on eligible requests; RTE and
+delay-slot rules retain the SH-2 behavior. No Cortex-M active stack is added.
+
+The XIP application programs INTC for CMT0, then tests disabled pending requests,
+priority zero and SR.I equality, clear-before-enable, priority ordering/ties,
+all remaining vectors through ISPR, physical CMT1 and simultaneous SCI TXI/TEI.
+Handlers check their entry mask, clear their sources and return through RTE.
+Both board validation paths require the `INTC tests passed` UART marker.
+CoreMark explicitly configures CMT0 priority/enable for its rollover ISR.
+
+Core simulation also covers IRQ/NMI SLEEP wake with both debug configurations,
+zero/waited external buses, source withdrawal during entry, saved PC/SR and no
+duplicate acceptance. A sequencer test changes vector/level during a hazard
+retry and checks that the accepted metadata survives.
+
+
+## Integrated validation (2026-11-19)
+
+The final core passes all 123 Scala regressions. The additional two-private-PPB
+isolation regression passes separately, bringing coverage to 124 tests. The
+firmware header is checked against the generated source ABI. Scala formatting,
+C formatting with the existing `sw/.clang-format`, and host-tool tests pass.
+
+The Tang native SoC passes reset, cold-boot and loader cases with the complete
+XIP application. Wukong passes cold/warm XIP, upload and bad-checksum rejection;
+the full XIP application was rerun after the timing correction. Both applications
+report `INTC tests passed` and complete the ISA/cache/external-memory checks.
+
+Initial synthesis exposed an excessive path from forwarded SR through interrupt
+eligibility to the microcode ROM. Using registered SR.I and deferring acceptance
+on SR-writing slots removes that path while preserving mask update ordering.
+The final routed designs meet setup and hold timing:
+
+| Board | CPU clock | Worst setup slack | Worst hold slack |
+| --- | ---: | ---: | ---: |
+| Tang Primer | 32 MHz | +4.273 ns | +0.093 ns |
+| Wukong v1 | 72 MHz | +0.102 ns | +0.053 ns |
+
+Both boards pass application upload and a fresh volatile FPGA reboot. Wukong
+backs up the affected SF3 sectors before upload. Hardware validation uses
+application flash only and volatile JTAG FPGA downloads; configuration flash
+is not written.
+
+Tang hardware CoreMark passes both seed sets at 100 iterations: performance
+11.589648 seconds and validation 11.628192 seconds, with all expected CRCs.
+The final simulator passes the same seeds in 11.589632 and 11.628208 simulated
+seconds with matching CRCs. Hardware and simulation differ by only one CMT
+tick (16 microseconds) per run. The normal 300-iteration default remains
+unchanged. The validation application is restored after the hardware benchmark.
+
+Logs: `build/intc-final-tests.log`, `build/intc-private-isolation-test.log`,
+`build/intc-header-test.log`, `build/intc-board-validation/`,
+`build/intc-wukong-sim.log`, `build/intc-wukong-final-sim.log`,
+`build/intc-tang-fpga.log`, `build/intc-wukong-fpga.log`,
+`build/intc-wukong-hw/{upload,warm}/`, and `build/coremark/intc-final/`.

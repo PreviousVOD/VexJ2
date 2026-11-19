@@ -62,7 +62,7 @@ Wukong v1 / Xilinx XC7A100T with DDR3 and Pmod SF3 application flash.
 | Generic AHB5 interfaces, interconnects and arbiters | [AHB5 IP library](docs/ahb5.md) |
 | APB peripherals, bridge and standalone BIU | [APB subsystem](docs/apb.md) |
 | SH7124/SH7125-style serial and timer registers | [SCI](docs/sci.md) · [CMT](docs/cmt.md) |
-| Proposed core-private PPB and NVIC-style INTC generator | [PPB / INTC plan](docs/ppb-intc-plan.md) |
+| Core-private PPB and NVIC-style INTC | [PPB / INTC plan](docs/ppb-intc-plan.md) |
 | Toolchain, source layout and verification commands | [Development](docs/development.md) |
 | Tang Primer clocks, pins, build and programming | [Tang Primer](docs/tang-primer.md) |
 | Wukong clocks, SF3, DDR3, build and programming | [Wukong v1](docs/wukong-v1.md) |

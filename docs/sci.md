@@ -72,9 +72,10 @@ Four interrupt outputs, registered by one PCLK, are exposed in ascending order:
 | 2 | TXI | TIE and TDRE |
 | 3 | TEI | TEIE and TEND |
 
-The current SoC console polls these registers. Routing the four sources through
-the planned private INTC remains subsequent work; they are not ORed into a
-single invented SCI vector.
+The private INTC routes SCI sources 2–5 (vectors 66–69), with independent
+enable and priority fields. BootROM uses ERI/RXI interrupts; application console
+TX/RX remains polled by default. The XIP application exercises physical TXI/TEI and software
+pending for all four SCI vectors.
 
 ## Software and validation
 
@@ -85,6 +86,22 @@ reconfiguration. Both boards retain nominal 19,200 baud: actual baud is about
 19,230.8 at 32 MHz (BRR=51) and 72 MHz (BRR=116). The accelerated Wukong boot
 simulation uses exactly 1,125,000 baud (BRR=1), within SCI's PCLK/32 limit.
 
+BootROM alone builds the shared UART driver with `J2_UART_RX_IRQ` and links
+`sw/bootrom/uart_irq.c`. ROM vectors 66/67 share an ISR at priority 8. The ISR
+reads SCRDR, clears only observed receive/error flags using W0C, and publishes
+valid bytes into a 512-byte single-producer/single-consumer queue (511 usable).
+The loader consumes that queue while retaining CMT-based foreground timeouts.
+SCI overrun, parity/framing errors and queue overflow latch a receive failure;
+the loader reports `Receive error` and discards queued data before a fresh
+command prompt. Existing page acknowledgement and flash commit rules remain.
+TX is still polled, and the ISR never prints or accesses application flash.
+
+Before jumping to an application, ROM masks SR.I to 15, clears SCI.RIE, disables
+ERI/RXI in INTC and drains their receive state. Application startup can then
+replace VBR, stack and SRAM safely. Returning after replacing that state is
+unsupported; ROM halts if an application does return. BootROM's startup explicitly
+sets VBR to zero before enabling its interrupt sources.
+
 `J2SCISpec` checks reset and hard-wired fields, strobes, read/error behavior,
 transmit submission and double buffering, all clock divisors, framing/direction,
 overrun and parity/framing recovery, W0C, EIO and all four IRQ outputs.
@@ -94,10 +111,38 @@ register handshake, with immediate TX completion; it is not a serial timing mode
 
 The loader's constant timeouts are converted to CMT ticks at compile time.
 Per-byte runtime 64-bit division needlessly delayed servicing SCI. The accelerated
-simulator allows 4,000 PCLK cycles between characters for CPU service without a FIFO; ordinary board uploads remain at 19,200 baud.
+simulator allows 4,000 PCLK cycles between characters for ISR entry/exit and
+foreground service at its accelerated baud; ordinary board uploads remain at
+19,200 baud. SCI still has no hardware RX FIFO.
 
-The combined regression passes 102 Scala tests, all three Tang boot cases and
+The initial SCI migration passed 102 Scala tests, all three Tang boot cases and
 all four Wukong boot cases, plus both CoreMark CRC seed sets with measured times
-above ten seconds. Both FPGA RTL generators pass. FPGA synthesis, timing and
-board execution have not been rerun for this migration. Detailed results and
-the unrelated baseline reference-ROM timeout are in [CMT validation notes](cmt.md#validation-notes).
+above ten seconds. Both FPGA RTL generators passed. Those checks preceded the
+FPGA validation below. Historical results are in
+[CMT validation notes](cmt.md#validation-notes).
+
+### BootROM RX interrupt validation (2026-11-19)
+
+The interrupt-driven ROM occupies 5,152 ROM bytes and 812 SRAM bytes on Tang,
+including the page/header buffers and RX queue. The shared polling application
+UART build remains available without `J2_UART_RX_IRQ`.
+
+Tang simulation passes reset, cold boot and complete UART upload. Wukong
+simulation passes cold/warm boot, upload and bad-checksum rejection. Tang hardware
+passes upload and a fresh volatile reboot, including the application INTC/ISA
+checks. Wukong hardware passes SF3 backup/upload, the full application and
+a fresh volatile reboot.
+Both FPGA builds retain their clocks and meet timing: Tang 32 MHz (+4.273 ns
+setup, +0.093 ns hold), Wukong 72 MHz (+0.102 ns setup, +0.053 ns hold).
+
+The Wukong loader simulation passes bad-stop-bit injection through the real
+SCI/INTC/CPU path, recovery to the command prompt without flash writes, and an
+uploaded probe checking SR.I=15, SCI.RIE=0 and disabled INTC sources before
+application startup. Upload verification covers page boundaries, a partial
+final page and committing the image header last. The full Tang upload wraps the RX queue repeatedly.
+Host tests also check immediate upload failure on `Receive error` (31 tests).
+
+Evidence is under `build/uart-irq-*.log` and `build/uart-irq-validation/`.
+`uart-irq-wukong-sim.log` contains the passing cold/warm boot cases;
+`uart-irq-wukong-loader-sim.log` is the loader/error/handoff rerun after
+correcting an immediate sign-extension mistake in the test probe.

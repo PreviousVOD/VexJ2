@@ -37,7 +37,7 @@ class J2SleepFaultSpec extends munit.FunSuite {
         healthyValue = Some(0x5678L)
       ),
       Scenario("valid long load", address        = 0x300, healthyValue       = Some(0x12345678L)),
-      Scenario("PPB reserved long read", address = 0xffffe900L, healthyValue = Some(0L)),
+      Scenario("PPB reserved long read", address = 0xffffe904L, healthyValue = Some(0L)),
       Scenario(
         "PPB reserved long write",
         instruction  = 0x2102,

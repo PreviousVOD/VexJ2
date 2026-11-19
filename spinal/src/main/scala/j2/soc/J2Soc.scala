@@ -39,13 +39,15 @@ final class J2Soc(
   private val cacheControlMapping = SizeMapping(0xff004000L, 0x1000)
 
   private val xipCache = new J2ReadCache(xipConfig)
-  private val cpu      = new J2MicrocodedCore(J2CoreConfig(exposeDebug = false))
-  private val rom      = new J2Rom(config.romHex)
-  private val sram     = new J2Sram(config.sramBytes)
-  private val flash    = new J2SpiFlash(xipConfig.lineBytes)
-  private val pio      = new J2Pio
-  private val cmt      = new J2CMT
-  private val uart     = new J2SCI
+  private val cpu = new J2MicrocodedCore(
+    J2CoreConfig(exposeDebug = false, interruptCount = J2SocInterrupts.names.size)
+  )
+  private val rom   = new J2Rom(config.romHex)
+  private val sram  = new J2Sram(config.sramBytes)
+  private val flash = new J2SpiFlash(xipConfig.lineBytes)
+  private val pio   = new J2Pio
+  private val cmt   = new J2CMT
+  private val uart  = new J2SCI
 
   // Cache tags/refill commands use absolute addresses. Only the backend adapter
   // translates the mapped window to flash offsets, so relocation is explicit.
@@ -94,11 +96,8 @@ final class J2Soc(
   J2Apb.connect(peripheralBus.io.outputs(3), cmt.io.bus)
   J2Apb.connect(peripheralBus.io.outputs(4), xipCache.io.control)
 
-  cpu.io.event.valid              := cmt.io.interrupt(0)
-  cpu.io.event.payload.command    := 0
-  cpu.io.event.payload.vector     := 0x40
-  cpu.io.event.payload.level      := 14
-  cpu.io.event.payload.bypassMask := False
+  cpu.io.interrupts := uart.io.interrupt ## cmt.io.interrupt
+  cpu.io.nmi        := True
 
   uart.io.uart.rxd := io.uartRx
   io.uartTx        := uart.io.uart.txd

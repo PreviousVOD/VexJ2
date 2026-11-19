@@ -60,6 +60,7 @@ void uart_tx(uint8_t data) {
     SCI_REG(SCI_SCSSR) = (uint8_t)~SCI_SSR_TDRE;
 }
 
+#ifndef J2_UART_RX_IRQ
 int uart_rx_ready(void) {
     uint8_t status = SCI_REG(SCI_SCSSR);
     if (status & SCI_SSR_ERRORS) {
@@ -79,6 +80,8 @@ uint8_t uart_rx(void) {
 
     return data;
 }
+
+#endif
 
 void uart_puts(const char *text) {
     while (*text) {

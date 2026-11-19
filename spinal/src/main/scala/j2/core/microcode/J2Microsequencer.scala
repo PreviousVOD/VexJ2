@@ -40,6 +40,8 @@ final class J2Microsequencer extends Component {
     val directValid        = out Bool ()
     val prefetchAddress    = out UInt (8 bits)
     val eventAck           = out Bool ()
+    val eventStart         = out Bool ()
+    val systemStart        = out Bool ()
     val instructionIssue   = out Bool ()
     val instructionAddress = out Bool ()
     val interruptLevel     = out UInt (4 bits)
@@ -86,7 +88,14 @@ final class J2Microsequencer extends Component {
     !delaySlotReg && io.eventValid &&
       ((io.eventCommand === 0 && interruptAccepted) || io.eventCommand =/= 0)
 
-  when(eventAccepted) {
+  private val eventChosen = Bool()
+  eventChosen := False
+  // SH7125 table 5.1: instruction exceptions precede maskable/NMI interrupts.
+  // An older bus fault (command 1) is supplied by the core before younger decode.
+  private val instructionException = io.illegalInstruction ||
+    (delaySlotReg && io.illegalDelaySlot) || io.instruction(15 downto 8) === 0xc3
+  when(eventAccepted && (io.eventCommand =/= 0 || !instructionException)) {
+    eventChosen := True
     val systemCode = io.eventCommand.mux(
       0 -> U(0, 4 bits),
       1 -> U(1, 4 bits),
@@ -119,6 +128,8 @@ final class J2Microsequencer extends Component {
   // microstep stalls. On retry idStall selects operationReg, not nextOperation.
   io.startInstruction := !idStall && instructionSequenceZero && !nextOperation.system
   io.interruptLevel   := interruptLevelReg
+  io.eventStart       := io.slot && selectingInstruction && eventChosen
+  io.systemStart      := io.slot && selectingInstruction && nextOperation.system
   io.eventAck := io.slot &&
     (io.eventAcknowledge || (io.eventValid && io.eventCommand === 2 && io.debug))
 
@@ -150,9 +161,9 @@ final class J2Microsequencer extends Component {
       firstAddressReg := io.predecodeAddress
     }
     maskInterruptReg := io.maskInterruptNext
-    when(io.interruptLevelCapture) {
-      interruptLevelReg := io.eventLevel
-    }
+    // Capture with the vector on first selection, even when that microstep retries.
+    // Repeated E0 cycles must not replace the accepted level with a newer candidate.
+    when(io.eventStart)(interruptLevelReg := io.eventLevel)
     operationReg := advancedOperation
     idStall      := io.nextIdStall
     when(!io.nextIdStall) {

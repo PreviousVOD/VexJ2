@@ -71,13 +71,14 @@ object WukongBootSim extends App {
       sleep(10 * busPeriod + 1); dut.io.reset #= false
       def expect(message: String, from: Int = 0): Unit =
         waitUntil(received.toString.indexOf(message, from) >= 0)
-      def send(data: Array[Byte]): Unit = for (value <- data) {
+      def send(data: Array[Byte], goodStop: Boolean = true): Unit = for (value <- data) {
         dut.io.uartRx #= false; sleep(bitPeriod)
         for (bit <- 0 until 8) { dut.io.uartRx #= ((value >> bit) & 1) != 0; sleep(bitPeriod) }
-        dut.io.uartRx #= true;
-        // SCI has one receive register. Leave CPU service time at the accelerated
-        // baud; real board uploads use 19,200 baud and need no added gap.
-        sleep(bitPeriod + 4000 * busPeriod)
+        dut.io.uartRx #= goodStop; sleep(bitPeriod)
+        dut.io.uartRx #= true
+        // Leave IRQ entry/exit time at this accelerated baud. Real board
+        // uploads use continuous 19,200-baud characters without this gap.
+        sleep(4000 * busPeriod)
       }
       def word(value: Long): Array[Byte] = Array(24, 16, 8, 0).map(shift => (value >> shift).toByte)
       def command(magic: String, offset: Long, length: Int): Unit =
@@ -123,6 +124,13 @@ object WukongBootSim extends App {
           command("J2UP", 0, 64); expect("Send image\r\n", start)
           expect("Receive timeout\r\n", start); expect("J2 loader\r\n", start)
           assert(flash.erases.isEmpty)
+          // A framing error must reach ERI, abort reception and recover for
+          // the next command without erasing or programming application flash.
+          start = received.length
+          command("J2UP", 0, 64); expect("Send image\r\n", start)
+          send(Array(0x55.toByte), goodStop = false)
+          expect("Receive error\r\n", start); expect("J2 loader\r\n", start)
+          assert(flash.erases.isEmpty && flash.programs.isEmpty)
           flash.failProgram = true
           start             = received.length; upload(probe("xip"), "Program error\r\n");
           expect("J2 loader\r\n", start)
@@ -148,6 +156,7 @@ object WukongBootSim extends App {
           else "XIP CPU tests passed\r\n"
         )
         assert(!received.toString.contains("tests failed"))
+        if (!scenario.startsWith("upload")) assert(received.toString.contains("INTC tests passed"))
       }
       println(s"WUKONG_BOOT_PASS: $scenario")
     }

@@ -20,6 +20,8 @@ final class J2DecodePlugin extends FiberPlugin with J2DecodeService {
     port.instructionAddress := sequencer.io.instructionAddress
     port.incrementPc        := sequencer.io.incrementPc
     port.eventAck           := sequencer.io.eventAck
+    port.eventStart         := sequencer.io.eventStart
+    port.systemStart        := sequencer.io.systemStart
     port.maskInterrupt      := sequencer.io.maskInterrupt
     port.delaySlot          := sequencer.io.delaySlot
     port.startInstruction   := sequencer.io.startInstruction
@@ -34,7 +36,7 @@ final class J2DecodePlugin extends FiberPlugin with J2DecodeService {
     val pc      = host[J2ArchitecturalService].architectural
     val t       = host[J2TrapService].trap
     val mul     = host[J2MultiplyService].multiply
-    val event   = host[J2ExternalService].external.event
+    val event   = host[J2InterruptService].interrupt
     val hazards = new J2Hazards
     hazards.io.ex            := a.table.io.control.ex
     hazards.io.exStall       := a.table.io.control.exStall
@@ -74,10 +76,10 @@ final class J2DecodePlugin extends FiberPlugin with J2DecodeService {
     q.maskInterruptNext     := c.maskInterruptNext
     q.enterDebug            := False
     q.debug                 := c.debug
-    q.eventValid            := event.valid || t.internalFault
+    q.eventValid            := !t.inService && (event.valid || t.internalFault)
     q.eventCommand          := Mux(t.internalFault, U(1, 2 bits), event.payload.command)
     q.eventVector           := Mux(t.internalFault, U(9, 8 bits), event.payload.vector)
-    q.eventLevel            := event.payload.level
+    q.eventLevel            := Mux(t.internalFault, pc.status.interruptMask, event.payload.level)
     q.eventBypassMask       := event.payload.bypassMask
     q.id                    := c.id
   }

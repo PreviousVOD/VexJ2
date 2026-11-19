@@ -179,4 +179,55 @@ class J2MicrosequencerSpec extends munit.FunSuite {
     }
   }
 
+  test("accepted interrupt metadata survives retries and changing candidates") {
+    SimConfig.withVerilator.compile(new J2Microsequencer).doSim { dut =>
+      driveDefaults(dut)
+      dut.clockDomain.forkStimulus(10)
+      dut.clockDomain.assertReset(); dut.clockDomain.waitSampling(2)
+      dut.clockDomain.deassertReset(); dut.clockDomain.waitSampling(); sleep(1)
+      dut.io.slot #= true; dut.io.dispatch #= true
+      dut.clockDomain.waitSampling(); sleep(1)
+      dut.io.dispatch         #= false; dut.io.eventValid           #= true
+      dut.io.eventVector      #= 64; dut.io.eventLevel              #= 5
+      dut.io.registerConflict #= true; dut.io.interruptLevelCapture #= true
+      sleep(1); assert(dut.io.eventStart.toBoolean)
+      dut.clockDomain.waitSampling(); sleep(1)
+      assertEquals(dut.io.interruptLevel.toInt, 5)
+      dut.io.eventVector     #= 65; dut.io.eventLevel #= 15
+      dut.io.eventBypassMask #= true
+      for (_ <- 0 until 3) {
+        sleep(1); assert(!dut.io.eventStart.toBoolean)
+        assertEquals(dut.io.operation.code.toInt, 64)
+        dut.clockDomain.waitSampling(); sleep(1)
+        assertEquals(dut.io.interruptLevel.toInt, 5)
+      }
+      dut.io.eventValid #= false; dut.io.registerConflict #= false
+      dut.clockDomain.waitSampling(); sleep(1)
+      assertEquals(dut.io.operation.address.toInt, 0xe1)
+      assertEquals(dut.io.operation.code.toInt, 64)
+      assertEquals(dut.io.interruptLevel.toInt, 5)
+    }
+  }
+
+  test("SH-2 illegal instructions and TRAPA precede maskable and NMI requests") {
+    val compiled = SimConfig.withVerilator.compile(new J2Microsequencer)
+    for (nmi <- Seq(false, true); trap <- Seq(false, true)) compiled.doSim { dut =>
+      driveDefaults(dut)
+      dut.clockDomain.forkStimulus(10)
+      dut.clockDomain.assertReset(); dut.clockDomain.waitSampling(2)
+      dut.clockDomain.deassertReset(); dut.clockDomain.waitSampling(); sleep(1)
+      dut.io.slot #= true; dut.io.dispatch #= true
+      dut.clockDomain.waitSampling(); sleep(1)
+      dut.io.dispatch           #= false
+      dut.io.eventValid         #= true; dut.io.eventLevel #= 15; dut.io.eventBypassMask #= nmi
+      dut.io.eventVector        #= (if (nmi) 11 else 64)
+      dut.io.instruction        #= (if (trap) 0xc320 else 0xffff)
+      dut.io.illegalInstruction #= !trap
+      sleep(1)
+      assert(!dut.io.eventStart.toBoolean)
+      if (trap) assert(!dut.io.operation.system.toBoolean)
+      else assertEquals(dut.io.operation.address.toInt, 0xc9)
+    }
+  }
+
 }

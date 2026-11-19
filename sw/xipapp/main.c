@@ -2,6 +2,7 @@
 
 /* App */
 #include "cmt.h"
+#include "intc.h"
 #include "uart.h"
 
 #define SDRAM_BASE        0x80000000
@@ -10,6 +11,7 @@
 
 extern void sdram_test_function(void);
 extern int  isa_test(void);
+extern int  intc_test(void);
 
 static int cache_test(void) {
     static const uint32_t words[16] __attribute__((aligned(32))) = {
@@ -168,6 +170,8 @@ static int cmt_test(void) {
     volatile uint32_t wait;
 
     timer_set_mask(15);
+    intc_set_priority(J2_IRQ_CMT0, 14);
+    intc_enable(J2_IRQ_CMT0);
     CMT_CMSTR    = 0;
     CMT_CMCSR(0) = CMT_CMIE | CMT_CKS_DIV32;
     CMT_CMCNT(0) = 0;
@@ -214,7 +218,7 @@ static int cmt_test(void) {
 
     timer_set_mask(15);
     CMT_CMCSR(0) = 0;
-    /* Channel 1 is independently programmable; its IRQ awaits INTC routing. */
+    /* Channel 1 polling remains independent of CMT0 interrupt service. */
     CMT_CMCSR(1) = CMT_CKS_DIV512;
     CMT_CMCNT(1) = 0;
     CMT_CMCOR(1) = 7;
@@ -239,6 +243,7 @@ static int cmt_test(void) {
 
     CMT_CMCNT(0) = 0;
     CMT_CMCNT(1) = 0;
+    intc_disable(J2_IRQ_CMT0);
 
     return 0;
 }
@@ -249,6 +254,7 @@ static volatile uint32_t startup_bss[2];
 void xip_main(void) {
     int cmt_result;
     uart_init();
+    intc_reset();
     if (startup_data != 0x13579bdf || startup_bss[0] || startup_bss[1]) {
         uart_puts("Startup initialization failed\n");
         for (;;) {
@@ -301,6 +307,16 @@ void xip_main(void) {
     }
 
     uart_puts("CMT tests passed\n");
+    int intc_result = intc_test();
+    if (intc_result) {
+        uart_puts("INTC tests failed: ");
+        uart_hex((uint32_t)intc_result, 2);
+        uart_tx('\n');
+        for (;;) {
+        }
+    }
+
+    uart_puts("INTC tests passed\n");
     if (!isa_test()) {
         for (;;) {
         }

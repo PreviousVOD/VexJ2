@@ -17,7 +17,7 @@ respective revisions, including the former J2 extensions.
 ## Ownership and interfaces
 
 All CPU components live under `j2.core`. Pipeline plugins are grouped in
-`j2.core.{fetch,decode,execute,regfile,schedule,misc,ppb}`; ISA definitions/predecode
+`j2.core.{fetch,decode,execute,regfile,schedule,misc,ppb,intc}`; ISA definitions/predecode
 and microcode live in `j2.core.isa` and `j2.core.microcode`. Matching unit tests
 use the same package layout. Board, SoC, bus and peripheral packages remain
 siblings of `j2.core`. CPU microcode and SoC ROM/SRAM describe native Spinal
@@ -32,6 +32,7 @@ the implementation outside these components; see [memory backends](memory-infere
 | `regfile` | Register file, W/Z writeback selection and suppression |
 | `execute` | Datapath, multiplier/MACH/MACL, data bus transactions and faults |
 | `ppb` | Private data-bus routing, access checks, APB bridge/matrix and execute-never aperture |
+| `intc` | Private interrupt registers, NMI detection, registered selection and acceptance handshake |
 | `misc` | PC/SR, instruction metadata, traps/events, sleep, debug observation |
 
 Service traits and their port types are in `core/J2CoreServices.scala`.
@@ -62,14 +63,16 @@ The private aperture is `0xffffe000`–`0xffffefff`. PPB is data-only: all instr
 fetches fault locally, without selecting an APB target or reaching the shared
 bus. Data accesses pass through word/alignment checks, the existing BE32 AHB5
 bridge and a private APB4 matrix. Byte, halfword and misaligned accesses fault.
-Unmapped PPB data accesses fault. The future INTC window at
-`0xffffe900`–`0xffffeaff` currently returns zero and ignores valid word writes.
+Unmapped PPB data accesses fault. The INTC window at
+`0xffffe900`–`0xffffeaff` contains the private INTC. Unimplemented offsets and
+fields return zero and ignore valid word writes.
 
 Private traffic suppresses external transfers and lock reservations, including
 IDLE HMASTLOCK signaling. PPB has one manager and needs no BIU. External accesses
 retain the existing bus attributes and introduce no additional registered
-pipeline stage. The INTC register behavior and source wiring remain later steps
-of the [PPB/INTC plan](ppb-intc-plan.md).
+pipeline stage. The controller exposes counted request lines plus NMI. External event injection
+is an explicit test/debug configuration, disabled in production. See the
+[PPB/INTC architecture](ppb-intc-plan.md) for registers and firmware setup.
 
 ## SH-2 slot pipeline
 
@@ -163,9 +166,14 @@ buffer does not serve as a persistent instruction cache.
   The EX metadata's resume address is captured with a data request. A delay-slot
   fault resumes at the branch target; fetch errors remain attached to the
   prefetched opcode while preceding work drains.
-- Internal faults take priority over external events. Event acknowledgement
-  excludes internal fault service. A fault while entering its handler halts
-  bus activity until reset. Sleep and wakeup retain interrupt-mask behavior.
+- Older pipeline faults retain priority over younger decode. Illegal instructions
+  and TRAPA precede normal/NMI interrupts per SH7125 exception ordering. Accepted
+  vector and level are captured together; retries cannot sample a new candidate.
+  INTC acknowledgement occurs on first architectural selection, and duplicate
+  acceptance is blocked during entry. A fault during entry halts bus activity
+  until reset. Interrupt eligibility uses registered SR.I and defers acceptance
+  while an older slot writes SR, avoiding ALU/writeback forwarding into the
+  microcode-ROM address path. SLEEP wake and RTE retain SH-2 behavior.
 - Legacy debug outputs retain their meaning. In particular, `retired` remains
   the slot-and-dispatch observation, rather than a new commit interface.
 

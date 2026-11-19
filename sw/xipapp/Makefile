@@ -12,7 +12,7 @@ J2_UART_BAUD ?= 19200
 CFLAGS := -m2 $(ENDIAN) -Os -Wall -ffreestanding -fno-builtin -nostdlib \
 	-I$(ROOT)/sw/include -I$(ROOT)/sw/bootrom -DJ2_CLOCK_HZ=$(J2_CLOCK_HZ) -DJ2_UART_BAUD=$(J2_UART_BAUD) -DJ2_SRAM_BYTES=$(J2_SRAM_BYTES)
 LDFLAGS := -m2 $(ENDIAN) -nostdlib -Wl,--defsym=J2_SRAM_BYTES=$(J2_SRAM_BYTES) -T app.x -Wl,-Map,$(OUT)/main.map
-OBJS := $(addprefix $(OUT)/,entry.o main.o uart.o isa.o isa_asm.o)
+OBJS := $(addprefix $(OUT)/,entry.o main.o intc.o uart.o isa.o isa_asm.o)
 
 all: $(OUT)/main.bin $(OUT)/main.lst
 
@@ -29,6 +29,9 @@ $(OUT)/entry.o: entry.S Makefile
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OUT)/main.o: main.c Makefile
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -c $< -o $@
+$(OUT)/intc.o: intc.c Makefile
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OUT)/isa.o: isa.c Makefile
@@ -54,3 +57,5 @@ clean:
 $(OBJS): $(ROOT)/fpga/$(BOARD)/board.properties $(ROOT)/tools/board_config.py
 
 $(OBJS): $(ROOT)/sw/include/cmt.h $(ROOT)/sw/include/sci.h
+
+$(OBJS): $(ROOT)/sw/include/intc.h $(ROOT)/sw/include/j2_intc_regs.h

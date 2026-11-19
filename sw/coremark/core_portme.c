@@ -5,6 +5,7 @@
 
 /* App */
 #include "cmt.h"
+#include "intc.h"
 #include "uart.h"
 
 /* API ticks remain microseconds; hardware counts PCLK/512 with an ISR extension. */
@@ -47,13 +48,16 @@ void start_time(void) {
     CMT_CMCNT(0)  = 0;
     CMT_CMCSR(0)  = CMT_CMIE | CMT_CKS_DIV512;
     cmt_overflows = 0;
-    CMT_CMSTR     = CMT_STR(0);
+    intc_set_priority(J2_IRQ_CMT0, 14);
+    intc_enable(J2_IRQ_CMT0);
+    CMT_CMSTR = CMT_STR(0);
     interrupt_mask(0);
 }
 
 void stop_time(void) {
     interrupt_mask(15);
-    CMT_CMSTR      = 0;
+    CMT_CMSTR = 0;
+    intc_disable(J2_IRQ_CMT0);
     uint32_t wraps = cmt_overflows;
     uint16_t low   = CMT_CMCNT(0);
     /* A stopped equality can still match. Re-read after observing CMF to
@@ -81,6 +85,7 @@ void portable_init(core_portable *p, int *argc, char *argv[]) {
     (void)argc;
     (void)argv;
     uart_init();
+    intc_reset();
     CMT_CMSTR      = 0;
     CMT_CMCSR(0)   = 0;
     p->portable_id = 1;

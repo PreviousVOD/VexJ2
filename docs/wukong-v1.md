@@ -417,7 +417,9 @@ After flash initialization passes, the ROM prints `Send U to load` and waits
 one second. `U` enters the UART loader. Otherwise the ROM validates the installed
 image and boots it; missing or corrupt images enter the loader. The timer used
 for boot/receive timeouts has interrupts disabled and is stopped before jumping
-to the application. Application startup owns VBR, stack setup and writable-data
+to the application. SCI ERI/RXI feed a private SRAM receive queue; ROM masks
+and disables these interrupts before handoff (see [SCI software](sci.md)).
+Application startup owns VBR, stack setup and writable-data
 initialization; the supplied test app establishes its vectors and uses SRAM stack.
 
 ```mermaid

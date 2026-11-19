@@ -36,7 +36,8 @@ match wins over a software clear. The Renesas manual's read/clear collision note
 is a registered CMIE[n] && CMF[n], one PCLK behind status changes.
 
 Boot ROM uses a free-running /512 channel and accumulates modular 16-bit deltas
-while polling UART, handling timeouts longer than one wrap. Constant timeout
+while waiting for the interrupt-fed UART RX queue, handling timeouts longer
+than one wrap. Constant timeout
 values are converted to timer ticks at compile time so each received character
 does not require 64-bit division. It must poll more
 often than one counter period. CoreMark extends /512 with a rollover ISR and
@@ -52,9 +53,10 @@ writes, zero strobes, periodic compare timing, stopped equality, W0C, registered
 IRQs and counter-write collisions. The shared XIP application tests CPU subword
 accesses, CMI0 entry/rearm/SLEEP wake, and channel-1 polling. Boot/loader simulations
 exercise timeout rollover. The reference-core testbench has a matching CMT
-functional model. Future CMI0/CMI1 vectors and priority fields follow the
-[count-based PPB/INTC plan](ppb-intc-plan.md), which supersedes the earlier
-SH7125 vector proposal. The current SoC still routes CMI0 to vector 64, priority 14.
+functional model. CMI0/CMI1 connect to private INTC sources 0/1 and vectors
+64/65. Firmware explicitly enables and prioritizes each source; CoreMark and
+the CMT0 test use priority 14. The XIP INTC test also services CMT1. See the
+[PPB/INTC architecture](ppb-intc-plan.md).
 
 ## Validation notes
 

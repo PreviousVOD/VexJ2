@@ -169,14 +169,17 @@ CMF is sticky W0C: write zero to clear, one to preserve; reads have no side effe
 On a match, the counter clears and resumes periodic counting, with period
 `(CMCOR + 1) * divisor` PCLK cycles. Equality can also set CMF while stopped.
 
-The two interrupt outputs are registered `CMIE && CMF` levels. Until the private
-INTC is implemented, CMI0 retains the legacy CPU vector `0x40`, priority 14;
-CMI1 is available on the module but is not yet routed to the CPU.
+The two interrupt outputs are registered `CMIE && CMF` levels, wired to private
+INTC sources 0/1 (vectors 64/65). Firmware programs their priorities and enable
+bits; both reset disabled. The validation application and CoreMark use priority
+14 for CMT0.
 
 ## Serial interface
 
 `J2SCI` at `0xff001000` follows the SH7124/SH7125 SCI byte-register layout.
 It supports asynchronous 7/8-bit UART framing, parity, stop bits, errors and four
 registered interrupt sources. Unsupported mode bits are hard-wired. The shared
-software driver polls TDRE/RDRF; INTC routing remains future work. See the
+application driver polls TDRE/RDRF; BootROM receives through an ERI/RXI ISR
+and a 512-byte SRAM queue. ERI/RXI/TXI/TEI connect to private INTC sources
+2–5 (vectors 66–69), independently enabled and prioritized. See the
 [SCI register and timing reference](sci.md).
