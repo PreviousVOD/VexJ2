@@ -18,8 +18,10 @@ internal SRAM. Startup copies initialized data from flash and clears BSS.
 The upstream legacy `coremark.md5` contains a stale digest for `coremark.h`;
 the build checks the pinned SHA-256 hashes of all vendored files instead.
 
-The architecture timer measures the benchmark at 1 MHz with interrupts disabled.
-Its limit is set to `0xffffffff`; zero or saturated readings fail validation.
+J2CMT measures the benchmark at PCLK/512. A CMI0 ISR extends its 16-bit
+counter, and the port converts hardware ticks to microseconds outside the timed
+region. The API reports 1 MHz ticks; zero or saturated readings fail validation.
+The rollover ISR is included in the measured interval. See [CMT](cmt.md).
 UART reporting is outside the timed region. Scores describe this XIP memory
 configuration, including flash access latency.
 
@@ -39,10 +41,12 @@ make coremark-hw                # ttyACM0 at 19200 baud; 300 iterations per seed
 image through the UART loader for each seed set. It leaves the validation
 workload installed. Configuration flash is untouched. Set `COREMARK_ITERATIONS`
 to override the count. Both simulator and hardware runs must measure at least
-ten seconds per seed set; the default 300 iterations targets about 16 seconds
-on the current cached 32 MHz core. Faster configurations may need more
+ten seconds per seed set; the default is 300 iterations. Faster configurations may need more
 iterations: the runner rejects results below ten seconds. Simulation allows
-1,800 seconds of host time per seed set and one billion simulated clocks.
+1,800 seconds of host time per seed set and two billion simulated clocks.
+The CMT/SCI regression measured 34.747184 seconds for 300 performance iterations;
+its 100-iteration validation-seed check measured 11.621744 seconds. Both passed
+CRCs. These checks used different iteration counts; see [CMT validation notes](cmt.md#validation-notes).
 For intentional short CRC regressions, build with a smaller count and invoke
 `tools/coremark.py sim` or `hardware` with matching `--iterations` and
 `--allow-short`. Such runs are not reportable scores, following

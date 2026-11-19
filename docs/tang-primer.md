@@ -30,9 +30,9 @@ flowchart LR
   BIU --> BRIDGE[AHB5 to APB4 bridge]
   BRIDGE --> PB[APB matrix]
   PB --> GPIO[32-bit GPIO<br/>0xff000000]
-  PB --> UART[UART<br/>0xff001000]
+  PB --> UART[J2SCI<br/>0xff001000]
   PB -->|flash control| CTRL[J2SpiFlash control<br/>0xff002000]
-  PB --> TIMER[Architecture timer<br/>0xff003000]
+  PB --> TIMER[J2CMT<br/>0xff003000]
   PB -->|cache control| CACHE
   CTRL -->|APB| XIP
   CTRL -. invalidate and refill hold .-> CACHE

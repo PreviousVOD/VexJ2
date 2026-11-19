@@ -9,11 +9,14 @@ ENDIAN  := $(if $(findstring sh-none-elf,$(CROSS)),-mb,)
 CC      := $(CROSS)gcc
 J2_CLOCK_HZ ?= 32000000
 CFLAGS  := -m2 $(ENDIAN) -g -Os -Wall -Wno-builtin-declaration-mismatch \
-           -Wno-implicit-function-declaration -fno-builtin -ffreestanding -DJ2_CLOCK_HZ=$(J2_CLOCK_HZ)
+           -Wno-implicit-function-declaration -fno-builtin -ffreestanding -DJ2_CLOCK_HZ=$(J2_CLOCK_HZ) -I$(ROOT)/sw/include -I$(ROOT)/sw/bootrom
 LDFLAGS := -m2 $(ENDIAN) -nostdlib -T $(SRC)/startup/sh32.x -Wl,-Map,$(OUT)/main.map
 
 UART    ?= uartlite
 OBJS  := entry.o gdb.o sh2.o main.o version.o $(UART).o
+ifeq ($(UART),uart16550)
+OBJS += sci_uart.o
+endif
 TESTS := testbra testmov testmov2 testalu testshift testmul testmulu testmuls testmull \
          testdmulu testdmuls testmulconf testdiv testmacw testmacl
 OBJS  := $(addprefix $(OUT)/,$(OBJS) $(addprefix tests/,$(addsuffix .o,$(TESTS))))
@@ -28,6 +31,9 @@ $(OUT)/version.o: $(OUT)/version.c
 $(OUT)/main.o: $(SRC)/main.c Makefile
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -fno-inline -c $< -o $@
+$(OUT)/sci_uart.o: $(ROOT)/sw/bootrom/uart.c $(ROOT)/sw/bootrom/uart.h $(ROOT)/sw/include/sci.h Makefile
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -c $< -o $@
 $(OUT)/uart16550.o: $(ROOT)/sw/testrom/uart16550.c Makefile
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@

@@ -9,7 +9,7 @@ object WukongBootSim extends App {
   val config = BoardProfile
     .load("wukong-v1")
     .socConfig("../build/wukong-v1/rom-sim/boot.hex")
-    .copy(uartBaud = 1600000)
+    .copy(uartBaud = 1125000)
   def file(kind: String) =
     Files.readAllBytes(Paths.get(s"../build/wukong-v1/app-sim-$kind/flash.bin"))
   val xip = file("xip")
@@ -52,7 +52,7 @@ object WukongBootSim extends App {
         }
       }
       val received  = new StringBuilder
-      val bitPeriod = (config.clockHz / (config.uartBaud * 5)).toLong * 5 * busPeriod
+      val bitPeriod = (config.clockHz / (config.uartBaud * 32)).toLong * 32 * busPeriod
       fork {
         waitUntil(!dut.io.reset.toBoolean); dut.busDomain.waitSampling(2)
         while (true) {
@@ -75,7 +75,9 @@ object WukongBootSim extends App {
         dut.io.uartRx #= false; sleep(bitPeriod)
         for (bit <- 0 until 8) { dut.io.uartRx #= ((value >> bit) & 1) != 0; sleep(bitPeriod) }
         dut.io.uartRx #= true;
-        sleep(bitPeriod + 400 * busPeriod) // Allow ROM service time at the accelerated baud.
+        // SCI has one receive register. Leave CPU service time at the accelerated
+        // baud; real board uploads use 19,200 baud and need no added gap.
+        sleep(bitPeriod + 4000 * busPeriod)
       }
       def word(value: Long): Array[Byte] = Array(24, 16, 8, 0).map(shift => (value >> shift).toByte)
       def command(magic: String, offset: Long, length: Int): Unit =

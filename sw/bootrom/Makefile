@@ -7,7 +7,7 @@ J2_UART_BAUD ?= $(shell python3 $(ROOT)/tools/board_config.py $(BOARD) --get uar
 J2_SRAM_BYTES := $(shell python3 $(ROOT)/tools/board_config.py $(BOARD) --get sramBytes)
 EXTRA_CFLAGS ?=
 CFLAGS := -m2 -mb -Os -Wall -Wextra -ffreestanding -fno-builtin -nostdlib \
-  -I$(OUT) -include $(OUT)/board.h -DJ2_UART_BAUD=$(J2_UART_BAUD) $(EXTRA_CFLAGS)
+  -I$(ROOT)/sw/include -I$(OUT) -include $(OUT)/board.h -DJ2_UART_BAUD=$(J2_UART_BAUD) $(EXTRA_CFLAGS)
 OBJS := $(addprefix $(OUT)/,entry.o main.o uart.o flash.o image.o loader.o)
 
 .PHONY: all board-config
@@ -33,3 +33,5 @@ $(OUT)/boot.hex: $(OUT)/main.bin $(ROOT)/tools/gen_verilog_rom.py
 	python3 $(ROOT)/tools/gen_verilog_rom.py $< $@
 $(OUT)/main.lst: $(OUT)/main.elf
 	$(CROSS)objdump -d $< > $@
+
+$(OBJS): $(ROOT)/sw/include/cmt.h $(ROOT)/sw/include/sci.h

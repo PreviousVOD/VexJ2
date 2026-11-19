@@ -4,13 +4,19 @@
 #include "coremark.h"
 
 /* App */
+#include "cmt.h"
 #include "uart.h"
 
-#define TIMER_ENABLE (*(volatile uint32_t *)0xff003000)
-#define TIMER_LIMIT  (*(volatile uint32_t *)0xff003004)
-#define TIMER_VALUE  (*(volatile uint32_t *)0xff003008)
-#define TIMER_IRQ    (*(volatile uint32_t *)0xff00300c)
-#define TIMER_HZ     1000000u
+/* API ticks remain microseconds; hardware counts PCLK/512 with an ISR extension. */
+#define TIMER_HZ 1000000u
+volatile uint32_t cmt_overflows;
+
+static void interrupt_mask(unsigned mask) {
+    uint32_t status;
+    __asm__ volatile("stc sr, %0" : "=r"(status));
+    status = (status & ~0xf0u) | (mask << 4);
+    __asm__ volatile("ldc %0, sr" : : "r"(status) : "memory");
+}
 
 _Static_assert(sizeof(ee_u32) == 4 && sizeof(ee_u16) == 2 && sizeof(ee_u8) == 1, "CoreMark data widths");
 _Static_assert(sizeof(ee_ptr_int) == sizeof(void *), "CoreMark pointer width");
@@ -35,15 +41,32 @@ __attribute__((noreturn)) void abort(void) {
 }
 
 void start_time(void) {
-    TIMER_ENABLE = 0;
-    TIMER_IRQ    = 0;
-    TIMER_LIMIT  = UINT32_MAX; /* Writing the limit also clears the counter. */
-    TIMER_ENABLE = 1;
+    interrupt_mask(15);
+    CMT_CMSTR     = 0;
+    CMT_CMCOR(0)  = UINT16_MAX;
+    CMT_CMCNT(0)  = 0;
+    CMT_CMCSR(0)  = CMT_CMIE | CMT_CKS_DIV512;
+    cmt_overflows = 0;
+    CMT_CMSTR     = CMT_STR(0);
+    interrupt_mask(0);
 }
 
 void stop_time(void) {
-    TIMER_ENABLE = 0;
-    elapsed      = TIMER_VALUE;
+    interrupt_mask(15);
+    CMT_CMSTR      = 0;
+    uint32_t wraps = cmt_overflows;
+    uint16_t low   = CMT_CMCNT(0);
+    /* A stopped equality can still match. Re-read after observing CMF to
+     * include a wrap which arrived after the count was first sampled. */
+    if (CMT_CMCSR(0) & CMT_CMF) {
+        ++wraps;
+        low = CMT_CMCNT(0);
+    }
+
+    CMT_CMCSR(0)          = CMT_CKS_DIV512;
+    uint64_t ticks        = ((uint64_t)wraps << 16) | low;
+    uint64_t microseconds = ticks * 512u * TIMER_HZ / J2_CLOCK_HZ;
+    elapsed               = microseconds < UINT32_MAX ? (CORE_TICKS)microseconds : UINT32_MAX;
 }
 
 CORE_TICKS get_time(void) {
@@ -58,8 +81,8 @@ void portable_init(core_portable *p, int *argc, char *argv[]) {
     (void)argc;
     (void)argv;
     uart_init();
-    TIMER_ENABLE   = 0;
-    TIMER_IRQ      = 0;
+    CMT_CMSTR      = 0;
+    CMT_CMCSR(0)   = 0;
     p->portable_id = 1;
     ee_printf("J2 CoreMark start\nClock Hz: %lu\nTimer Hz: %lu\n", (unsigned long)J2_CLOCK_HZ, (unsigned long)TIMER_HZ);
 }

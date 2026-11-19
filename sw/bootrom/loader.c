@@ -2,11 +2,11 @@
 
 /* App */
 #include "board.h"
+#include "cmt.h"
 #include "flash.h"
 #include "image.h"
 #include "uart.h"
 
-#define TIMER(i)   (*(volatile uint32_t *)(0xff003000u + 4u * (i)))
 #define PAGE_BYTES 256u
 static uint8_t page[PAGE_BYTES];
 static uint8_t header[IMAGE_HEADER_BYTES];
@@ -17,12 +17,22 @@ static uint8_t header[IMAGE_HEADER_BYTES];
 #define RECEIVE_WAIT_US 5000000u
 #endif
 
-static int receive(uint8_t *value, uint32_t timeout) {
-    TIMER(2) = 0;
+/* Convert constant timeouts at compile time. Runtime 64-bit division for every
+ * received byte would overrun SCI's single receive register at high baud rates. */
+#define TIMEOUT_TICKS(us) (((uint64_t)(us) * J2_CLOCK_HZ + 512000000u - 1u) / 512000000u)
+
+static int receive(uint8_t *value, uint32_t remaining) {
+    /* Poll often enough to extend the free-running 16-bit PCLK/512 counter. */
+    uint16_t previous = CMT_CMCNT(0);
     while (!uart_rx_ready()) {
-        if (TIMER(2) >= timeout) {
+        uint16_t now   = CMT_CMCNT(0);
+        uint16_t delta = now - previous;
+        previous       = now;
+        if (delta >= remaining) {
             return 0;
         }
+
+        remaining -= delta;
     }
     *value = uart_rx();
 
@@ -33,7 +43,7 @@ static int receive_word(uint32_t *value) {
     *value = 0;
     for (unsigned i = 0; i < 4; ++i) {
         uint8_t b;
-        if (!receive(&b, RECEIVE_WAIT_US)) {
+        if (!receive(&b, TIMEOUT_TICKS(RECEIVE_WAIT_US))) {
             return 0;
         }
 
@@ -59,9 +69,9 @@ static int boot(void) {
         return 0;
     }
 
-    TIMER(0) = 0;
-    TIMER(3) = 0;
-    TIMER(2) = 0;
+    CMT_CMSTR    = 0;
+    CMT_CMCSR(0) = 0;
+    CMT_CMCNT(0) = 0;
     uart_puts("Booting XIP image\n");
     ((void (*)(void))image_word(image, 1))();
     uart_puts("Application returned\n");
@@ -151,7 +161,7 @@ static int upload(void) {
         }
 
         for (uint32_t j = 0; j < count; ++j) {
-            if (!receive(page + j, RECEIVE_WAIT_US)) {
+            if (!receive(page + j, TIMEOUT_TICKS(RECEIVE_WAIT_US))) {
                 uart_puts("Receive timeout\n");
 
                 return 0;
@@ -226,19 +236,24 @@ static int upload(void) {
     return 1;
 }
 
+static void timeout_start(void) {
+    CMT_CMSTR    = 0;
+    CMT_CMCSR(0) = CMT_CKS_DIV512;
+    CMT_CMCOR(0) = UINT16_MAX;
+    CMT_CMCNT(0) = 0;
+    CMT_CMSTR    = CMT_STR(0);
+}
+
 void application_loader(void) {
-    TIMER(0) = 0;
-    TIMER(3) = 0;
-    TIMER(1) = 0xffffffffu;
-    TIMER(0) = 1;
+    timeout_start();
     uart_puts("Send U to load\n");
     uint8_t command;
-    if (!receive(&command, BOOT_WAIT_US) || command != 'U') {
+    if (!receive(&command, TIMEOUT_TICKS(BOOT_WAIT_US)) || command != 'U') {
         boot();
     }
 
     for (;;) {
-        TIMER(0) = 1;
+        timeout_start();
         uart_puts("J2 loader\n");
         if (upload()) {
             boot();

@@ -1,3 +1,5 @@
+#include "cmt.h"
+
 .section .text.start
 .align 2
 .global _xip_start
@@ -58,9 +60,12 @@ _xip_timer_isr:
   mov.l r1, @r0
   mov.l timer_enable_address, r0
   mov #0, r1
-  mov.l r1, @r0
-  mov.l timer_value_address, r0
-  mov.l r1, @r0
+  mov.w r1, @r0
+  mov.l timer_status_address, r0
+  mov.w @r0, r1
+  mov #0x41, r1
+  mov.w r1, @r0
+  mov.w @r0, r1
   mov.l @r15+, r1
   mov.l @r15+, r0
   rte
@@ -70,9 +75,9 @@ _xip_timer_isr:
 timer_count_address:
   .long 0x80710000
 timer_enable_address:
-  .long 0xff003000
-timer_value_address:
-  .long 0xff003008
+  .long CMT_CMSTR_ADDRESS
+timer_status_address:
+  .long CMT_CMCSR_ADDRESS(0)
 
 .align 4
 .global _xip_vectors

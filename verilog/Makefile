@@ -81,10 +81,10 @@ $(XIP_IMAGE): $(XIPAPP) $(ROOT)/tools/xip_image.py
 .PHONY: force-tang-rom
 force-tang-rom:
 
-$(BOOTROM): force-tang-rom $(wildcard $(ROOT)/sw/bootrom/*) $(ROOT)/fpga/tang-primer/board.properties $(ROOT)/tools/board_config.py
+$(BOOTROM): force-tang-rom $(wildcard $(ROOT)/sw/bootrom/* $(ROOT)/sw/include/*.h) $(ROOT)/fpga/tang-primer/board.properties $(ROOT)/tools/board_config.py
 	$(MAKE) -C $(ROOT)/sw/bootrom
 
-$(XIPAPP): $(wildcard $(ROOT)/sw/xipapp/*) $(ROOT)/fpga/tang-primer/board.properties $(ROOT)/tools/board_config.py
+$(XIPAPP): $(wildcard $(ROOT)/sw/xipapp/* $(ROOT)/sw/include/*.h) $(ROOT)/sw/bootrom/uart.c $(ROOT)/sw/bootrom/uart.h $(ROOT)/fpga/tang-primer/board.properties $(ROOT)/tools/board_config.py
 	$(MAKE) -C $(ROOT)/sw/xipapp
 
 $(TESTROM): $(ROOT)/reference/soc_top/components/cpu/cpu2j0_pkg.vhd

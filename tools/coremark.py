@@ -44,6 +44,7 @@ def environment_hashes():
     files += list((ROOT / "verilog/verif").glob("*_model.v"))
     files += list((ROOT / "third_party/qspiflash/bench/cpp").glob("flashsim.*"))
     files += [ROOT / "sw/bootrom/Makefile", ROOT / "sw/bootrom/uart.c"]
+    files += list((ROOT / "sw/include").glob("*.h"))
     return {str(p.relative_to(ROOT)): sha(p) for p in sorted(files)}
 
 
@@ -154,7 +155,7 @@ def run_suite(args):
     shutil.copytree(rtl, out / "rtl", dirs_exist_ok=True)
     report["rtl_sha256"] = {p.name: sha(p) for p in sorted(rtl.glob("*")) if p.is_file()}
     (out / "source.patch").write_bytes(subprocess.check_output(["git", "diff", "HEAD"], cwd=ROOT))
-    for directory in ("sw/coremark", "third_party/coremark", "sw/bootrom", "spinal/src"):
+    for directory in ("sw/coremark", "third_party/coremark", "sw/bootrom", "sw/include", "spinal/src"):
         shutil.copytree(ROOT / directory, out / "source" / directory, dirs_exist_ok=True)
     shutil.copy2(__file__, out / "source/coremark.py")
     for run in ("performance", "validation"):
@@ -212,7 +213,7 @@ def main():
         p.add_argument("--output", type=Path, required=True)
         p.add_argument("--timeout", type=int, default=1800 if name == "sim" else 300,
                        help="Wall-clock timeout per seed set (simulated time is checked separately)")
-        p.add_argument("--max-cycles", type=int, default=1000000000)
+        p.add_argument("--max-cycles", type=int, default=2000000000)
         p.add_argument("--device", default=load_board("tang-primer")["uartDevice"])
         p.add_argument("--allow-short", action="store_true", help="Calibration only; not a reportable score")
     p = commands.add_parser("compare")

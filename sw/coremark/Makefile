@@ -16,7 +16,7 @@ SIM_OUT := $(ROOT)/build/sw/coremark-sim/$(J2_CLOCK_HZ)/$(RUN)-$(ITERATIONS)
 FLAGS := -m2 -mb -O2 -Wall -Wextra -ffreestanding -fno-builtin -fno-lto -nostdlib
 DEFINES := -DJ2_SRAM_BYTES=$(J2_SRAM_BYTES) -DJ2_CLOCK_HZ=$(J2_CLOCK_HZ) -DITERATIONS=$(ITERATIONS) \
   -DTOTAL_DATA_SIZE=2000 -D$(shell echo $(RUN) | tr a-z A-Z)_RUN=1
-CFLAGS := $(FLAGS) $(DEFINES) -I. -I$(UPSTREAM) -I$(ROOT)/sw/bootrom \
+CFLAGS := $(FLAGS) $(DEFINES) -I. -I$(UPSTREAM) -I$(ROOT)/sw/include -I$(ROOT)/sw/bootrom \
   '-DJ2_COMPILER_FLAGS="$(FLAGS) $(DEFINES)"'
 SOURCES := core_list_join core_main core_matrix core_state core_util
 OBJS := $(addprefix $(OUT)/,$(addsuffix .o,$(SOURCES))) $(OUT)/core_portme.o $(OUT)/entry.o $(OUT)/uart.o
@@ -63,3 +63,5 @@ $(OUT)/main.lst: $(OUT)/main.elf
 	$(CROSS)objdump -d $< > $@
 
 $(OBJS) $(SIM_OUT)/sim_entry.o: $(ROOT)/fpga/tang-primer/board.properties $(ROOT)/tools/board_config.py
+
+$(OBJS): $(ROOT)/sw/include/cmt.h $(ROOT)/sw/include/sci.h

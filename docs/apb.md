@@ -2,7 +2,7 @@
 
 [SoC reference](soc.md) · [AHB5 library](ahb5.md) · [Tang Primer](tang-primer.md)
 
-The CPU and memory subsystem use AHB5. GPIO, UART, timer, SPI control and cache
+The CPU and memory subsystem use AHB5. GPIO, SCI, CMT, SPI control and cache
 control use 32-bit APB4. ROM, SRAM, SDRAM/DDR and XIP data use
 [native AHB memory paths](ahb-memory.md). The peripheral address map is unchanged.
 
@@ -16,8 +16,8 @@ flowchart LR
   BIU --> BRIDGE[AHB5-to-APB4 bridge]
   BRIDGE --> MATRIX[APB matrix]
   MATRIX --> GPIO[GPIO]
-  MATRIX --> UART[UART]
-  MATRIX --> TIMER[Timer]
+  MATRIX --> UART[J2SCI]
+  MATRIX --> TIMER[J2CMT]
   MATRIX --> SPI[SPI control]
   MATRIX --> CACHE[Cache control]
 ```
@@ -102,7 +102,7 @@ HMASTER/HMASTLOCK remain on the AHB side of the standalone BIU.
 
 ## Peripheral implementation
 
-GPIO, UART and timer use the project-owned `Apb4SlaveFactory`, built on Spinal's
+GPIO uses the project-owned `Apb4SlaveFactory`, built on Spinal's
 `BusSlaveFactoryDelayed`. Ordinary register fields honor byte enables, including
 packed halfwords. W1C/W1S and W0C/W0S helpers preserve unselected lanes. An
 all-zero write completes without register updates or write callbacks. Aligned
@@ -112,16 +112,20 @@ Callbacks for address-wide commands must explicitly account for payload lanes.
 Custom `readError`/`writeError` report errors with the usual BusSlaveFactory
 semantics; they do not roll back side effects.
 
-UART keeps `UartCtrl.driveFrom32` and the existing FIFO depths/register map.
-Its TX command at offset 0 requires PSTRB[0]; a low-byte, low-halfword or word
-write is accepted. SPI maps `SpiXdrMasterCtrl.driveFrom` directly through APB4.
+`J2SCI` implements native byte registers at even offsets, with each register
+qualified by its own PSTRB bit. Odd bytes are reserved, reads have no side effects,
+and SCSSR flags use ordinary W0C. Unsupported mode bits are fixed; serial framing,
+errors and four interrupt levels follow the asynchronous SCI subset. See [SCI](sci.md).
+SPI maps `SpiXdrMasterCtrl.driveFrom` directly through APB4.
 Its command at offset 0 requires PSTRB[1:0], and large commands at 0x50/0x54
 require all four lanes. Nonempty writes missing required payload lanes report
 PSLVERR and enqueue nothing. Configuration fields support ordinary masked writes;
 there is no read-modify-write emulation of FIFOs.
 
-The timer keeps its registered IRQ, 1 MHz tick and clear/rearm semantics. A write
-to limit/value clears the counter only when a counter byte lane is selected.
+`J2CMT` uses a native APB4 register map with two halfword-register channels.
+Its counters use PCLK/8, /32, /128 or /512; CMF is W0C and interrupt levels are
+registered. Counter writes preserve unselected bytes and suppress an increment;
+a simultaneous compare clear has priority. See [CMT](cmt.md).
 Cache control offset zero reads busy in bit 1; writing bit 0 with PSTRB[0] set
 invalidates the cache. Other cache control offsets return PSLVERR.
 
@@ -140,9 +144,9 @@ stability, packed register updates, flag helpers and command side effects.
 matrix with three managers: waits, errors, subword accesses, back-to-back AHB
 addresses, whole-domain locks and independent AHB-domain progress.
 
-Peripheral tests cover UART command lanes, SPI command lanes and refill/control
-serialization, timer clear/IRQ behavior, and cache invalidation strobes.
-`sw/xipapp` tests actual SH-2 byte/halfword loads and stores against timer registers
+Peripheral tests cover SCI byte lanes, flags, framing and IRQs, SPI command lanes and refill/control
+serialization, CMT compare/write collisions and IRQ behavior, and cache invalidation strobes.
+`sw/xipapp` tests actual SH-2 byte/halfword loads and stores against CMT registers
 and byte writes to cache invalidation. The shared Tang simulator/FPGA validator
 requires the `APB4 subword tests passed` marker. Wukong runs the same application.
 
@@ -153,7 +157,7 @@ python3 tools/isa_validation.py sim --output build/apb4-validation --timeout 300
 make wukong-boot-sim
 ```
 
-Validation on 2026-11-19 passed all **94 Scala tests**, all **three Tang boot
+The initial APB4 migration on 2026-11-19 passed all **94 Scala tests**, all **three Tang boot
 scenarios**, all **four Wukong boot scenarios**, and hardware RTL generation for
 both boards. Scala formatting and the unchanged C formatting configuration also
 pass. FPGA synthesis, timing and hardware execution have not been rerun for APB4.
@@ -161,3 +165,7 @@ Logs are under `build/apb4-validation/`.
 
 Earlier APB3 hardware timing and boot evidence remains in `build/apb-migration/`; it is not
 an APB4 hardware result. INTC and the core-private PPB are subsequent work.
+
+The subsequent CMT/SCI migration passes **102 Scala tests** and uses the new
+register interfaces described above. See [CMT validation notes](cmt.md#validation-notes)
+and [SCI](sci.md) for its separate evidence and compatibility scope.

@@ -13,7 +13,6 @@ import spinal.lib.io.TriStateArray
 final class J2Soc(
     val config: J2SocConfig = J2SocConfig()
 ) extends Component {
-  private val clockHz = config.clockHz
   val io = new Bundle {
     val memory  = master(J2Ahb.subordinate())
     val uartRx  = in Bool ()
@@ -36,7 +35,7 @@ final class J2Soc(
   private val pioMapping          = SizeMapping(0xff000000L, 0x1000)
   private val uartMapping         = SizeMapping(0xff001000L, 0x1000)
   private val flashControlMapping = SizeMapping(0xff002000L, 0x1000)
-  private val timerMapping        = SizeMapping(0xff003000L, 0x1000)
+  private val cmtMapping          = SizeMapping(0xff003000L, 0x1000)
   private val cacheControlMapping = SizeMapping(0xff004000L, 0x1000)
 
   private val xipCache = new J2ReadCache(xipConfig)
@@ -45,8 +44,8 @@ final class J2Soc(
   private val sram     = new J2Sram(config.sramBytes)
   private val flash    = new J2SpiFlash(xipConfig.lineBytes)
   private val pio      = new J2Pio
-  private val timer    = new J2Timer(clockHz, config.timerTickHz)
-  private val uart     = new J2Uart(config.uartBaud)
+  private val cmt      = new J2CMT
+  private val uart     = new J2SCI
 
   // Cache tags/refill commands use absolute addresses. Only the backend adapter
   // translates the mapped window to flash offsets, so relocation is explicit.
@@ -86,16 +85,16 @@ final class J2Soc(
   peripheralBridge.io.ahb <> peripheralBiu.io.subordinate
   private val peripheralBus = new Apb4Matrix(
     peripheralBridge.apbConfig,
-    Seq(pioMapping, uartMapping, flashControlMapping, timerMapping, cacheControlMapping)
+    Seq(pioMapping, uartMapping, flashControlMapping, cmtMapping, cacheControlMapping)
   )
   peripheralBus.io.input <> peripheralBridge.io.apb
   J2Apb.connect(peripheralBus.io.outputs(0), pio.io.bus)
   J2Apb.connect(peripheralBus.io.outputs(1), uart.io.bus)
   J2Apb.connect(peripheralBus.io.outputs(2), flash.io.control)
-  J2Apb.connect(peripheralBus.io.outputs(3), timer.io.bus)
+  J2Apb.connect(peripheralBus.io.outputs(3), cmt.io.bus)
   J2Apb.connect(peripheralBus.io.outputs(4), xipCache.io.control)
 
-  cpu.io.event.valid              := timer.io.interrupt
+  cpu.io.event.valid              := cmt.io.interrupt(0)
   cpu.io.event.payload.command    := 0
   cpu.io.event.payload.vector     := 0x40
   cpu.io.event.payload.level      := 14

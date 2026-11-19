@@ -172,7 +172,7 @@ $(TESTROM): $(REFSRC) sw/testrom/Makefile \
 		$(wildcard sw/testrom/original/*.c sw/testrom/original/*.h sw/testrom/original/tests/*.s sw/testrom/original/startup/*.x)
 	$(MAKE) -C sw/testrom
 
-$(TESTROM16550): $(REFSRC) sw/testrom/Makefile sw/testrom/uart16550.c \
+$(TESTROM16550): $(REFSRC) sw/testrom/Makefile sw/testrom/uart16550.c sw/bootrom/uart.c sw/include/sci.h \
 		$(wildcard sw/testrom/original/*.c sw/testrom/original/*.h sw/testrom/original/tests/*.s sw/testrom/original/startup/*.x)
 	$(MAKE) -C sw/testrom OUT=$(CURDIR)/build/sw/testrom16550 UART=uart16550
 
@@ -188,7 +188,7 @@ $(REF_VERILOG): tools/ref_microcode_synth.sh tools/gen_td_vhdl.py tools/fix_ghdl
 		reference/j2_cpu_flat.vhd $(REFSRC)
 	tools/ref_microcode_synth.sh
 
-$(REF_SIM): $(REF_VERILOG) $(REF_SIM_SRC) $(REF_COMMON)/sysmodel.h $(REF_COMMON)/wbslave.h $(TOOL_VERILATOR)
+$(REF_SIM): $(REF_VERILOG) $(REF_SIM_SRC) $(REF_COMMON)/sysmodel.h $(REF_COMMON)/cmt.h $(REF_COMMON)/wbslave.h $(TOOL_VERILATOR)
 	mkdir -p $(REF_BUILD)
 	$(VERILATOR) --cc --exe --build -j 4 -O2 --x-assign fast --x-initial fast \
 		-Wno-fatal -Wno-lint -Wno-style --prefix Vref_cpu --top-module j2_cpu_flat \
@@ -275,8 +275,8 @@ wukong-apps: $(TOOL_SH_GCC)
 	python3 tools/xip_image.py pack build/wukong-v1/app-xip/main.bin build/wukong-v1/app-xip/flash.bin
 
 wukong-boot-sim: wukong-probes wukong-rom microcode-data $(TOOL_SBT) $(TOOL_VERILATOR)
-	$(MAKE) -C sw/bootrom BOARD=wukong-v1 OUT=$(CURDIR)/build/wukong-v1/rom-sim J2_UART_BAUD=1600000 EXTRA_CFLAGS='-DBOOT_WAIT_US=1000 -DRECEIVE_WAIT_US=10000'
-	$(MAKE) -C sw/xipapp BOARD=wukong-v1 J2_CLOCK_HZ=$(WUKONG_CLOCK_HZ) OUT=$(CURDIR)/build/wukong-v1/app-sim-xip J2_UART_BAUD=1600000
+	$(MAKE) -C sw/bootrom BOARD=wukong-v1 OUT=$(CURDIR)/build/wukong-v1/rom-sim J2_UART_BAUD=1125000 EXTRA_CFLAGS='-DBOOT_WAIT_US=1000 -DRECEIVE_WAIT_US=10000'
+	$(MAKE) -C sw/xipapp BOARD=wukong-v1 J2_CLOCK_HZ=$(WUKONG_CLOCK_HZ) OUT=$(CURDIR)/build/wukong-v1/app-sim-xip J2_UART_BAUD=1125000
 	python3 tools/xip_image.py pack build/wukong-v1/app-sim-xip/main.bin build/wukong-v1/app-sim-xip/flash.bin
 	cd $(SPINAL_DIR) && $(SBT) -batch "Test / runMain j2.board.WukongBootSim"
 
@@ -297,3 +297,9 @@ wukong-boot-hw: wukong-bitstream wukong-apps
 	VIVADO_HOME="$(VIVADO_HOME)" python3 tools/check_wukong_boot.py --image build/wukong-v1/app-xip/flash.bin --output build/wukong-v1/boot/xip-warm
 
 include tools/fpga/targets.mk
+
+.PHONY: peripheral-model-test
+peripheral-model-test:
+	@mkdir -p build/verilog
+	$(CXX) -std=c++17 -O2 -Wall -Wextra verilog/verif/peripheral_models_test.cpp -o build/verilog/peripheral_models_test
+	build/verilog/peripheral_models_test

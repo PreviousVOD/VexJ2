@@ -21,7 +21,7 @@ arbiters are instantiated explicitly by `J2Soc`.
 
 A standalone **`J2Biu`**, outside the generic AMBA library, covers the peripheral
 domain `0xff000000`–`0xff007fff`. It precedes `Ahb5ToApb4Bridge` and `Apb4Matrix`,
-which selects GPIO, UART, SPI control, timer or cache control. The BIU composes
+which selects GPIO, SCI, SPI control, CMT or cache control. The BIU composes
 standard AHB arbitration and persistent lock ownership at that system boundary;
 programmable access-control policy is not implemented yet. Destination ownership
 uses the physical ingress port. HMASTER reaches the bridge unchanged; APB4 has
@@ -41,17 +41,21 @@ policy. See the [generic AHB5 library](ahb5.md) for protocol and identity rules.
 CPU and memory ports use native AHB5. ROM, SRAM and the XIP cache accept AHB
 through `J2AhbMemoryEndpoint`; Tang SDRAM feeds the SDRAM controller's BMB port
 directly, and Wukong DDR feeds the MIG request/response mailboxes directly.
-GPIO, UART, timer, SPI control and cache control expose native APB4 interfaces.
+GPIO, SCI, CMT, SPI control and cache control expose native APB4 interfaces.
 There is no Wishbone interface or conversion anywhere in the production SoC.
 See [native AHB memory paths](ahb-memory.md) for phase timing and backend contracts.
 
 Peripheral registers support naturally aligned byte, halfword and word AHB
 accesses. The bridge aligns the APB address and generates `PSTRB` for writes;
 the CPU selects read lanes from the returned word. The SoC uses word-invariant
-big-endian lanes: a register's low byte is at base + 3, its low halfword at
-base + 2. Read side effects apply to the whole APB word. UART/SPI command
-registers require their complete payload lanes; see the [APB4 contract](apb.md).
-The software addresses and flash image format are unchanged.
+big-endian lanes: within a 32-bit register, its low byte is at base + 3 and low
+halfword at base + 2. CMT packs 16-bit registers and SCI packs 8-bit registers at
+their documented offsets. Both have side-effect-free reads. SPI command writes
+require their complete payload lanes; see the [APB4 contract](apb.md).
+
+The peripheral base addresses and flash image format are unchanged, but the
+CMT and SCI register interfaces replace the previous timer and UART maps.
+Rebuild firmware for these interfaces; old application binaries are incompatible.
 
 ## Memory map
 
@@ -67,9 +71,9 @@ The two external-memory entries below are alternatives selected by the board.
 | Tang Primer SiP SDRAM, 8 MiB | `0x80000000`–`0x807fffff` |
 | Wukong DDR3, 256 MiB | `0x80000000`–`0x8fffffff` |
 | GPIO | `0xff000000` |
-| UART | `0xff001000` |
+| SCI | `0xff001000` |
 | SPI flash control | `0xff002000` |
-| Architecture timer | `0xff003000` |
+| CMT | `0xff003000` |
 | XIP cache control | `0xff004000` |
 
 ROM and SRAM describe native Spinal `Mem` with synchronous one-cycle reads.
@@ -142,19 +146,37 @@ Pad primitives and pin assignments are board-specific; see
 [Tang Primer GPIO](tang-primer.md#gpio-pads) and
 [Wukong board wiring](wukong-v1.md#board-profile).
 
-## Architecture timer
+## Compare match timer
 
-`J2Timer` connects the native SpinalHDL `Timer` through `Apb4SlaveFactory`.
-Its 32-bit counter ticks at 1 MHz, derived from the parameterized SoC clock, and
-stops at the programmable limit. The interrupt is a level request on vector
-`0x40` at priority 14; software must stop, clear, or rearm the timer in the ISR.
-The CPU IRQ is registered: assertion and deassertion follow the enabled compare
-result by one system clock. Pending status still reports the current comparison.
-This keeps the timer comparator behind a register before CPU event selection.
+`J2CMT` implements two 16-bit SH7124/SH7125 CMT channels at the existing
+`0xff003000` SoC address. APB PCLK is Pφ; each channel selects PCLK/8, /32,
+/128 or /512. There is no separate timer clock source or fixed 1 MHz tick.
+See [CMT behavior and software migration](cmt.md).
 
-| Offset | Function |
-|---:|---|
-| `0x00` | Bit 0 enables counter ticks |
-| `0x04` | Read/write limit; writing clears the counter |
-| `0x08` | Read counter; any write clears it |
-| `0x0c` | Bit 0 enables the interrupt; bit 8 is read-only pending status |
+| Offset | Register | Reset |
+|---:|---|---:|
+| `0x00` | CMSTR: STR0/STR1 start bits | `0x0000` |
+| `0x02` | CMCSR0: CMF[7], CMIE[6], CKS[1:0] | `0x0000` |
+| `0x04` | CMCNT0 | `0x0000` |
+| `0x06` | CMCOR0 | `0xffff` |
+| `0x08` | CMCSR1 | `0x0000` |
+| `0x0a` | CMCNT1 | `0x0000` |
+| `0x0c` | CMCOR1 | `0xffff` |
+
+Registers are halfwords, packed into BE32 APB words. Byte and halfword writes
+preserve adjacent fields; aligned longword accesses cover both halfwords.
+CMF is sticky W0C: write zero to clear, one to preserve; reads have no side effects.
+On a match, the counter clears and resumes periodic counting, with period
+`(CMCOR + 1) * divisor` PCLK cycles. Equality can also set CMF while stopped.
+
+The two interrupt outputs are registered `CMIE && CMF` levels. Until the private
+INTC is implemented, CMI0 retains the legacy CPU vector `0x40`, priority 14;
+CMI1 is available on the module but is not yet routed to the CPU.
+
+## Serial interface
+
+`J2SCI` at `0xff001000` follows the SH7124/SH7125 SCI byte-register layout.
+It supports asynchronous 7/8-bit UART framing, parity, stop bits, errors and four
+registered interrupt sources. Unsupported mode bits are hard-wired. The shared
+software driver polls TDRE/RDRF; INTC routing remains future work. See the
+[SCI register and timing reference](sci.md).

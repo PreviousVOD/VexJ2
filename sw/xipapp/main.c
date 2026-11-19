@@ -1,6 +1,7 @@
 #include <stdint.h>
 
 /* App */
+#include "cmt.h"
 #include "uart.h"
 
 #define SDRAM_BASE        0x80000000
@@ -95,73 +96,63 @@ static int sdram_test(void) {
     }
 }
 
-#define TIMER_ENABLE      (*(volatile uint32_t *)0xff003000)
-#define TIMER_LIMIT       (*(volatile uint32_t *)0xff003004)
-#define TIMER_VALUE       (*(volatile uint32_t *)0xff003008)
-#define TIMER_IRQ         (*(volatile uint32_t *)0xff00300c)
-#define TIMER_IRQ_PENDING 0x100
-#define TIMER_COUNT       (*(volatile uint32_t *)0x80710000)
+#define TIMER_COUNT (*(volatile uint32_t *)0x80710000)
 
-/* APB4 uses data byte lanes; SH-2 maps the low lane to word address + 3. */
+/* The two registers share an APB word; subword writes must preserve each other. */
 static int apb_test(void) {
-    volatile uint8_t  *limit_bytes  = (volatile uint8_t *)0xff003004;
-    volatile uint16_t *limit_halves = (volatile uint16_t *)0xff003004;
+    volatile uint32_t *pair  = (volatile uint32_t *)CMT_CMCNT_ADDRESS(0);
+    volatile uint8_t  *bytes = (volatile uint8_t *)pair;
     unsigned           index;
 
-    TIMER_ENABLE = 0;
-    TIMER_IRQ    = 0;
-    TIMER_LIMIT  = 0x11223344;
+    CMT_CMSTR    = 0;
+    CMT_CMCSR(0) = 0;
+    *pair        = 0x11223344;
     for (index = 0; index < 4; ++index) {
-        if (limit_bytes[index] != (0x11U * (index + 1))) {
+        if (bytes[index] != (0x11U * (index + 1))) {
             return 0;
         }
     }
 
-    if (limit_halves[0] != 0x1122) {
+    if (CMT_CMCNT(0) != 0x1122) {
         return 0;
     }
 
-    if (limit_halves[1] != 0x3344) {
+    if (CMT_CMCOR(0) != 0x3344) {
         return 0;
     }
 
     for (index = 0; index < 4; ++index) {
-        uint32_t shift     = (3 - index) * 8;
-        uint32_t before    = TIMER_LIMIT;
-        limit_bytes[index] = 0xa0 + index;
-        if (TIMER_LIMIT != ((before & ~(0xffU << shift)) | ((0xa0U + index) << shift))) {
+        uint32_t shift  = (3 - index) * 8;
+        uint32_t before = *pair;
+        bytes[index]    = 0xa0 + index;
+        if (*pair != ((before & ~(0xffU << shift)) | ((0xa0U + index) << shift))) {
             return 0;
         }
     }
 
-    limit_halves[0] = 0xbeef;
-    if (TIMER_LIMIT != 0xbeefa2a3) {
+    CMT_CMCNT(0) = 0xbeef;
+    if (*pair != 0xbeefa2a3) {
         return 0;
     }
 
-    limit_halves[1] = 0x1234;
-    if (TIMER_LIMIT != 0xbeef1234) {
+    CMT_CMCOR(0) = 0x1234;
+    if (*pair != 0xbeef1234) {
         return 0;
     }
 
-    /* An upper byte cannot change the low enable bit. */
-    *(volatile uint8_t *)0xff003000 = 1;
-    if (TIMER_ENABLE != 0) {
+    *(volatile uint8_t *)CMT_CMSTR_ADDRESS = 1;
+    if (CMT_CMSTR != 0) {
         return 0;
     }
 
-    *(volatile uint8_t *)0xff003003 = 1;
-    if (TIMER_ENABLE != 1) {
+    *(volatile uint8_t *)(CMT_CMSTR_ADDRESS + 1) = CMT_STR(0);
+    if (CMT_CMSTR != CMT_STR(0)) {
         return 0;
     }
 
-    *(volatile uint16_t *)0xff003002 = 0;
-    if (TIMER_ENABLE != 0) {
-        return 0;
-    }
-
-    TIMER_VALUE = 0;
-    TIMER_LIMIT = 0;
+    CMT_CMSTR    = 0;
+    CMT_CMCOR(0) = UINT16_MAX;
+    CMT_CMCNT(0) = 0;
 
     return 1;
 }
@@ -173,21 +164,19 @@ static void timer_set_mask(uint32_t mask) {
     __asm__ volatile("ldc %0, sr" : : "r"(status));
 }
 
-static int timer_test(void) {
+static int cmt_test(void) {
     volatile uint32_t wait;
 
-    TIMER_ENABLE = 0;
-    TIMER_IRQ    = 0;
-    TIMER_VALUE  = 0;
-    TIMER_COUNT  = 0;
-    TIMER_LIMIT  = 64;
     timer_set_mask(15);
-    TIMER_IRQ    = 1;
-    TIMER_ENABLE = 1;
-
-    for (wait = 0; wait < 100000 && !(TIMER_IRQ & TIMER_IRQ_PENDING); ++wait) {
+    CMT_CMSTR    = 0;
+    CMT_CMCSR(0) = CMT_CMIE | CMT_CKS_DIV32;
+    CMT_CMCNT(0) = 0;
+    TIMER_COUNT  = 0;
+    CMT_CMCOR(0) = 63;
+    CMT_CMSTR    = CMT_STR(0);
+    for (wait = 0; wait < 100000 && !(CMT_CMCSR(0) & CMT_CMF); ++wait) {
     }
-    if (!(TIMER_IRQ & TIMER_IRQ_PENDING)) {
+    if (!(CMT_CMCSR(0) & CMT_CMF)) {
         return 1;
     }
 
@@ -202,37 +191,54 @@ static int timer_test(void) {
         return 2;
     }
 
-    if ((TIMER_IRQ & TIMER_IRQ_PENDING)) {
+    if (CMT_CMCSR(0) & CMT_CMF) {
         return 2;
     }
 
-    TIMER_LIMIT  = 128;
-    TIMER_ENABLE = 1;
+    CMT_CMCOR(0) = 127;
+    CMT_CMCNT(0) = 0;
+    CMT_CMSTR    = CMT_STR(0);
     for (wait = 0; wait < 100000 && TIMER_COUNT == 1; ++wait) {
     }
     if (TIMER_COUNT != 2) {
         return 3;
     }
 
-    if ((TIMER_IRQ & TIMER_IRQ_PENDING)) {
-        return 3;
-    }
-
-    TIMER_LIMIT  = 5000;
-    TIMER_ENABLE = 1;
+    CMT_CMCOR(0) = 4999;
+    CMT_CMCNT(0) = 0;
+    CMT_CMSTR    = CMT_STR(0);
     __asm__ volatile("sleep" ::: "memory");
     if (TIMER_COUNT != 3) {
         return 4;
     }
 
-    if ((TIMER_IRQ & TIMER_IRQ_PENDING)) {
-        return 4;
+    timer_set_mask(15);
+    CMT_CMCSR(0) = 0;
+    /* Channel 1 is independently programmable; its IRQ awaits INTC routing. */
+    CMT_CMCSR(1) = CMT_CKS_DIV512;
+    CMT_CMCNT(1) = 0;
+    CMT_CMCOR(1) = 7;
+    CMT_CMSTR    = CMT_STR(1);
+    for (wait = 0; wait < 100000 && !(CMT_CMCSR(1) & CMT_CMF); ++wait) {
+    }
+    if (!(CMT_CMCSR(1) & CMT_CMF)) {
+        return 5;
     }
 
-    timer_set_mask(15);
-    TIMER_ENABLE = 0;
-    TIMER_IRQ    = 0;
-    TIMER_VALUE  = 0;
+    CMT_CMSTR    = 0;
+    CMT_CMCOR(1) = UINT16_MAX;
+    CMT_CMCSR(1) = CMT_CMF | CMT_CKS_DIV512;
+    if (!(CMT_CMCSR(1) & CMT_CMF)) {
+        return 5;
+    }
+
+    CMT_CMCSR(1) = CMT_CKS_DIV512;
+    if (CMT_CMCSR(1) & CMT_CMF) {
+        return 5;
+    }
+
+    CMT_CMCNT(0) = 0;
+    CMT_CMCNT(1) = 0;
 
     return 0;
 }
@@ -241,7 +247,7 @@ static volatile uint32_t startup_data = 0x13579bdf;
 static volatile uint32_t startup_bss[2];
 
 void xip_main(void) {
-    int timer_result;
+    int cmt_result;
     uart_init();
     if (startup_data != 0x13579bdf || startup_bss[0] || startup_bss[1]) {
         uart_puts("Startup initialization failed\n");
@@ -279,22 +285,22 @@ void xip_main(void) {
     }
 
     uart_puts("SDRAM tests passed\n");
-    timer_result = timer_test();
-    if (timer_result) {
-        uart_puts("Timer tests failed: ");
-        uart_hex(timer_result, 1);
+    cmt_result = cmt_test();
+    if (cmt_result) {
+        uart_puts("CMT tests failed: ");
+        uart_hex(cmt_result, 1);
         uart_tx(' ');
-        uart_hex(TIMER_IRQ, 8);
+        uart_hex(CMT_CMCSR(0), 4);
         uart_tx(' ');
         uart_hex(TIMER_COUNT, 8);
         uart_tx(' ');
-        uart_hex(TIMER_VALUE, 8);
+        uart_hex(CMT_CMCNT(0), 4);
         uart_tx('\n');
         for (;;) {
         }
     }
 
-    uart_puts("Timer tests passed\n");
+    uart_puts("CMT tests passed\n");
     if (!isa_test()) {
         for (;;) {
         }

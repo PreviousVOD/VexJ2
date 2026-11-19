@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MARKERS = (
     "Startup initialization passed",
     "APB4 subword tests passed", "XIP cache tests passed",
-    "SDRAM tests passed", "Timer tests passed",
+    "SDRAM tests passed", "CMT tests passed",
     "ISA atomics passed (SRAM/SDRAM)", "ISA word fetch passed (SRAM/SDRAM)",
     "ISA forwarding passed",
     "ISA multiply pipeline passed", "ISA MAC saturation passed", "ISA exceptions passed",

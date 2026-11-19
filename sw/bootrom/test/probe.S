@@ -6,7 +6,7 @@
 _xip_start:
   mov.l status_address,r1
   mov.l data_address,r2
-  mov.l available_mask,r3
+  mov #0x80,r3
   mova message,r0
   mov r0,r4
 next_byte:
@@ -14,18 +14,19 @@ next_byte:
   tst r0,r0
   bt finished
 wait_space:
-  mov.l @r1,r5
+  mov.b @r1,r5
   tst r3,r5
   bt wait_space
-  mov.l r0,@r2
+  mov.b r0,@r2
+  mov #0x7f,r0
+  mov.b r0,@r1
   bra next_byte
   nop
 finished:
   bra finished
   nop
 .align 2
-status_address: .long 0xff001004
-data_address: .long 0xff001000
-available_mask: .long 0x00ff0000
+status_address: .long 0xff001008
+data_address: .long 0xff001006
 message: .asciz "Wukong loader app passed\r\n"
 .space 513,0x5a
