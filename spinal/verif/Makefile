@@ -30,7 +30,7 @@ microcode-test: $(MICRO_BUILD)/VJ2MicrocodedCore $(TESTROM) $(SIMTESTS)
 generate: $(SPINAL_GENERATED)
 
 $(SPINAL_GENERATED) &: $(SCALA_SRC) $(SPINAL_RESOURCES) $(SPINAL_BUILD) $(TESTROM)
-	J2_ROM="$(TESTROM)" $(MAKE) -C $(ROOT) spinal-generate
+	J2_SPINAL_OUT=../build/spinal/verilog $(MAKE) -C $(ROOT) spinal-generate
 
 $(MICRO_BUILD)/VJ2MicrocodedCore: cpp/sh2sim.cpp $(MICRO_VERILOG) $(HARNESS_HEADERS)
 	mkdir -p $(MICRO_BUILD)

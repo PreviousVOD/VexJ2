@@ -212,7 +212,7 @@ startup behavior in testing; do not use that stimulus as a hardware reset model.
 Board-independent SoC and peripheral logic lives under
 `spinal/src/main/scala/j2/soc` and `j2/periph`. The Tang Primer top and EG4
 PLL, pad, SDRAM and memory wrappers are under
-`spinal/src/main/scala/j2/board/tang_primer`. The design uses
+`spinal/src/main/scala/j2/board/tang-primer`. The design uses
 `WishboneUartCtrl`, `WishboneGpio`, `Apb3SpiXdrMasterCtrl`, and `BmbSdramCtrl`.
 The handwritten Verilog SoC, UART16550, `llqspi`, and third-party Wishbone
 interconnect have been removed.
@@ -370,8 +370,9 @@ hardware boot despite a successful simulation and bitstream build.
 
 Simulator and FPGA CPU generation use separate output directories. Sharing one
 output replaced the simulation ROM with the EG4 BlackBox on the next simulator
-build. The generated CPU now goes to `build/spinal/verilog-fpga` when
-`J2_FPGA=1`.
+build. FPGA CPU output remains in `build/spinal/verilog-fpga`; the current
+entry point is `Generate_TangPrimer` (`make tang-generate`), replacing the
+historical `J2_FPGA=1` switch in the common generator.
 
 ### SPI flash and XIP
 
@@ -420,15 +421,12 @@ not only flash, use LVCMOS33. The boot ROM limits image sizes to its 1 MiB
 capacity and sends sixteen `0xff` bytes before identification to recover a
 flash left in continuous/QPI mode.
 
-The resident ROM in `sw/xiprom` supports JEDEC ID, 64 KiB erase, 256-byte page
-program, busy polling, and read-back verification. UART uploads require two
-flow-control handshakes: wait for `Program flash` after erase, then wait for a
-`Page xxxxxx` acknowledgment after each page is programmed and verified. Raw
-streaming overruns the 16550's 16-byte receive FIFO while the CPU is working on
-flash. `tools/xip_image.py` packs the 32-byte application header and implements
-the host protocol. Its load-address field selects direct XIP execution at
-`0x10000020` or copying to an address within the 8 MiB SDRAM window before
-jumping to the application entry.
+The current common ROM in `sw/bootrom` supports JEDEC ID, 64 KiB erase,
+256-byte page programming, bounded busy polling and read-back verification.
+The uploader waits for `Send image`, then for `Received xxxxxx` after each
+chunk is programmed and verified. It uses internal SRAM only and commits the
+image header after validating the full payload checksum. Only direct XIP
+images are supported; the earlier ROM-managed SDRAM-load mode is removed.
 
 `make xip-hw-sim` verifies both a preloaded direct XIP boot and a blank-flash
 UART upload followed by XIP execution. The test image prints `XIP CPU tests

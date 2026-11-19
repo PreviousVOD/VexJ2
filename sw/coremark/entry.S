@@ -35,7 +35,7 @@ _coremark_start:
   bra 5b
   nop
 .align 2
-stack_top: .long 0x00010000
+stack_top: .long (0x00008000 + J2_SRAM_BYTES)
 mask_interrupts: .long 0x000000f0
 data_source: .long _data_load
 data_start: .long _data_start

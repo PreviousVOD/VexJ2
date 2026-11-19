@@ -117,9 +117,23 @@ static int timer_test(void) {
   return 0;
 }
 
+static volatile uint32_t startup_data = 0x13579bdf;
+static volatile uint32_t startup_bss[2];
+
 void xip_main(void) {
   int timer_result;
   uart_init();
+  if (startup_data != 0x13579bdf || startup_bss[0] || startup_bss[1]) {
+    uart_puts("Startup initialization failed\n");
+    for (;;) {}
+  }
+  startup_data ^= 0xffffffffu;
+  startup_bss[0] = 0x12345678;
+  if (startup_data != 0xeca86420 || startup_bss[0] != 0x12345678) {
+    uart_puts("Startup writable data failed\n");
+    for (;;) {}
+  }
+  uart_puts("Startup initialization passed\n");
   if (!cache_test()) {
     uart_puts("XIP cache tests failed\n");
     for (;;) {}

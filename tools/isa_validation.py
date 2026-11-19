@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run the same ISA application in the native SoC simulator and on Tang Primer."""
+from board_config import load as load_board
 import argparse
 import contextlib
 import hashlib
@@ -16,6 +17,7 @@ import xip_image
 
 ROOT = Path(__file__).resolve().parents[1]
 MARKERS = (
+    "Startup initialization passed",
     "XIP cache tests passed",
     "SDRAM tests passed", "Timer tests passed",
     "ISA atomics passed (SRAM/SDRAM)", "ISA word fetch passed (SRAM/SDRAM)",
@@ -66,7 +68,7 @@ def reboot(device, log_path, timeout):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("sim", "hardware"))
-    parser.add_argument("--device", default="/dev/ttyACM0")
+    parser.add_argument("--device", default=load_board("tang-primer")["uartDevice"])
     parser.add_argument("--output", type=Path, default=ROOT / "build/isa-validation")
     parser.add_argument("--timeout", type=int, default=180)
     args = parser.parse_args()
@@ -94,7 +96,7 @@ def main():
             report["runs"].append(name)
             print(name + ": PASS", flush=True)
     else:
-        bitstream = ROOT / "build/fpga/j2_tang_primer_verilog/j2_tang_primer.bit"
+        bitstream = ROOT / "build/fpga/tang-primer/j2_tang_primer.bit"
         report["bitstream_sha256"] = digest(bitstream)
         timing = ROOT / "build/logs/td_verilog/j2_tang_primer_timing.txt"
         errors = re.findall(r"(\d+) errors detected", timing.read_text())

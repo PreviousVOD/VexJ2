@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from board_config import load as load_board
 import argparse
 import os
 import select
@@ -15,7 +16,8 @@ HEADER_SIZE = 32
 XIP_LOAD_ADDRESS = XIP_BASE + HEADER_SIZE
 
 
-def pack(input_path, output_path, load_address=XIP_LOAD_ADDRESS):
+def pack(input_path, output_path):
+    load_address = XIP_LOAD_ADDRESS
     application = input_path.read_bytes()
     if not application:
         raise ValueError("empty application")
@@ -68,7 +70,16 @@ def upload(image_path, device, wait_for_banner=True, success_marker=b"XIP CPU te
         written = 0
         while written < len(header):
             written += os.write(fd, header[written:])
-        read_until(fd, [b"Program flash"], 120, output)
+        failures = [b"Bad image range", b"Receive timeout", b"Invalid image header",
+                    b"Erase error", b"Program error", b"Header error", b"Verify error",
+                    b"checksum error", b"Platform failure"]
+
+        def expect(marker, timeout):
+            read_until(fd, [marker, *failures], timeout, output)
+            if any(error in output for error in failures):
+                raise RuntimeError("upload or application boot failed")
+
+        expect(b"Send image", 120)
         offset = 0
         while offset < len(image):
             count = min(256, len(image) - offset)
@@ -76,10 +87,11 @@ def upload(image_path, device, wait_for_banner=True, success_marker=b"XIP CPU te
             written = 0
             while written < len(frame):
                 written += os.write(fd, frame[written:])
-            marker = f"Page {offset:06x}".encode()
-            read_until(fd, [marker, b"Verify error"], 120, output)
+            marker = f"Received {offset:06x}".encode()
+            expect(marker, 120)
             offset += count
-        read_until(fd, [success_marker, b"Verify error", b"checksum error"], result_timeout, output)
+        expect(b"Flash verified", 120)
+        expect(success_marker, result_timeout)
         if success_marker not in output:
             raise RuntimeError("upload or application boot failed")
     finally:
@@ -92,18 +104,15 @@ def main():
     pack_parser = subcommands.add_parser("pack")
     pack_parser.add_argument("input", type=Path)
     pack_parser.add_argument("output", type=Path)
-    pack_parser.add_argument("--load-address", type=lambda value: int(value, 0),
-                             default=XIP_LOAD_ADDRESS,
-                             help="application destination; default is the XIP payload address")
     upload_parser = subcommands.add_parser("upload")
     upload_parser.add_argument("image", type=Path)
-    upload_parser.add_argument("--device", default="/dev/ttyACM0")
+    upload_parser.add_argument("--device", default=load_board("tang-primer")["uartDevice"])
     upload_parser.add_argument("--no-wait", action="store_true",
                                help="upload to a ROM already waiting in J2 loader")
     args = parser.parse_args()
 
     if args.command == "pack":
-        pack(args.input, args.output, args.load_address)
+        pack(args.input, args.output)
     else:
         upload(args.image, args.device, not args.no_wait)
 

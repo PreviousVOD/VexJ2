@@ -1,6 +1,6 @@
 package j2.board
 
-import j2.bus.J2MigPort
+import j2.board.wukong_v1.J2MigPort
 import spinal.core.ClockDomain
 import spinal.core.sim._
 import scala.collection.mutable

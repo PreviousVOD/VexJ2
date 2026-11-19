@@ -8,12 +8,14 @@ VERILATOR ?= $(TOOL_VERILATOR)
 SPINAL_DIR := spinal
 SPINAL_OUT := build/spinal/verilog
 TD_HOME ?=
-J2_CLOCK_HZ ?= 32000000
-WUKONG_CLOCK_HZ = $(shell sed -n 's/^clockHz=//p' fpga/wukong-v1/board.properties)
+ifndef J2_CLOCK_HZ
+J2_CLOCK_HZ := $(shell python3 tools/board_config.py tang-primer --get clockHz)
+endif
+WUKONG_CLOCK_HZ = $(shell python3 tools/board_config.py wukong-v1 --get clockHz)
 export J2_CLOCK_HZ
 TESTROM := $(CURDIR)/build/sw/testrom/main.bin
 TESTROM16550 := $(CURDIR)/build/sw/testrom16550/main.bin
-BOOTROM := $(CURDIR)/build/sw/xiprom/main.bin
+BOOTROM := $(CURDIR)/build/tang-primer/rom/main.bin
 XIP_ROM := $(CURDIR)/build/verilog/xip/j2_validation_rom.hex
 XIPAPP := $(CURDIR)/build/sw/xipapp/main.bin
 XIP_IMAGE := $(CURDIR)/build/sw/xipapp/flash.bin
@@ -89,28 +91,42 @@ $(TOOL_VERILATOR): $(TOOLCHAIN_SCRIPT)
 $(TOOL_SH_GCC): $(TOOLCHAIN_SCRIPT)
 	$(TOOLCHAIN_SCRIPT) sh-toolchain
 
-spinal-test spinal-generate: $(TOOL_SBT)
+spinal-test spinal-generate tang-generate tang-sim-generate: $(TOOL_SBT)
 spinal-verif spinal-microcode-verif verilog-hw-sim xip-hw-sim reference-verif fpga-clock-test: $(TOOL_VERILATOR)
 $(TESTROM) $(TESTROM16550) $(SIMTESTS) $(BOOTROM) $(XIPAPP): | $(TOOL_SH_GCC)
 
 spinal-test: microcode-data
 	cd $(SPINAL_DIR) && $(SBT) -batch test
 
-spinal-generate: microcode-data $(XIP_ROM)
+spinal-generate: microcode-data
 	mkdir -p $(SPINAL_OUT)
 	cd $(SPINAL_DIR) && $(SBT) -batch "runMain j2.Generate"
+
+# Board entry points use the same common generation settings. Simulation of
+# the Tang board wrapper explicitly selects inferred memories and clock bypass.
+.PHONY: tang-generate tang-sim-generate
+.PHONY: tang-config
+tang-config:
+	python3 tools/board_config.py tang-primer
+
+tang-generate: tang-config microcode-data $(XIP_ROM)
+	cd $(SPINAL_DIR) && $(SBT) -batch "runMain j2.Generate_TangPrimer"
+
+tang-sim-generate: tang-config microcode-data $(XIP_ROM)
+	cd $(SPINAL_DIR) && $(SBT) -batch "runMain j2.Generate_TangPrimer --sim"
 
 # Wukong builds its platform ROM, quad SF3 interface and MIG DDR integration.
 # No implicit programming or shared-flash writes.
 VIVADO_HOME ?= /home/imi415/Softwares/Tools/Xilinx/2025.2/Vivado
 .PHONY: wukong-rom wukong-generate wukong-synth wukong-bitstream wukong-sim wukong-reset-sim wukong-program wukong-uart
 wukong-rom: $(TOOL_SH_GCC)
-	python3 tools/wukong_config.py
-	$(MAKE) -C sw/wukongrom
+	python3 tools/board_config.py wukong-v1
+	$(MAKE) -C sw/bootrom BOARD=wukong-v1
 
 wukong-generate: wukong-rom microcode-data $(TOOL_SBT)
-	cd $(SPINAL_DIR) && $(SBT) -batch "runMain j2.GenerateWukong"
+	cd $(SPINAL_DIR) && $(SBT) -batch "runMain j2.Generate_Wukong"
 
+wukong-synth: export J2_SPINAL_OUT := ../build/wukong-v1/rtl
 wukong-synth: wukong-mig wukong-generate
 	VIVADO_HOME="$(VIVADO_HOME)" bash tools/build_wukong.sh
 
@@ -202,13 +218,16 @@ spinal-program: verilog-program
 verilog-hw-sim: $(TESTROM16550)
 	$(MAKE) -C verilog test
 
-$(BOOTROM): $(wildcard sw/xiprom/*)
-	$(MAKE) -C sw/xiprom
+.PHONY: force-tang-rom
+force-tang-rom:
+
+$(BOOTROM): force-tang-rom $(wildcard sw/bootrom/*) fpga/tang-primer/board.properties tools/board_config.py
+	$(MAKE) -C sw/bootrom
 
 $(XIP_ROM): $(BOOTROM) tools/gen_verilog_rom.py
 	python3 tools/gen_verilog_rom.py $(BOOTROM) $@
 
-$(XIPAPP): $(wildcard sw/xipapp/*)
+$(XIPAPP): $(wildcard sw/xipapp/*) fpga/tang-primer/board.properties tools/board_config.py
 	$(MAKE) -C sw/xipapp
 
 $(XIP_IMAGE): $(XIPAPP) tools/xip_image.py
@@ -235,11 +254,12 @@ wukong-mig:
 	test -s build/wukong-v1/ddr/generation.pass
 
 wukong-ddr-generate: $(TOOL_SBT)
-	cd $(SPINAL_DIR) && $(SBT) -batch "runMain j2.GenerateWukongDdr"
+	cd $(SPINAL_DIR) && $(SBT) -batch "runMain j2.Generate_WukongDdr"
 
 wukong-ddr-sim: $(TOOL_SBT) $(TOOL_VERILATOR)
 	cd $(SPINAL_DIR) && $(SBT) -batch "testOnly j2.board.WukongDdrBistSpec"
 
+wukong-ddr-bitstream: export J2_SPINAL_OUT := ../build/wukong-v1/ddr/rtl
 wukong-ddr-bitstream: wukong-mig wukong-ddr-generate
 	cd build/wukong-v1/ddr && VIVADO_HOME="$(VIVADO_HOME)" bash "$(CURDIR)/tools/run_vivado.sh" -mode batch -notrace \
 		-source "$(CURDIR)/tools/build_wukong_ddr.tcl" -log implementation.log -journal implementation.jou
@@ -251,23 +271,19 @@ wukong-ddr-uart:
 
 .PHONY: wukong-bridge-sim
 wukong-bridge-sim: $(TOOL_SBT) $(TOOL_VERILATOR)
-	cd $(SPINAL_DIR) && $(SBT) -batch "testOnly j2.bus.J2WishboneDdrBridgeSpec"
+	cd $(SPINAL_DIR) && $(SBT) -batch "testOnly j2.bus.J2AhbDdrBridgeSpec"
 
 # The simulation firmware changes only baud and host-response timeouts, keeping
 # FPGA and simulated ROMs in separate output trees.
 .PHONY: wukong-apps wukong-boot-sim wukong-image-test
 wukong-apps: $(TOOL_SH_GCC)
-	$(MAKE) -C sw/xipapp J2_CLOCK_HZ=$(WUKONG_CLOCK_HZ) OUT=$(CURDIR)/build/wukong-v1/app-xip
+	$(MAKE) -C sw/xipapp BOARD=wukong-v1 J2_CLOCK_HZ=$(WUKONG_CLOCK_HZ) OUT=$(CURDIR)/build/wukong-v1/app-xip
 	python3 tools/xip_image.py pack build/wukong-v1/app-xip/main.bin build/wukong-v1/app-xip/flash.bin
-	$(MAKE) -C sw/xipapp J2_CLOCK_HZ=$(WUKONG_CLOCK_HZ) OUT=$(CURDIR)/build/wukong-v1/app-ddr LOAD_ADDRESS=0x80400000
-	python3 tools/xip_image.py pack build/wukong-v1/app-ddr/main.bin build/wukong-v1/app-ddr/flash.bin --load-address 0x80400000
 
 wukong-boot-sim: wukong-probes wukong-rom microcode-data $(TOOL_SBT) $(TOOL_VERILATOR)
-	$(MAKE) -C sw/wukongrom OUT=$(CURDIR)/build/wukong-v1/rom-sim J2_UART_BAUD=1600000 EXTRA_CFLAGS='-DBOOT_WAIT_US=1000 -DRECEIVE_WAIT_US=10000'
-	$(MAKE) -C sw/xipapp J2_CLOCK_HZ=$(WUKONG_CLOCK_HZ) OUT=$(CURDIR)/build/wukong-v1/app-sim-xip J2_UART_BAUD=1600000
+	$(MAKE) -C sw/bootrom BOARD=wukong-v1 OUT=$(CURDIR)/build/wukong-v1/rom-sim J2_UART_BAUD=1600000 EXTRA_CFLAGS='-DBOOT_WAIT_US=1000 -DRECEIVE_WAIT_US=10000'
+	$(MAKE) -C sw/xipapp BOARD=wukong-v1 J2_CLOCK_HZ=$(WUKONG_CLOCK_HZ) OUT=$(CURDIR)/build/wukong-v1/app-sim-xip J2_UART_BAUD=1600000
 	python3 tools/xip_image.py pack build/wukong-v1/app-sim-xip/main.bin build/wukong-v1/app-sim-xip/flash.bin
-	$(MAKE) -C sw/xipapp J2_CLOCK_HZ=$(WUKONG_CLOCK_HZ) OUT=$(CURDIR)/build/wukong-v1/app-sim-ddr LOAD_ADDRESS=0x80400000 J2_UART_BAUD=1600000
-	python3 tools/xip_image.py pack build/wukong-v1/app-sim-ddr/main.bin build/wukong-v1/app-sim-ddr/flash.bin --load-address 0x80400000
 	cd $(SPINAL_DIR) && $(SBT) -batch "Test / runMain j2.board.WukongBootSim"
 
 wukong-image-test: wukong-rom
@@ -275,18 +291,13 @@ wukong-image-test: wukong-rom
 
 .PHONY: wukong-probes
 wukong-probes: $(TOOL_SH_GCC)
-	mkdir -p build/wukong-v1/probe-xip build/wukong-v1/probe-ddr
-	sh-none-elf-gcc -m2 -mb -nostdlib -T sw/xipapp/app.x sw/wukongrom/test/probe.S -o build/wukong-v1/probe-xip/main.elf
+	mkdir -p build/wukong-v1/probe-xip
+	sh-none-elf-gcc -m2 -mb -nostdlib -T sw/xipapp/app.x sw/bootrom/test/probe.S -o build/wukong-v1/probe-xip/main.elf
 	sh-none-elf-objcopy -O binary build/wukong-v1/probe-xip/main.elf build/wukong-v1/probe-xip/main.bin
 	python3 tools/xip_image.py pack build/wukong-v1/probe-xip/main.bin build/wukong-v1/probe-xip/flash.bin
-	sh-none-elf-gcc -m2 -mb -nostdlib -T sw/xipapp/app.x -Wl,--defsym=LOAD_ADDRESS=0x80400000 sw/wukongrom/test/probe.S -o build/wukong-v1/probe-ddr/main.elf
-	sh-none-elf-objcopy -O binary build/wukong-v1/probe-ddr/main.elf build/wukong-v1/probe-ddr/main.bin
-	python3 tools/xip_image.py pack build/wukong-v1/probe-ddr/main.bin build/wukong-v1/probe-ddr/flash.bin --load-address 0x80400000
 
 # Replaces only SF3 application sectors after saving a read-only sector backup.
 .PHONY: wukong-boot-hw
 wukong-boot-hw: wukong-bitstream wukong-apps
-	VIVADO_HOME="$(VIVADO_HOME)" python3 tools/check_wukong_boot.py --upload --image build/wukong-v1/app-ddr/flash.bin --output build/wukong-v1/boot/ddr-upload
-	VIVADO_HOME="$(VIVADO_HOME)" python3 tools/check_wukong_boot.py --image build/wukong-v1/app-ddr/flash.bin --output build/wukong-v1/boot/ddr-warm
 	VIVADO_HOME="$(VIVADO_HOME)" python3 tools/check_wukong_boot.py --upload --image build/wukong-v1/app-xip/flash.bin --output build/wukong-v1/boot/xip-upload
 	VIVADO_HOME="$(VIVADO_HOME)" python3 tools/check_wukong_boot.py --image build/wukong-v1/app-xip/flash.bin --output build/wukong-v1/boot/xip-warm

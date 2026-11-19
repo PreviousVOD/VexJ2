@@ -11,7 +11,7 @@ import subprocess
 import termios
 import time
 import tty
-from wukong_config import ROOT, load
+from board_config import ROOT, load
 
 
 def validate(image, profile):
@@ -24,9 +24,7 @@ def validate(image, profile):
     if (entry | address) & 1 or entry < address or entry - address > length - 2:
         raise ValueError("entry must address a complete aligned instruction in the payload")
     if address != number("xipBase") + 32:
-        offset = address - number("memoryBase")
-        if not 0 <= offset < number("memoryBytes") or length > number("memoryBytes") - offset:
-            raise ValueError("load range is outside DDR")
+        raise ValueError("ROM only boots images linked at the XIP payload address")
     if (sum(image[32:]) & 0xffffffff) != checksum:
         raise ValueError("image checksum mismatch")
     return dict(entry=entry, load_address=address, payload_bytes=length)
@@ -48,7 +46,7 @@ class Serial:
 
     def until(self, marker, timeout=120):
         deadline = time.monotonic() + timeout
-        errors = [b"Platform failure", b"Bad image range", b"Invalid staged image", b"Receive timeout",
+        errors = [b"Platform failure", b"Bad image range", b"Invalid image header", b"Receive timeout",
                   b"Erase error", b"Program error", b"Header error", b"Verify error", b"checksum error",
                   b"DDR copy error", b"tests failed", b"ISA FAIL", b"Application returned"]
         while marker not in self.buffer:
@@ -94,7 +92,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=180)
     args = parser.parse_args()
-    profile = load()
+    profile = load("wukong-v1")
     image = args.image.read_bytes()
     info = validate(image, profile)
     out = args.output.resolve()
@@ -121,7 +119,7 @@ def main():
             serial.until(b"Send U to load\r\n", args.timeout)
             if args.upload:
                 serial.send(b"U")
-                serial.until(b"Wukong loader\r\n")
+                serial.until(b"J2 loader\r\n")
                 # Save every sector that will be erased before sending the update.
                 size = (len(image) + 65535) & ~65535
                 serial.send(b"J2RD" + struct.pack(">II", 0, size))
@@ -129,7 +127,7 @@ def main():
                 backup = serial.exact(size, max(120, size / 1000))
                 (out / "sf3-before.bin").write_bytes(backup)
                 serial.until(b"Read complete\r\n")
-                serial.until(b"Wukong loader\r\n")
+                serial.until(b"J2 loader\r\n")
                 serial.send(b"J2UP" + struct.pack(">II", 0, len(image)))
                 serial.until(b"Send image\r\n")
                 for offset in range(0, len(image), 256):

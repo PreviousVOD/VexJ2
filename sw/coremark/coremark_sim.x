@@ -4,7 +4,7 @@ ENTRY(_coremark_start)
 MEMORY
 {
   xip : ORIGIN = 0x00000000, LENGTH = 0x00008000
-  sram : ORIGIN = 0x00008000, LENGTH = 0x00006000
+  sram : ORIGIN = 0x00008000, LENGTH = J2_SRAM_BYTES - 0x2000
 }
 SECTIONS
 {
@@ -17,5 +17,5 @@ SECTIONS
   .bss (NOLOAD) : {
     _bss_start = .; *(.bss*) *(COMMON) . = ALIGN(4); _bss_end = .;
   } > sram
-  ASSERT(_bss_end <= 0x0000e000, "CoreMark data overlaps stack")
+  ASSERT(_bss_end <= (0x00008000 + J2_SRAM_BYTES - 0x2000), "CoreMark data overlaps stack")
 }

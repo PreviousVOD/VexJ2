@@ -122,7 +122,7 @@ int main(int argc, char **argv) {
       next_upload = cycle + bit_cycles;
     }
     if (upload_started && !program_started &&
-        output.find("Program flash") != std::string::npos) {
+        output.find("Send image") != std::string::npos) {
       program_started = true;
       upload_limit = 12 + (image.size() < 256 ? image.size() : 256);
       top.uart_rx = 0;
@@ -130,7 +130,7 @@ int main(int argc, char **argv) {
     }
     if (upload_started && upload_pages * 256 < image.size()) {
       char marker[32];
-      std::snprintf(marker, sizeof(marker), "Page %06x", upload_pages * 256);
+      std::snprintf(marker, sizeof(marker), "Received %06x", upload_pages * 256);
       if (output.find(marker) != std::string::npos) {
         ++upload_pages;
         if (upload_pages * 256 < image.size()) {

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Project>
+    <TD_Version>4.6.64949</TD_Version>
+    <UCode>00000000</UCode>
+    <Name>tang-primer</Name>
+    <HardWare>
+        <Family>EG4</Family>
+        <Device>EG4S20BG256</Device>
+    </HardWare>
+    <Source_Files>
+        <Verilog>
+            <File>J2MicrocodedCore.v</File>
+            <File>j2_tang_primer.v</File>
+        </Verilog>
+        <ADC_FILE>j2_tang_primer.adc</ADC_FILE>
+        <SDC_FILE>j2_tang_primer.sdc</SDC_FILE>
+        <CWC_FILE/>
+    </Source_Files>
+    <TOP_MODULE>
+        <LABEL/>
+        <MODULE>j2_tang_primer</MODULE>
+        <CREATEINDEX>auto</CREATEINDEX>
+    </TOP_MODULE>
+    <Project_Settings>
+        <Step_Last_Change>2026-11-15 00:00:00</Step_Last_Change>
+        <Current_Step>0</Current_Step>
+        <Step_Status>true</Step_Status>
+    </Project_Settings>
+</Project>

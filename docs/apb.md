@@ -3,8 +3,8 @@
 [SoC reference](soc.md) · [AHB5 library](ahb5.md) · [Tang Primer](tang-primer.md)
 
 The CPU and memory subsystem use AHB5. GPIO, UART, timer, SPI control and cache
-control use 32-bit APB3. ROM, SRAM, SDRAM and XIP data stay on AHB5 with their
-existing data backends. The peripheral address map is unchanged.
+control use 32-bit APB3. ROM, SRAM, SDRAM/DDR and XIP data use
+[native AHB memory paths](ahb-memory.md). The peripheral address map is unchanged.
 
 ```mermaid
 flowchart LR

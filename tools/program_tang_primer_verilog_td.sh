@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
 td_log_dir="$repo_root/build/logs/td_verilog"
-bitstream="$repo_root/build/fpga/j2_tang_primer_verilog/j2_tang_primer.bit"
+bitstream="$repo_root/build/fpga/tang-primer/j2_tang_primer.bit"
 
 if [[ ! -f $bitstream ]]; then
   printf 'Missing %s; run make verilog-fpga first.\n' "$bitstream" >&2

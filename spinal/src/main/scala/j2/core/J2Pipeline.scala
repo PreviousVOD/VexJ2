@@ -159,7 +159,7 @@ final class J2PipelineLogic(
   id.bypass(EX_ACTION) := Mux(nextIdStall, J2ControlDefaults.exStall(), id.up(EX_ACTION))
   id.bypass(WB_ACTION) := Mux(nextIdStall, J2ControlDefaults.wbStall(), id.up(WB_ACTION))
   // EX creates the MA request. Hold unused payloads across bubbles, especially
-  // while TAS keeps CYC/LOCK asserted between its read and write.
+  // while TAS retains its AHB lock reservation between its read and write.
   stages(1).down(MEMORY) := Mux(
     stages(1).up(EX_ACTION).memoryIssue && !cancelExWriteback,
     memoryRequest,

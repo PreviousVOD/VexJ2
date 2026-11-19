@@ -1,5 +1,5 @@
-# The AHB frontend nests the unchanged CDC backend one level deeper. Accept the
-# original hierarchy too so historical Fmax checkpoints remain usable. Resolve
+# Native AHB places CDC mailboxes directly under bridge. Accept the former
+# wrapped hierarchy too so historical Fmax checkpoints remain usable. Resolve
 # exactly one backend; never silently widen CDC exceptions to unrelated logic.
 proc wukong_bridge_root {} {
     set matches {}

@@ -30,7 +30,7 @@ final class J2Soc(
     rangeBytes  = config.xipBytes
   )
   private val romMapping          = SizeMapping(0x00000000L, 0x00008000L)
-  private val sramMapping         = SizeMapping(0x00008000L, 0x00008000L)
+  private val sramMapping         = SizeMapping(0x00008000L, config.sramBytes)
   private val flashMapping        = SizeMapping(xipConfig.baseAddress, xipConfig.rangeBytes)
   private val memoryMapping       = SizeMapping(config.memoryBase, config.memoryBytes)
   private val pioMapping          = SizeMapping(0xff000000L, 0x1000)
@@ -42,7 +42,7 @@ final class J2Soc(
   private val xipCache = new J2ReadCache(xipConfig)
   private val cpu      = new J2MicrocodedCore(J2CoreConfig(exposeDebug = false))
   private val rom      = new J2Rom(config.romHex)
-  private val sram     = new J2Sram
+  private val sram     = new J2Sram(config.sramBytes)
   private val flash    = new J2SpiFlash(xipConfig.lineBytes)
   private val pio      = new J2Pio
   private val timer    = new J2Timer(clockHz, config.timerTickHz)

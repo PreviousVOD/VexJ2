@@ -38,21 +38,26 @@ The Wukong flow uses Vivado through `tools/run_vivado.sh`; see its
 - `spinal/src/main/scala/j2/core/isa/`: ISA definitions and microcode predecoder.
 - `spinal/src/main/scala/j2/core/microcode/`: ROM data, control decoding, sequencing.
 - `spinal/src/main/scala/j2/memory/`: generic generation-time memory backends and vendor mapping.
-- `spinal/src/main/scala/j2/bus/`: generic AHB5/APB IP, standalone system BIU and retained Wishbone memory backends.
-- `spinal/src/main/scala/j2/periph/`: ROM/SRAM, GPIO, SPI/XIP, SDRAM peripherals.
+- `spinal/src/main/scala/j2/bus/`: generic AHB5/APB IP, standalone system BIU, native AHB memory endpoints and cache.
+- `spinal/src/main/scala/j2/periph/`: ROM/SRAM, GPIO and SPI/XIP peripherals.
 - `spinal/src/main/scala/j2/soc/`: board-independent SoC, interconnect and reset control.
-- `spinal/src/main/scala/j2/board/tang_primer/`: Tang Primer top, EG4 PLL/pads and SDRAM PHY.
-- `spinal/src/main/scala/j2/board/wukong/`: Wukong top, Xilinx primitives and MIG integration.
-- `sw/wukongrom/`: Wukong platform ROM and SF3 application loader.
-- `sw/xiprom/`: Tang Primer boot ROM, flash driver, and UART loader.
+- `spinal/src/main/scala/j2/board/tang-primer/`: Tang Primer top, EG4 PLL/pads, SDRAM controller and PHY.
+- `spinal/src/main/scala/j2/board/wukong-v1/`: Wukong top, Xilinx primitives, AHB DDR bridge, MIG backend and integration.
+- `sw/bootrom/`: common boot ROM, profile-selected flash setup and UART loader for both boards.
 - `sw/xipapp/`: XIP application and SDRAM read/write/execute tests.
 - `tools/xip_image.py`: shared image packager and Tang Primer UART uploader.
 - `tools/check_wukong_boot.py`: Wukong upload and boot validation.
 - `third_party/qspiflash/`: flash simulator sources only; upstream RTL is removed.
-- `fpga/j2_tang_primer_verilog/`: Tang Primer constraints and Tang Dynasty project.
+- `fpga/tang-primer/`: Tang Primer board profile, constraints and Tang Dynasty project.
 - `fpga/wukong-v1/`: Wukong board profile, pin constraints and MIG configuration.
 - `reference/`: original VHDL/VHM sources for simulator cross-reference.
 - `docs/isa/j2_isa.csv`: ISA instruction and micro-step specification.
+
+Legacy Wishbone buses, adapters and reference memory/cache fixtures live only
+under `spinal/src/test/scala/j2/`. They support historical regression tests and
+CPU test harnesses; production sources and generated SoCs contain no Wishbone.
+Native memory regressions are `J2NativeMemorySpec`, `J2AhbDdrBridgeSpec` and
+`J2AhbReadCacheSpec`; see [the memory-path reference](ahb-memory.md).
 
 The canonical microcode source is `spinal/src/main/resources/j2_microcode.hex`,
 containing all 256 72-bit entries. `j2_predecode.tsv` is the generated opcode
@@ -68,7 +73,10 @@ Wukong has separate boot, DDR and hardware targets in its [board guide](wukong-v
 
 ```sh
 make spinal-test           # CPU, matrix, ISA, reset, SPI/cache, timer and DDR bridge tests
-make spinal-generate       # CPU and SoC Verilog under build/spinal/verilog
+make spinal-generate       # shared CPU/components under build/spinal/verilog
+make tang-sim-generate     # Tang simulation top and CPU, inferred memories
+make tang-generate         # Tang FPGA top and CPU, EG4 memory backend
+make wukong-generate       # Wukong FPGA top and CPU, Xilinx memory backend
 make spinal-microcode-verif # full ROM, RTE, and interrupt regressions
 make verilog-hw-sim         # native SoC and full legacy CPU test ROM
 make xip-hw-sim             # direct XIP and blank-flash UART loader tests
@@ -77,6 +85,49 @@ make fpga-clock-test        # vendor PLL model; run after FPGA RTL generation
 make isa-sim                # CPU regressions + legacy ROMs + shared ISA app, three boot modes
 make isa-hw                 # build/timing/PLL + ISA app upload and fresh FPGA boot
 ```
+
+`j2.Generate` owns common Spinal settings and standalone CPU/component generation;
+it has no board dependencies and does not select FPGA primitives. The symmetric
+board entry points are `j2.Generate_TangPrimer` and `j2.Generate_Wukong`.
+Both reuse its settings/core generation and select their memory backend locally.
+`j2.Generate_WukongDdr` is the standalone DDR qualification top.
+
+Both boards use `fpga/<board>/board.properties`, with the same keys and shared
+`j2.board.BoardProfile` / `tools/board_config.py` loaders. The profile defines the
+FPGA, input/system clocks, PLL selection, UART, flash layout, and external memory
+type/base/size. The loaders reject settings unsupported by the physical board.
+`flashType` selects the Winbond or Micron initialization path in the common
+`sw/bootrom` sources through `J2_FLASH_MICRON`. JEDEC ID is reported at startup;
+the selected protocol comes from the board profile, not runtime autodetection.
+Both profiles set `sramBytes=0x00008000` (32 KiB) by default. The value controls
+the on-chip SRAM depth and AHB window beginning at `0x00008000`, and is exported
+as `J2_SRAM_BYTES` for boot/application stacks and CoreMark's linker layout.
+Sizes must be powers of two, at least 4 KiB, and must not overlap other windows.
+FPGA BRAM capacity still limits what can be implemented. The supplied ISA app
+uses fixed scratch addresses through `0x0000b000`, so it needs at least 16 KiB;
+the legacy ROM regressions retain their original 32 KiB SRAM assumption.
+The board wrappers own SDRAM/DDR controllers; the common SoC routes a generic AHB
+memory window and the core has no knowledge of physical memory technology.
+Run `python3 tools/board_config.py tang-primer` or `... wukong-v1` to generate
+`build/<board>/rom/board.h` and `build/<board>/board.tcl`.
+Tang's legacy `J2_CLOCK_HZ` / `J2_USE_PLL` diagnostic overrides are applied by
+both loaders and never override the Wukong profile.
+Both ROMs are built with `make -C sw/bootrom BOARD=<board>` and written to
+`build/<board>/rom/`. They share image validation, XIP boot and the UART loader. The ROM initializes
+its own data/BSS and uses only internal SRAM for a 256-byte upload buffer. It
+validates the header before erasing, checks each programmed payload chunk,
+checks the complete payload checksum, and commits the header last. It neither
+probes external memory nor copies applications into RAM. Applications own their
+startup, including data/BSS initialization and any code relocation. The updated uploader and simulators use `Send image` and
+`Received <offset>` acknowledgements on both boards.
+Source directories use the board names `tang-primer` and `wukong-v1`; Scala
+package identifiers use `tang_primer` and `wukong_v1`.
+
+Tang simulation uses `Generate_TangPrimer --sim`, with inferred memories and
+clock bypass. `J2_FPGA` is no longer a generator switch. Existing RTL output
+directories are preserved; `J2_SPINAL_OUT` overrides the directory for any entry
+point (relative paths are resolved from `spinal/` when invoked through Make).
+The Verilog simulator Makefile selects the Tang simulation entry point explicitly.
 
 The XIP regression covers reset-button and cold startup from preloaded flash,
 plus a cold blank-flash UART upload. All paths print `SDRAM tests passed`,

@@ -500,7 +500,7 @@ Probe sources, raw traces, logs and JSON results are under
   simulation and hardware, alongside the existing ISA, SDRAM and timer checks.
   Its linker script pins the default image entry to `0x10000020`: aligning test
   data must not move the image away from the address encoded in the flash header.
-  `LOAD_ADDRESS` can override the linker origin for BootROM load mode.
+  The ROM is XIP-only; applications own any relocation into RAM.
 
 - Full-SoC simulation passes reset, cold boot and blank-flash UART upload with
   the updated cache/ISA application. Vendor PLL simulation confirms 32 MHz.

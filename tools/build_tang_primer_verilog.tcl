@@ -1,4 +1,4 @@
-cd ../../../build/fpga/j2_tang_primer_verilog
+cd ../../../build/fpga/tang-primer
 open_project j2_tang_primer.al
 
 elaborate -top j2_tang_primer

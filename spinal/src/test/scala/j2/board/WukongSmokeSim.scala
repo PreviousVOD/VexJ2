@@ -1,7 +1,7 @@
 package j2.board
 
 import j2.soc.{J2Soc, J2SocConfig}
-import j2.bus.{J2AhbDdrBridge, J2MigPort}
+import j2.board.wukong_v1.{J2AhbDdrBridge, J2MigPort}
 import spinal.lib._
 import spinal.lib.io.TriStateArray
 import spinal.core._

@@ -38,10 +38,12 @@ from data. Memory accesses are cacheable; the `0xffxxxxxx` peripheral aperture
 is non-cacheable. The matrix transports attributes without applying a security
 policy. See the [generic AHB5 library](ahb5.md) for protocol and identity rules.
 
-CPU and memory ports remain AHB5. `J2AhbToWishbone` adapters retain the existing
-ROM, SRAM, cache data engine and SDRAM backends. GPIO, UART, timer, SPI control
-and cache control now expose native APB3 interfaces. There is no Wishbone
-protocol conversion on the production peripheral path.
+CPU and memory ports use native AHB5. ROM, SRAM and the XIP cache accept AHB
+through `J2AhbMemoryEndpoint`; Tang SDRAM feeds the SDRAM controller's BMB port
+directly, and Wukong DDR feeds the MIG request/response mailboxes directly.
+GPIO, UART, timer, SPI control and cache control expose native APB3 interfaces.
+There is no Wishbone interface or conversion anywhere in the production SoC.
+See [native AHB memory paths](ahb-memory.md) for phase timing and backend contracts.
 
 Peripheral registers require aligned **32-bit** loads/stores. APB3 has no write
 strobes; byte/halfword, unaligned or partial-strobe peripheral accesses receive
@@ -58,7 +60,7 @@ The two external-memory entries below are alternatives selected by the board.
 | Region | Address range |
 |---|---:|
 | Internal ROM | `0x00000000`–`0x00007fff` |
-| Internal SRAM | `0x00008000`–`0x0000ffff` |
+| Internal SRAM | `0x00008000`–`0x00008000 + sramBytes - 1` (default end `0x0000ffff`) |
 | SPI flash XIP, 1 MiB | `0x10000000`–`0x100fffff` |
 | Tang Primer SiP SDRAM, 8 MiB | `0x80000000`–`0x807fffff` |
 | Wukong DDR3, 256 MiB | `0x80000000`–`0x8fffffff` |
@@ -105,31 +107,24 @@ header. All reserved words must be zero.
 | `0x04` | Entry address | Halfword-aligned address inside the application |
 | `0x08` | Application length | Payload bytes, excluding the header |
 | `0x0c` | Checksum | Sum of all payload bytes, modulo 32 bits |
-| `0x10` | Load address | Destination selected by the pack command |
+| `0x10` | Load address | Must equal the XIP payload address (`0x10000020`) |
 | `0x14`–`0x1f` | Reserved | Three zero words |
 
-When the load address is the XIP payload address `0x10000020`, the BootROM runs
-the application directly from flash. Any other load address must fit with the
-complete application inside the board's external-memory region (see the map
-above); the BootROM copies the verified payload there and jumps to its entry
-address. Wukong additionally validates complete staged uploads before erasing
-SF3 and programs the header last; its [loader guide](wukong-v1.md#sf3-application-loading-and-boot)
-describes the bounds and UART protocol.
+The BootROM accepts only images linked at the XIP payload address and jumps
+into flash after validating the header and checksum. RAM destinations are
+rejected. An application can provide its own XIP relocation stub if its code
+needs to execute in RAM; the ROM has no external-memory setup or dependency.
 
-For Tang Primer, build the validation application for SDRAM instead of XIP
-with the repository tools on `PATH` (`. tools/env.sh`):
+Both boards use the same ROM and UART protocol. Uploads use a 256-byte buffer
+in internal SRAM: validate the header, erase affected sectors, program and
+verify payload chunks, check the checksum, and commit the header last. The
+`Received <offset>` response acknowledges each programmed chunk. See the
+[loader guide](wukong-v1.md#sf3-application-loading-and-boot).
 
-```sh
-make -C sw/xipapp OUT="$PWD/build/sw/sdramapp" LOAD_ADDRESS=0x80400000
-tools/xip_image.py pack build/sw/sdramapp/main.bin \
-  build/sw/sdramapp/flash.bin --load-address 0x80400000
-```
-
-Use the resulting `flash.bin` with the normal simulator or UART upload flow.
-
-For Wukong, `make wukong-apps` builds both XIP and DDR images using the
-board profile's clock settings. Use the Wukong loader workflow, not the
-Tang Primer UART uploader.
+ROM and application startup copy `.data` from their image to internal SRAM and
+clear `.bss` before entering C. CoreMark already follows this convention.
+`make wukong-apps` builds the XIP ISA application with the board profile's clock
+and SRAM settings. External-memory tests remain in the application.
 
 ## 32-bit GPIO
 

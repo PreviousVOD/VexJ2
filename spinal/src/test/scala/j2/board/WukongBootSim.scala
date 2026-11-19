@@ -1,25 +1,25 @@
 package j2.board
 
 import java.nio.file.{Files, Paths}
-import j2.board.wukong.WukongV1
 import spinal.core._
 import spinal.core.sim._
 
 /** Same boot/loader code as hardware, using separately built fast-UART images. */
 object WukongBootSim extends App {
-  val config = WukongV1
-    .load("../fpga/wukong-v1/board.properties", "../build/wukong-v1/rom-sim/boot.hex")
+  val config = BoardProfile
+    .load("wukong-v1")
+    .socConfig("../build/wukong-v1/rom-sim/boot.hex")
     .copy(uartBaud = 1600000)
   def file(kind: String) =
     Files.readAllBytes(Paths.get(s"../build/wukong-v1/app-sim-$kind/flash.bin"))
-  val xip = file("xip"); val ddr = file("ddr")
+  val xip = file("xip")
   def probe(kind: String) =
     Files.readAllBytes(Paths.get(s"../build/wukong-v1/probe-$kind/flash.bin"))
   val compiled = SimConfig.withVerilator
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(config.clockHz Hz)))
     .compile(new WukongSocFixture(config))
   val scenarios =
-    if (args.nonEmpty) args.toSeq else Seq("xip", "ddr", "upload-xip", "upload-ddr", "bad-checksum")
+    if (args.nonEmpty) args.toSeq else Seq("xip", "warm-xip", "upload-xip", "bad-checksum")
   for ((scenario, index) <- scenarios.zipWithIndex)
     compiled.doSim(name = scenario, seed = 920 + index) { dut =>
       val flash = new Sf3Model(
@@ -28,10 +28,10 @@ object WukongBootSim extends App {
         dut.io.spiData.write,
         dut.io.spiData.writeEnable,
         dut.io.spiData.read,
-        initiallyQuad = scenario.contains("ddr"),
+        initiallyQuad = scenario == "warm-xip" || scenario == "upload-xip",
         erased        = true
       )
-      val initial = if (scenario == "ddr") ddr else xip.clone()
+      val initial = xip.clone()
       if (scenario == "bad-checksum") initial(initial.length - 1) = (initial.last ^ 1).toByte
       flash.preload(initial)
       dut.io.uartRx #= true; dut.io.spiData.read #= 15
@@ -46,8 +46,9 @@ object WukongBootSim extends App {
       memory.start()
       fork {
         while (true) {
-          sleep(busPeriod / 2); flash.tick(); dut.io.clock #= true; sleep(busPeriod / 2); flash.tick();
-          dut.io.clock                         #= false
+          sleep(busPeriod / 2); flash.tick(); dut.io.clock #= true; sleep(busPeriod / 2);
+          flash.tick();
+          dut.io.clock #= false
         }
       }
       val received  = new StringBuilder
@@ -83,13 +84,19 @@ object WukongBootSim extends App {
         val start = received.length
         command("J2UP", 0, image.length); expect("Send image\r\n", start)
         for (offset <- image.indices by 256) {
-          send(image.slice(offset, offset + 256)); expect(f"Received $offset%06x\r\n", start)
+          send(image.slice(offset, offset + 256))
+          waitUntil(
+            received.toString.indexOf(f"Received $offset%06x\r\n", start) >= 0 || received.toString
+              .indexOf(success, start) >= 0
+          )
+          if (received.toString.indexOf(success, start) >= 0) return
         }
         expect(success, start)
       }
-      expect("DDR3 CPU: PASS 00\r\n")
+      expect("Flash quad XIP: PASS\r\n")
+      assert(memory.commands == 0, "ROM must not access external memory")
       if (scenario.startsWith("upload")) {
-        expect("Send U to load\r\n"); send(Array('U'.toByte)); expect("Wukong loader\r\n")
+        expect("Send U to load\r\n"); send(Array('U'.toByte)); expect("J2 loader\r\n")
         // Backup reads are bounded and have no array side effects.
         var start = received.length
         command("J2RD", 0, 32); expect("Read complete\r\n", start)
@@ -101,40 +108,39 @@ object WukongBootSim extends App {
             .toArray
             .sameElements(initial.take(32))
         )
-        expect("Wukong loader\r\n", start)
+        expect("J2 loader\r\n", start)
         if (scenario == "upload-xip") {
           start = received.length
           command("J2UP", 0x100000, 64); expect("Bad image range\r\n", start);
-          expect("Wukong loader\r\n", start)
+          expect("J2 loader\r\n", start)
           start = received.length
-          val bad = xip.take(64); upload(bad, "Invalid staged image\r\n")
-          expect("Wukong loader\r\n", start)
+          val bad = xip.take(64); upload(bad, "Invalid image header\r\n")
+          expect("J2 loader\r\n", start)
           assert(flash.erases.isEmpty && flash.programs.isEmpty)
           start = received.length
           command("J2UP", 0, 64); expect("Send image\r\n", start)
-          expect("Receive timeout\r\n", start); expect("Wukong loader\r\n", start)
+          expect("Receive timeout\r\n", start); expect("J2 loader\r\n", start)
           assert(flash.erases.isEmpty)
           flash.failProgram = true
           start             = received.length; upload(probe("xip"), "Program error\r\n");
-          expect("Wukong loader\r\n", start)
+          expect("J2 loader\r\n", start)
           assert(
             (0 until 32).forall(a => flash.byte(a) == 255),
             "header must stay erased on failure"
           )
         }
-        val image = probe(if (scenario == "upload-ddr") "ddr" else "xip")
+        val image = probe("xip")
         upload(image, "Flash verified\r\n")
         assert(image.indices.forall(i => flash.byte(i) == (image(i) & 255)))
         assert(flash.programs.last == ((0L, 32)), "header must be committed last")
+        assert(memory.commands == 0, "ROM upload must not use external memory")
       }
       if (scenario == "bad-checksum") {
-        expect("Image checksum error\r\n"); expect("Wukong loader\r\n")
+        expect("Image checksum error\r\n"); expect("J2 loader\r\n")
         assert(!received.toString.contains("Booting"))
         assert(flash.erases.isEmpty && flash.programs.isEmpty)
       } else {
-        expect(
-          if (scenario.contains("ddr")) "Booting loaded image\r\n" else "Booting XIP image\r\n"
-        )
+        expect("Booting XIP image\r\n")
         expect(
           if (scenario.startsWith("upload")) "Wukong loader app passed\r\n"
           else "XIP CPU tests passed\r\n"

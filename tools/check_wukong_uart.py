@@ -12,7 +12,7 @@ import termios
 import time
 import tty
 
-from wukong_config import ROOT, load
+from board_config import ROOT, load
 
 
 def main():
@@ -21,7 +21,7 @@ def main():
     parser.add_argument("--ddr", action="store_true", help="validate the standalone DDR diagnostic")
     parser.add_argument("--timeout", type=float, default=120)
     args = parser.parse_args()
-    profile = load()
+    profile = load("wukong-v1")
     device = args.device or profile["uartDevice"]
     out = ROOT / ("build/wukong-v1/ddr/hardware" if args.ddr else "build/wukong-v1/hardware")
     out.mkdir(parents=True, exist_ok=True)
@@ -33,9 +33,9 @@ def main():
     digest = hashlib.sha256(bitstream.read_bytes()).hexdigest()
     for name in ("results.json", "program.pass"):
         (out / name).unlink(missing_ok=True)
-    banner = ("Wukong-v1 platform ROM\r\nApplication flash offset: "
+    banner = ("wukong-v1 platform ROM\r\nApplication flash offset: "
               f'{int(profile["flashOffset"], 0):08x}'
-              "\r\nSF3 quad ID: 20ba19\r\nSF3 quad XIP: PASS\r\nDDR3 CPU: PASS 00\r\nSend U to load\r\n").encode()
+              "\r\nFlash JEDEC ID: 20ba19\r\nFlash quad XIP: PASS\r\nSend U to load\r\n").encode()
     echo = b"Bad image range\r\n"
     if args.ddr:
         banner = b"Wukong DDR3: PASS\r\n"
@@ -65,7 +65,7 @@ def main():
                         captured.extend(os.read(fd, 4096))
                     if args.ddr and (b"FAIL" in captured or b"TIMEOUT" in captured):
                         raise RuntimeError("DDR diagnostic failed; see ddr/hardware/uart.log")
-                    if not args.ddr and (b"SF3 quad XIP: FAIL" in captured or b"DDR3 CPU: FAIL" in captured):
+                    if not args.ddr and (b"Flash quad XIP: FAIL" in captured):
                         raise RuntimeError("Platform diagnostic failed; see hardware/uart.log")
                     code = proc.poll()
                     if code is not None and (code != 0 or not (out / "program.pass").is_file()):
@@ -74,7 +74,7 @@ def main():
                         echo_start = len(captured)
                         if not args.ddr:
                             os.write(fd, b"U")
-                    if not args.ddr and b"Wukong loader\r\n" in captured and not probe_sent:
+                    if not args.ddr and b"J2 loader\r\n" in captured and not probe_sent:
                         os.write(fd, b"J2RD" + struct.pack(">II", int(profile["xipBytes"], 0), 1))
                         probe_sent = True
                     if code == 0 and echo_start is not None and echo in captured[echo_start:]:

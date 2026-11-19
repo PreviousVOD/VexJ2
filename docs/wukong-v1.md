@@ -8,7 +8,11 @@ quad XIP execution and loading applications into DDR.
 ## Board profile
 
 `fpga/wukong-v1/board.properties` is the shared source for the Scala board
-configuration, firmware header and Vivado settings. The schematic and DDR3
+configuration, firmware header and Vivado settings, using the same schema and
+`BoardProfile` / `tools/board_config.py` loaders as Tang Primer.
+`memoryType=ddr3` is checked against the board's MIG implementation; the AHB DDR
+bridge, MIG backend and PHY integration all live in `j2.board.wukong_v1`.
+The schematic and DDR3
 example used for the pin audit are in `../Wukong/`.
 
 | Setting | Value |
@@ -92,13 +96,13 @@ flowchart LR
   C --> F["SPI on J11<br/>Pmod SF3 application flash"]
   S --> B["External-memory AHB5 port<br/>byte addresses / HMASTLOCK / HRESP"]
   B --> FRONT["AHB frontend"]
-  FRONT --> E["Retained Wishbone / native burst backend<br/>toggle mailboxes: 72 ↔ 83.333 MHz"]
+  FRONT --> E["Native request/response mailboxes<br/>72 ↔ 83.333 MHz"]
   E --> M["MIG 4.2 / 128-bit UI"]
   M --> D["256 MiB DDR3L"]
 ```
 
 ROM, SRAM and microcode describe native Spinal `Mem` with synchronous reads
-and generic `ramBlock` intent. `GenerateWukong` selects `MemoryBackend.Xilinx`,
+and generic `ramBlock` intent. `Generate_Wukong` selects `MemoryBackend.Xilinx`,
 which adds `ram_style=block` during generation. Core and SoC configurations do
 not select backends. Microcode keeps its rising-edge, enabled read and
 response-address tag; boot ROM retains its full 32 KiB storage and address
@@ -108,14 +112,14 @@ boot image, clocks, address windows and physical flash offset.
 The EG4 SDRAM controller now lives in the Tang board wrapper, outside the
 shared SoC. The external-memory AHB5 port preserves absolute byte addresses,
 transfer sizes, lock ownership and error responses. Wukong maps its full
-256 MiB DDR window at `0x80000000–0x8fffffff` through `J2AhbDdrBridge`, retaining
-the tested `J2WishboneDdrBridge` CDC/MIG backend internally. Tang retains its
+256 MiB DDR window at `0x80000000–0x8fffffff` through `J2AhbDdrBridge`, with
+a native AHB frontend, toggle mailboxes and `J2MigBackend`. Tang retains its
 existing SDRAM window. Peripheral registers require aligned 32-bit accesses;
 see [APB and standalone BIU contracts](apb.md).
 
-The AHB frontend places the DDR mailboxes at `bridge/bridge/{requests,responses}`.
+The native AHB DDR mailboxes live at `bridge/{requests,responses}`.
 `tools/wukong_bridge_paths.tcl` resolves exactly one backend, supporting both
-this path and the historical `bridge/{requests,responses}` hierarchy. Synthesis
+this path and the former wrapped `bridge/bridge/{requests,responses}` hierarchy. Synthesis
 constraints and the Fmax tool use that shared resolver. Missing or ambiguous
 mailboxes still fail the build; payload max-delay, bus-skew and toggle/reset
 synchronizer checks remain in force.
@@ -127,7 +131,7 @@ stays in reset until DDR calibration completes. Readiness is registered in the
 UI domain before crossing to the reset controller. The SoC uses `peripheral_reset`. IP parameters are
 versioned in `tools/wukong_ip.tcl`; generated products stay under `build/`.
 
-`sw/wukongrom` initializes the SF3 for **4-4-4 quad protocol** at 4 MHz:
+`sw/bootrom` initializes the SF3 for **4-4-4 quad protocol** at 4 MHz:
 command, address and payload all use DQ0..3. It first recovers single SPI if a
 previous FPGA image left the flash in quad mode, selects three-byte addressing
 and bank zero, then records single-SPI reference data from five 32-byte blocks.
@@ -139,8 +143,8 @@ The cache backend uses quad `0xeb` commands on every burst, three quad address
 bytes, four quad dummy bytes (eight clocks) and quad payload. The controller's
 `dummyCount` is bytes minus one, hence `3`; mode selection is `0x01010101`.
 The ROM compares cached reads at offsets 0, 32, `0x100`, `0x800`, and the last
-cache line of the XIP window with the single-SPI reference, then runs the DDR
-CPU diagnostic before application boot or UART loading.
+cache line of the XIP window with the single-SPI reference, then allows application boot or UART loading. External-memory tests run in the
+application, not in the ROM.
 The fixed quad ID exercises all four input lanes even when array contents are
 erased. This initialization changes only volatile protocol settings; application
 array updates use the separate bounded loader described below. See
@@ -148,18 +152,18 @@ array updates use the separate bounded loader described below. See
 
 The flash remains in quad mode after the diagnostic. Initialization handles
 that state on the next FPGA-only reset; power cycling restores the flash's
-nonvolatile defaults. The ROM tests DDR, then offers application loading or boots the installed image.
-The existing Tang boot ROM is unchanged.
+nonvolatile defaults. The ROM offers application loading or boots the installed XIP image.
+Both boards now build these shared ROM sources, selecting their flash protocol from the board profile.
 
 ## Build and validation
 
 ```sh
-make wukong-generate  # separate ROM and SpinalHDL board RTL
+make wukong-generate  # common ROM configured for Wukong and board RTL
 make wukong-bridge-sim # CDC, byte masks, LOCK, aborts, timeouts and reset
 make wukong-sim       # boot/upload/ISA regression with isolated fast-UART simulation images
 make wukong-image-test # exact firmware parser and host validation boundaries
-make wukong-apps      # packaged XIP and DDR-loaded ISA test applications
-make wukong-boot-hw   # backup SF3 sectors, upload and warm-boot both ISA applications
+make wukong-apps      # packaged XIP ISA test application
+make wukong-boot-hw   # backup SF3 sectors, upload and warm-boot the XIP application
 make wukong-synth     # Vivado synthesis, pins, DRC and memory-inference checks
 make wukong-reset-sim # XSim with the generated vendor reset IP
 make wukong-bitstream # place/route, timing gates and volatile configuration image
@@ -202,8 +206,8 @@ The boot simulation checks banner, offset, quad JEDEC ID, cached reads,
 application loading and execution, including a flash already in quad mode. A pin-level Micron model supplies nonuniform array data and checks
 quad lane direction, burst length, allowed commands and all five refill addresses.
 A native MIG model adds independent command/write-data backpressure and delayed
-reads on a separate UI clock. The CPU executes the same DDR diagnostic used
-on hardware. One clock/reset driver per domain avoids competing reset stimulus. The vendor reset simulation
+reads on a separate UI clock. External-memory tests run only in the application;
+ROM boot and upload assert that no MIG commands were issued. One clock/reset driver per domain avoids competing reset stimulus. The vendor reset simulation
 checks cold startup, clock-lock loss and button reset, including synchronous
 release with the documented UNISIM primitive propagation delays.
 
@@ -322,12 +326,18 @@ memory retention. CPU integration is qualified separately below.
 
 ## CPU / DDR integration
 
-`J2WishboneDdrBridge` serializes one Wishbone word into a 16-byte MIG burst.
+The current native interface and validation are documented in
+[native AHB memory paths](ahb-memory.md). Earlier measurements below retain
+their original revision context.
+
+`J2AhbDdrBridge` serializes each accepted AHB beat into a 16-byte MIG burst.
 The low four address bits select the word slot; the aligned byte address is
 converted to MIG's 16-bit-word units. SH-2's most significant byte occupies the
 lowest physical byte address. Write masks preserve the other twelve bytes and
-unselected bytes within the word. A zero-select write issues no native command.
-The full write-data burst is accepted before its command. Write ACK means that
+unselected bytes within the word. AHB byte, halfword and word transfers use
+SH-2 BE32 lane masks; invalid alignment or size returns a two-cycle AHB ERROR
+without a native command. The full write-data burst is accepted before its
+command. A successful AHB write response means that
 MIG accepted the command. MIG’s per-bank ordering preserves read-after-write
 behavior for the same address; its normal mode may reorder independent banks.
 This bridge is the only master of the native MIG port.
@@ -341,11 +351,10 @@ assert and synchronously release in their destination domains, with exceptions
 limited to their asynchronous preset pins. Reset of both mailboxes and MIG must
 be coordinated; live single-sided resets are unsupported.
 
-The upstream matrix retains CYC/LOCK ownership across TAS.B read/write beats.
-A withdrawn CYC or STB abandons a pending response; the bridge drains it before
-accepting another request. This also handles cancelled instruction fetches while
-the matrix retains an atomic data owner's CYC. Timeout, calibration loss during
-a transaction, or malformed read completion returns ERR and disables further
+The upstream AHB arbiter retains HMASTLOCK ownership across TAS.B read/write
+beats and idle gaps. An accepted AHB beat is irrevocable: HSEL and HTRANS of
+the next address phase cannot cancel its response. Timeout, calibration loss during
+a transaction, or malformed read completion returns AHB ERROR and disables further
 native traffic until reset. This prevents an orphaned write-data burst or late
 read response from being associated with a later request.
 
@@ -356,9 +365,10 @@ fetch and a delayed return from DDR, and TAS.B on all four byte lanes with both
 instructions and lock data in DDR. This samples 1 KiB across the capacity plus
 scratch areas; it is not a full-memory retention or throughput benchmark.
 
-Bridge simulation covers all 15 nonempty byte masks in all four burst slots,
-address bounds, zero-select writes, held CYC/LOCK with STB gaps, aborts, delayed
-responses, read and write-command timeouts, calibration loss, malformed read termination, and
+Native AHB bridge simulation covers every legal byte/halfword/word lane mask
+in all four burst slots, address bounds, invalid alignment/size, HMASTLOCK gaps,
+unselected following address phases, delayed responses, read and write-command
+timeouts, calibration loss, malformed read termination, and
 coordinated reset both idle and in flight. Whole-SoC simulation uses the ROM
 and both memory models, including warm SF3 quad-state recovery.
 
@@ -399,7 +409,7 @@ Wukong UART check
 
 ## SF3 application loading and boot
 
-After SF3 and DDR diagnostics pass, the ROM prints `Send U to load` and waits
+After flash initialization passes, the ROM prints `Send U to load` and waits
 one second. `U` enters the UART loader. Otherwise the ROM validates the installed
 image and boots it; missing or corrupt images enter the loader. The timer used
 for boot/receive timeouts has interrupts disabled and is stopped before jumping
@@ -408,31 +418,32 @@ initialization; the supplied test app establishes its vectors and uses SRAM stac
 
 ```mermaid
 flowchart TD
-  R[ROM: SF3 + DDR diagnostics] --> W[One-second UART window]
+  R[ROM: flash initialization] --> W[One-second UART window]
   W -->|U| L[UART loader]
   W -->|timeout| V[Validate SF3 header + payload checksum]
-  L --> B[Receive bounded image in top 1 MiB of DDR]
-  B --> C[Validate complete staged image]
+  L --> B[Receive header in internal SRAM]
+  B --> C[Validate header]
   C --> E[Erase only affected application sectors]
-  E --> P[Program and verify payload]
-  P --> H[Program and verify header last]
+  E --> P[Receive, program and verify 256-byte chunks]
+  P --> K[Check full payload checksum]
+  K --> H[Program and verify header last]
   H --> V
   V -->|XIP load address| X[Jump into cached quad XIP]
-  V -->|DDR load address| D[Copy to DDR, verify checksum, jump]
   V -->|invalid| L
 ```
 
 The image format remains compatible with `tools/xip_image.py pack`: eight
 big-endian 32-bit words contain magic `0x4a325831`, entry, payload length,
 32-bit additive byte checksum, load address and three zero reserved words.
-XIP payload starts at `0x10000020`. DDR load ranges must fit entirely inside
-`0x80000000–0x8fffffff`. Load and entry are halfword aligned, and entry must
+XIP payload starts at `0x10000020`, which is the only accepted load address.
+Applications own any relocation to RAM. Load and entry are halfword aligned, and entry must
 address a complete instruction inside the payload. Subtraction-based bounds
 checks reject address wrapping. Uploads require an exact header/payload length;
 boot allows erased partition padding after the declared payload.
 
-The ROM stages uploads at `0x8ff00000`, checks their complete header and checksum
-before erasing, and confines all array operations to the SF3 application
+The ROM uses a 256-byte internal-SRAM buffer and checks the header before
+erasing. It verifies payload chunks and the complete checksum before committing
+the header. It has no DDR access or setup. All array operations stay in the SF3 application
 partition (`0–0xfffff` physically in the current profile). Erase uses 64 KiB
 sectors; page programs never cross a 256-byte boundary. WEL, WIP and Micron flag
 status are checked with bounded polling. The ROM uses quad commands `0xd8` and
@@ -444,11 +455,12 @@ bootable image in this single application slot; the ROM loader remains available
 
 UART protocol at 19,200 baud:
 
-| Request after `Wukong loader` | Response |
+| Request after `J2 loader` | Response |
 |---|---|
 | `J2RD` + big-endian offset and length | `Read flash`, exact raw bytes, `Read complete`, loader prompt |
 | `J2UP` + zero offset and total image length | `Send image`; send at most 256 bytes and wait for `Received xxxxxx` after each chunk |
-| Complete valid upload | `Erase flash`, `Program flash`, `Flash verified`, then application boot |
+| Valid first chunk | `Erase flash`, `Program flash`, then the chunk acknowledgement |
+| Complete valid upload | `Flash verified`, then XIP application boot |
 | Bad bounds, checksum, receive timeout or flash error | Error message and a fresh loader prompt |
 
 `J2RD` is bounded to the application partition. The upload helper backs up every
@@ -460,8 +472,6 @@ No configuration-flash array or nonvolatile flash-register writes are used.
 make wukong-apps
 make wukong-bitstream
 # Explicit --upload replaces SF3 application sectors; all FPGA downloads are volatile.
-python3 tools/check_wukong_boot.py --upload --image build/wukong-v1/app-ddr/flash.bin --output build/wukong-v1/boot/ddr-upload
-python3 tools/check_wukong_boot.py --image build/wukong-v1/app-ddr/flash.bin --output build/wukong-v1/boot/ddr-warm
 python3 tools/check_wukong_boot.py --upload --image build/wukong-v1/app-xip/flash.bin --output build/wukong-v1/boot/xip-upload
 python3 tools/check_wukong_boot.py --image build/wukong-v1/app-xip/flash.bin --output build/wukong-v1/boot/xip-warm
 ```
@@ -469,9 +479,9 @@ python3 tools/check_wukong_boot.py --image build/wukong-v1/app-xip/flash.bin --o
 The simulator builds ROM/application images in separate `rom-sim` and
 `app-sim-*` directories, with a matching 1.6 Mbaud UART and shorter host-response
 timeouts. The FPGA retains 19,200 baud and production timeouts. Tests exercise
-cold XIP boot, warm-quad DDR loading, UART uploads for both destinations, backup
-reads, invalid ranges/staged headers/checksums, truncated transfers and injected
-program failures. The preloaded XIP/DDR cases run the existing cache, DDR, timer and ISA
+cold and warm-quad XIP boot, UART uploads, backup
+reads, invalid ranges/headers/checksums, truncated transfers and injected
+program failures. The cold/warm XIP cases run the existing cache, DDR, timer and ISA
 application suite. Upload cases use compact executable probes with page-boundary
 and partial-page coverage, plus UART inter-byte spacing to avoid overrunning the ROM at the
 accelerated baud. Hardware uploads use the full ISA application. The native host parser tests compile the same

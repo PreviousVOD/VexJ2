@@ -1,6 +1,6 @@
 package j2.board
 
-import j2.board.wukong.WukongDdrBist
+import j2.board.wukong_v1.WukongDdrBist
 import spinal.core.sim._
 import scala.collection.mutable
 

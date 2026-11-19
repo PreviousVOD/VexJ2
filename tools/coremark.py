@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Build provenance, CRC validation, and matched J2 CoreMark runs."""
+from board_config import load as load_board
 import argparse
 import contextlib
 import hashlib
@@ -38,9 +39,11 @@ def check_sources():
 
 def environment_hashes():
     files = list((ROOT / "spinal/src/main/scala/j2/periph").glob("*.scala"))
+    files += list((ROOT / "spinal/src/main/scala/j2/board").rglob("*.scala"))
+    files += [ROOT / "fpga/tang-primer/board.properties", ROOT / "tools/board_config.py"]
     files += list((ROOT / "verilog/verif").glob("*_model.v"))
     files += list((ROOT / "third_party/qspiflash/bench/cpp").glob("flashsim.*"))
-    files += [ROOT / "sw/xiprom/Makefile", ROOT / "sw/xiprom/uart.c"]
+    files += [ROOT / "sw/bootrom/Makefile", ROOT / "sw/bootrom/uart.c"]
     return {str(p.relative_to(ROOT)): sha(p) for p in sorted(files)}
 
 
@@ -128,7 +131,7 @@ def run_suite(args):
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=True)
     (out / "results.json").unlink(missing_ok=True)
-    clock_hz = int(os.environ.get("J2_CLOCK_HZ", "32000000"))
+    clock_hz = int(load_board("tang-primer")["clockHz"])
     report = dict(source_revision=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
                   source_diff_sha256=hashlib.sha256(subprocess.check_output(["git", "diff", "HEAD"], cwd=ROOT)).hexdigest(),
                   upstream_revision=upstream["revision"], mode=args.command,
@@ -139,7 +142,7 @@ def run_suite(args):
                    cwd=ROOT, check=True)
     rtl = ROOT / "build/spinal" / ("verilog-fpga" if args.command == "hardware" else "verilog")
     if args.command == "hardware":
-        bitstream = ROOT / "build/fpga/j2_tang_primer_verilog/j2_tang_primer.bit"
+        bitstream = ROOT / "build/fpga/tang-primer/j2_tang_primer.bit"
         report["bitstream_sha256"] = sha(bitstream)
         shutil.copy2(bitstream, out / bitstream.name)
         timing = ROOT / "build/logs/td_verilog/j2_tang_primer_timing.txt"
@@ -151,7 +154,7 @@ def run_suite(args):
     shutil.copytree(rtl, out / "rtl", dirs_exist_ok=True)
     report["rtl_sha256"] = {p.name: sha(p) for p in sorted(rtl.glob("*")) if p.is_file()}
     (out / "source.patch").write_bytes(subprocess.check_output(["git", "diff", "HEAD"], cwd=ROOT))
-    for directory in ("sw/coremark", "third_party/coremark", "sw/xiprom", "spinal/src"):
+    for directory in ("sw/coremark", "third_party/coremark", "sw/bootrom", "spinal/src"):
         shutil.copytree(ROOT / directory, out / "source" / directory, dirs_exist_ok=True)
     shutil.copy2(__file__, out / "source/coremark.py")
     for run in ("performance", "validation"):
@@ -210,7 +213,7 @@ def main():
         p.add_argument("--timeout", type=int, default=1800 if name == "sim" else 300,
                        help="Wall-clock timeout per seed set (simulated time is checked separately)")
         p.add_argument("--max-cycles", type=int, default=1000000000)
-        p.add_argument("--device", default="/dev/ttyACM0")
+        p.add_argument("--device", default=load_board("tang-primer")["uartDevice"])
         p.add_argument("--allow-short", action="store_true", help="Calibration only; not a reportable score")
     p = commands.add_parser("compare")
     p.add_argument("baseline", type=Path)

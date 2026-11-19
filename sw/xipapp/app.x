@@ -4,7 +4,8 @@ ENTRY(_xip_start)
 
 MEMORY
 {
-  app : o = DEFINED(LOAD_ADDRESS) ? LOAD_ADDRESS : 0x10000020, l = 0x00400000
+  sram : ORIGIN = 0x00008000, LENGTH = DEFINED(J2_SRAM_BYTES) ? J2_SRAM_BYTES : 0x8000
+  app : o = 0x10000020, l = 0x00400000
 }
 
 SECTIONS
@@ -15,7 +16,13 @@ SECTIONS
     *(.text)
     *(.rodata*)
   } > app
-  .data : { *(.data) } > app
-  .bss : { *(.bss) *(COMMON) } > app
+  .data : {
+    _data_start = .; *(.data*) . = ALIGN(4); _data_end = .;
+  } > sram AT > app
+  _data_load = LOADADDR(.data);
+  .bss (NOLOAD) : {
+    _bss_start = .; *(.bss*) *(COMMON) . = ALIGN(4); _bss_end = .;
+  } > sram
+  ASSERT(_bss_end <= ORIGIN(sram) + LENGTH(sram) - 1024, "Application data overlaps stack")
   ASSERT(_xip_start == ORIGIN(app), "Application entry does not match its load address")
 }

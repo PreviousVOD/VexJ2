@@ -1,5 +1,7 @@
 ROOT := $(abspath $(CURDIR)/..)
-J2_CLOCK_HZ ?= 32000000
+ifndef J2_CLOCK_HZ
+J2_CLOCK_HZ := $(shell python3 $(ROOT)/tools/board_config.py tang-primer --get clockHz)
+endif
 VERILATOR ?= $(ROOT)/tools/local/bin/verilator
 BUILD := $(ROOT)/build/verilog/verif
 XIP_BUILD := $(ROOT)/build/verilog/xip_verif
@@ -8,7 +10,7 @@ TOP := $(ROOT)/build/spinal/verilog/j2_tang_primer.v
 TEST_TOP := $(ROOT)/build/spinal/verilog-test/j2_tang_primer.v
 ROM := $(ROOT)/build/verilog/j2_validation_rom.hex
 TESTROM := $(ROOT)/build/sw/testrom16550/main.bin
-BOOTROM := $(ROOT)/build/sw/xiprom/main.bin
+BOOTROM := $(ROOT)/build/tang-primer/rom/main.bin
 XIPAPP := $(ROOT)/build/sw/xipapp/main.bin
 XIP_IMAGE := $(ROOT)/build/sw/xipapp/flash.bin
 XIP_ROM := $(ROOT)/build/verilog/xip/j2_validation_rom.hex
@@ -18,7 +20,7 @@ GPIO_PAD_SIM := $(ROOT)/verilog/verif/j2_gpio_pad_model.v
 SCALA_SRC := $(shell find $(ROOT)/spinal/src/main/scala -name '*.scala' -type f)
 SPINAL_RESOURCES := $(shell find $(ROOT)/spinal/src/main/resources -type f)
 SPINAL_BUILD := $(ROOT)/spinal/build.sbt $(ROOT)/spinal/project/build.properties \
-	$(ROOT)/spinal/project/plugins.sbt
+	$(ROOT)/spinal/project/plugins.sbt $(ROOT)/fpga/tang-primer/board.properties
 SOC_SRC := $(TOP) $(SDRAM_SIM) $(GPIO_PAD_SIM)
 TEST_SOC_SRC := $(TEST_TOP) $(SDRAM_SIM) $(GPIO_PAD_SIM)
 
@@ -48,7 +50,7 @@ $(BUILD)/Vj2_tang_primer: Makefile verif/j2_tang_primer_sim.cpp $(TEST_TOP) $(RO
 		-CFLAGS "-O2 -DCLKRATE_HZ=$(J2_CLOCK_HZ)" \
 		$(TEST_SOC_SRC) $(ROOT)/verilog/verif/j2_tang_primer_sim.cpp
 
-$(XIP_BUILD)/Vj2_tang_primer: Makefile verif/j2_xip_sim.cpp $(TOP) $(XIP_ROM) $(SDRAM_SIM) $(GPIO_PAD_SIM) \
+$(XIP_BUILD)/Vj2_tang_primer: Makefile verif/j2_xip_sim.cpp $(TOP) $(XIP_ROM) $(XIP_IMAGE) $(SDRAM_SIM) $(GPIO_PAD_SIM) \
 		$(FLASHSIM_DIR)/flashsim.cpp $(FLASHSIM_DIR)/flashsim.h
 	mkdir -p $(XIP_BUILD)
 	cp $(XIP_ROM) $(XIP_BUILD)/j2_validation_rom.hex
@@ -62,10 +64,10 @@ $(XIP_BUILD)/Vj2_tang_primer: Makefile verif/j2_xip_sim.cpp $(TOP) $(XIP_ROM) $(
 		$(FLASHSIM_DIR)/flashsim.cpp
 
 $(TEST_TOP): $(SCALA_SRC) $(SPINAL_RESOURCES) $(SPINAL_BUILD) $(ROM)
-	J2_ROM_HEX=$(ROM) J2_SPINAL_OUT=../build/spinal/verilog-test $(MAKE) -C $(ROOT) spinal-generate
+	J2_ROM_HEX=$(ROM) J2_SPINAL_OUT=../build/spinal/verilog-test $(MAKE) -C $(ROOT) tang-sim-generate
 
 $(TOP): $(SCALA_SRC) $(SPINAL_RESOURCES) $(SPINAL_BUILD) $(XIP_ROM)
-	$(MAKE) -C $(ROOT) spinal-generate
+	J2_SPINAL_OUT=../build/spinal/verilog $(MAKE) -C $(ROOT) tang-sim-generate
 
 $(ROM): $(TESTROM) $(ROOT)/tools/gen_verilog_rom.py
 	python3 $(ROOT)/tools/gen_verilog_rom.py $(TESTROM) $@
@@ -76,10 +78,13 @@ $(XIP_ROM): $(BOOTROM) $(ROOT)/tools/gen_verilog_rom.py
 $(XIP_IMAGE): $(XIPAPP) $(ROOT)/tools/xip_image.py
 	$(ROOT)/tools/xip_image.py pack $(XIPAPP) $@
 
-$(BOOTROM): $(wildcard $(ROOT)/sw/xiprom/*)
-	$(MAKE) -C $(ROOT)/sw/xiprom
+.PHONY: force-tang-rom
+force-tang-rom:
 
-$(XIPAPP): $(wildcard $(ROOT)/sw/xipapp/*)
+$(BOOTROM): force-tang-rom $(wildcard $(ROOT)/sw/bootrom/*) $(ROOT)/fpga/tang-primer/board.properties $(ROOT)/tools/board_config.py
+	$(MAKE) -C $(ROOT)/sw/bootrom
+
+$(XIPAPP): $(wildcard $(ROOT)/sw/xipapp/*) $(ROOT)/fpga/tang-primer/board.properties $(ROOT)/tools/board_config.py
 	$(MAKE) -C $(ROOT)/sw/xipapp
 
 $(TESTROM): $(ROOT)/reference/soc_top/components/cpu/cpu2j0_pkg.vhd

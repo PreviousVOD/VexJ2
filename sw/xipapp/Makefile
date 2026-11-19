@@ -1,22 +1,22 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)
 OUT := $(ROOT)/build/sw/xipapp
+BOARD ?= tang-primer
+J2_SRAM_BYTES := $(shell python3 $(ROOT)/tools/board_config.py $(BOARD) --get sramBytes)
 CROSS ?= $(if $(shell command -v sh-elf-gcc),sh-elf-,sh-none-elf-)
 ENDIAN := $(if $(findstring sh-none-elf,$(CROSS)),-mb,)
 CC := $(CROSS)gcc
-J2_CLOCK_HZ ?= 32000000
+ifndef J2_CLOCK_HZ
+J2_CLOCK_HZ := $(shell python3 $(ROOT)/tools/board_config.py $(BOARD) --get clockHz)
+endif
 J2_UART_BAUD ?= 19200
 CFLAGS := -m2 $(ENDIAN) -Os -Wall -ffreestanding -fno-builtin -nostdlib \
-	-I$(ROOT)/sw/xiprom -DJ2_CLOCK_HZ=$(J2_CLOCK_HZ) -DJ2_UART_BAUD=$(J2_UART_BAUD)
-LOAD_ADDRESS ?=
-LDFLAGS := -m2 $(ENDIAN) -nostdlib -T app.x -Wl,-Map,$(OUT)/main.map
-ifneq ($(LOAD_ADDRESS),)
-LDFLAGS += -Wl,--defsym=LOAD_ADDRESS=$(LOAD_ADDRESS)
-endif
+	-I$(ROOT)/sw/bootrom -DJ2_CLOCK_HZ=$(J2_CLOCK_HZ) -DJ2_UART_BAUD=$(J2_UART_BAUD) -DJ2_SRAM_BYTES=$(J2_SRAM_BYTES)
+LDFLAGS := -m2 $(ENDIAN) -nostdlib -Wl,--defsym=J2_SRAM_BYTES=$(J2_SRAM_BYTES) -T app.x -Wl,-Map,$(OUT)/main.map
 OBJS := $(addprefix $(OUT)/,entry.o main.o uart.o isa.o isa_asm.o)
 
 all: $(OUT)/main.bin $(OUT)/main.lst
 
-# Command-line clock/baud/load changes must invalidate reused output directories.
+# Command-line clock/baud changes must invalidate reused output directories.
 .PHONY: FORCE
 FORCE:
 $(OUT)/build-config: FORCE
@@ -37,7 +37,7 @@ $(OUT)/isa.o: isa.c Makefile
 $(OUT)/isa_asm.o: isa.S Makefile
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@
-$(OUT)/uart.o: $(ROOT)/sw/xiprom/uart.c Makefile
+$(OUT)/uart.o: $(ROOT)/sw/bootrom/uart.c Makefile
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OUT)/main.elf: $(OBJS) app.x Makefile
@@ -50,3 +50,5 @@ $(OUT)/main.lst: $(OUT)/main.elf
 clean:
 	rm -rf $(OUT)
 .PHONY: all clean
+
+$(OBJS): $(ROOT)/fpga/$(BOARD)/board.properties $(ROOT)/tools/board_config.py

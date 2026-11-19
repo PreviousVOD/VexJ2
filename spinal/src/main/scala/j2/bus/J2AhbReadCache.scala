@@ -11,18 +11,10 @@ final class J2ReadCache(val config: J2ReadCacheConfig = J2ReadCacheConfig()) ext
     val invalidate, hold = in Bool ()
     val busy             = out Bool ()
   }
-  private val cache      = new J2WishboneReadCache(config)
-  private val dataBridge = new J2AhbToWishbone
-  dataBridge.io.ahb <> io.bus
-  cache.io.bus <> dataBridge.io.wb
-  // The cache data engine remains unchanged; control registers are native APB.
-  cache.io.control.CYC      := False
-  cache.io.control.STB      := False
-  cache.io.control.WE       := False
-  cache.io.control.ADR      := 0
-  cache.io.control.DAT_MOSI := 0
-  cache.io.control.SEL      := 0
-  cache.io.control.LOCK     := False
+  private val cache    = new J2ReadCacheEngine(config)
+  private val endpoint = new J2AhbMemoryEndpoint
+  endpoint.io.ahb <> io.bus
+  cache.io.bus <> endpoint.io.memory
   val validAddress = io.control.PADDR === 0
   io.control.PREADY    := True
   io.control.PRDATA    := 0

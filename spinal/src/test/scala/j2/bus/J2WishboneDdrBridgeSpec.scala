@@ -1,5 +1,7 @@
 package j2.bus
 
+import j2.board.wukong_v1._
+
 import j2.board.MigModel
 import spinal.core._
 import spinal.core.sim._

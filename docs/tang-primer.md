@@ -39,10 +39,29 @@ flowchart LR
 ```
 
 ROM and SRAM describe native Spinal `Mem` with synchronous one-cycle reads.
-FPGA generation selects the generic `MemoryBackend.Eg4` policy: boot ROM and
+`Generate_TangPrimer` selects the generic `MemoryBackend.Eg4` policy: boot ROM and
 microcode map to `EG_LOGIC_BRAM` in the 32K pool, with MIF files generated from
 their initialized contents. SRAM retains TD inference into 9K BRAMs. Simulation
 uses native memories. See [memory backends](memory-inference.md).
+
+Use `make tang-generate` for FPGA RTL and `make tang-sim-generate` for the
+simulation wrapper. Common CPU/component generation remains `make spinal-generate`;
+it no longer emits board tops or reads the historical `J2_FPGA` switch.
+
+`fpga/tang-primer/board.properties` uses the same schema and shared loaders as
+Wukong. It supplies the clock, UART, flash and SDRAM window to generation and
+firmware builds. `memoryType=sdram` selects the supported board memory technology;
+the SDRAM controller and PHY live in `j2.board.tang_primer`.
+The common `sw/bootrom` build selects Winbond initialization from `flashType`;
+the same XIP-only image validator and UART loader are used on Wukong. Uploads
+use a 256-byte internal-SRAM buffer, verify the payload, and commit the image
+header last. The ROM performs no SDRAM tests or RAM-image copies. Rebuild the ROM/bitstream when using the updated uploader.
+The Tang Dynasty project/constraints are under `fpga/tang-primer/`, and packaged
+FPGA outputs are under `build/fpga/tang-primer/`.
+
+The SDRAM controller is reached through a native AHB endpoint and its BMB
+port; there is no Wishbone stage. Current bus architecture and validation are
+recorded in [native AHB memory paths](ahb-memory.md).
 
 ## Application flash
 
@@ -64,7 +83,7 @@ native output-enable signal: zero drives the pad, one makes it high impedance.
 The simulation-only model is `verilog/verif/j2_gpio_pad_model.v`.
 
 GPIO 0–2 retain the RGB LED locations R3/J14/P13. GPIO 3–31 use free
-display/camera header pins listed in `fpga/j2_tang_primer_verilog/j2_tang_primer.adc`.
+display/camera header pins listed in `fpga/tang-primer/j2_tang_primer.adc`.
 All external pins are LVCMOS33. The legacy validation ROM enables outputs at
 `0xff000008` before writing values at `0xff000004`.
 

@@ -26,7 +26,7 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     match = re.search(r"  EG_PHY_PLL #\(.*?\n  \) eg4Pll \(.*?\n  \);", args.rtl.read_text(), re.S)
     if not match:
-        parser.error("RTL must contain the FPGA PLL instance; generate with J2_FPGA=1 J2_USE_PLL=1")
+        parser.error("RTL must contain the FPGA PLL instance; run J2_USE_PLL=1 make tang-generate")
 
     # TD 4.6.7's model reuses the input name load_reg for an internal 5-bit
     # signal. Rename only that internal net in a build-directory copy so that

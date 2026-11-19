@@ -2,6 +2,30 @@
 .align 2
 .global _xip_start
 _xip_start:
+  mov.l stack_top, r15
+  mov.l data_source, r0
+  mov.l data_start, r1
+  mov.l data_end, r2
+1:
+  cmp/hs r2, r1
+  bt 2f
+  mov.l @r0+, r3
+  mov.l r3, @r1
+  add #4, r1
+  bra 1b
+  nop
+2:
+  mov.l bss_start, r1
+  mov.l bss_end, r2
+  mov #0, r3
+3:
+  cmp/hs r2, r1
+  bt 4f
+  mov.l r3, @r1
+  add #4, r1
+  bra 3b
+  nop
+4:
   mov.l xip_vectors_pointer, r0
   ldc r0, vbr
   mov.l xip_main_pointer, r0
@@ -54,7 +78,7 @@ timer_value_address:
 .global _xip_vectors
 _xip_vectors:
   .long _xip_start
-  .long 0x0000fffc
+  .long (0x00008000 + J2_SRAM_BYTES - 4)
   .rept 2
   .long xip_halt
   .endr
@@ -68,3 +92,11 @@ _xip_vectors:
   .long xip_halt
   .endr
   .long _xip_timer_isr
+
+.align 2
+stack_top: .long (0x00008000 + J2_SRAM_BYTES - 4)
+data_source: .long _data_load
+data_start: .long _data_start
+data_end: .long _data_end
+bss_start: .long _bss_start
+bss_end: .long _bss_end

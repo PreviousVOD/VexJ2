@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from check_wukong_boot import validate
-from wukong_config import ROOT, load
+from board_config import ROOT, load
 
 
 class ImageTests(unittest.TestCase):
@@ -16,12 +16,12 @@ class ImageTests(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory()
         lib = Path(cls.temp.name) / "image.so"
         subprocess.run(["cc", "-shared", "-fPIC", "-Wall", "-Wextra", "-Werror",
-                        "-I"+str(ROOT/"build/wukong-v1/rom"), str(ROOT/"sw/wukongrom/image.c"), "-o", str(lib)], check=True)
+                        "-I"+str(ROOT/"build/wukong-v1/rom"), str(ROOT/"sw/bootrom/image.c"), "-o", str(lib)], check=True)
         cls.lib = ctypes.CDLL(str(lib))
         cls.lib.image_valid.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_int]
         cls.lib.image_checksum.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
         cls.lib.image_checksum.restype = ctypes.c_uint32
-        cls.profile = load()
+        cls.profile = load("wukong-v1")
 
     @classmethod
     def tearDownClass(cls):
@@ -43,7 +43,7 @@ class ImageTests(unittest.TestCase):
     def test_boundaries_and_wrap(self):
         self.check(self.image(), True)
         for address in [0x80000000, 0x80400000, 0x8ffffffe]:
-            self.check(self.image(load=address, entry=address), True)
+            self.check(self.image(load=address, entry=address), False)
         for fields in [dict(magic=0), dict(r0=1), dict(r1=1), dict(r2=1), dict(length=0),
                        dict(length=1), dict(length=0xffffffff), dict(entry=0x10000021),
                        dict(entry=0x10000022), dict(entry=0), dict(load=0x10000022),
