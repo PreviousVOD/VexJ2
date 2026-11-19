@@ -20,11 +20,11 @@ ROM, SRAM, XIP and external memory remain on AHB5, each behind an independent
 arbiters are instantiated explicitly by `J2Soc`.
 
 A standalone **`J2Biu`**, outside the generic AMBA library, covers the peripheral
-domain `0xff000000`–`0xff007fff`. It precedes `Ahb5ToApb3Bridge` and `Apb3Matrix`,
+domain `0xff000000`–`0xff007fff`. It precedes `Ahb5ToApb4Bridge` and `Apb4Matrix`,
 which selects GPIO, UART, SPI control, timer or cache control. The BIU composes
 standard AHB arbitration and persistent lock ownership at that system boundary;
 programmable access-control policy is not implemented yet. Destination ownership
-uses the physical ingress port. HMASTER reaches the bridge unchanged; APB3 has
+uses the physical ingress port. HMASTER reaches the bridge unchanged; APB4 has
 no master-ID or lock signals. See [APB and BIU architecture](apb.md).
 
 TAS holds HMASTLOCK across its read/modify/write sequence, including idle gaps.
@@ -41,15 +41,17 @@ policy. See the [generic AHB5 library](ahb5.md) for protocol and identity rules.
 CPU and memory ports use native AHB5. ROM, SRAM and the XIP cache accept AHB
 through `J2AhbMemoryEndpoint`; Tang SDRAM feeds the SDRAM controller's BMB port
 directly, and Wukong DDR feeds the MIG request/response mailboxes directly.
-GPIO, UART, timer, SPI control and cache control expose native APB3 interfaces.
+GPIO, UART, timer, SPI control and cache control expose native APB4 interfaces.
 There is no Wishbone interface or conversion anywhere in the production SoC.
 See [native AHB memory paths](ahb-memory.md) for phase timing and backend contracts.
 
-Peripheral registers require aligned **32-bit** loads/stores. APB3 has no write
-strobes; byte/halfword, unaligned or partial-strobe peripheral accesses receive
-AHB ERROR without an APB transaction. The bridge preserves data bits without
-byte swapping. Memory byte/halfword accesses are unchanged. The software
-addresses and flash image format are unchanged.
+Peripheral registers support naturally aligned byte, halfword and word AHB
+accesses. The bridge aligns the APB address and generates `PSTRB` for writes;
+the CPU selects read lanes from the returned word. The SoC uses word-invariant
+big-endian lanes: a register's low byte is at base + 3, its low halfword at
+base + 2. Read side effects apply to the whole APB word. UART/SPI command
+registers require their complete payload lanes; see the [APB4 contract](apb.md).
+The software addresses and flash image format are unchanged.
 
 ## Memory map
 
@@ -76,7 +78,7 @@ of the core and SoC; the address map and storage sizes are unchanged.
 
 ## SPI XIP and read cache
 
-`J2SpiFlash` wraps native `Apb3SpiXdrMasterCtrl`. Responses are assembled in
+`J2SpiFlash` wraps native `Apb4SpiXdrMasterCtrl`. Responses are assembled in
 big-endian order and aligned to 32-bit words before the CPU selects a byte
 or halfword lane. The physical `toSpi()` adapter registers outputs and inputs
 to match the controller's receive pipeline; the raw XDR interface must not
@@ -128,7 +130,7 @@ and SRAM settings. External-memory tests remain in the application.
 
 ## 32-bit GPIO
 
-`J2Pio` uses native APB3 registers with 32 bidirectional pins:
+`J2Pio` uses native APB4 registers with 32 bidirectional pins:
 
 | Offset | Function |
 |---:|---|
@@ -142,7 +144,7 @@ Pad primitives and pin assignments are board-specific; see
 
 ## Architecture timer
 
-`J2Timer` connects the native SpinalHDL `Timer` through `Apb3SlaveFactory`.
+`J2Timer` connects the native SpinalHDL `Timer` through `Apb4SlaveFactory`.
 Its 32-bit counter ticks at 1 MHz, derived from the parameterized SoC clock, and
 stops at the programmable limit. The interrupt is a level request on vector
 `0x40` at priority 14; software must stop, clear, or rearm the timer in the ISR.

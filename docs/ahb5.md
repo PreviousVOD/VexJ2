@@ -55,7 +55,7 @@ agreed endianness. Both little- and big-endian integrations can use this fabric.
 | `Ahb5Interconnect` | Buffered routing and independent destination arbiters, with optional sparse connectivity |
 | `Ahb5RoutingMatrix` | Routing only; exposes each manager/destination port for external composition |
 | `Ahb5SubordinateArbiter` | Arbiter for decoded inputs carrying HSEL and upstream HREADY |
-| `Ahb5ToApb3Bridge` | Same-clock full-width AHB/APB conversion with two-cycle AHB errors |
+| `Ahb5ToApb4Bridge` | Same-clock AHB/APB4 conversion with subword strobes and two-cycle AHB errors |
 
 The AHB decoder adds no buffering or wait cycles of its own. It can forward an
 address to one subordinate while returning data from the preceding subordinate.

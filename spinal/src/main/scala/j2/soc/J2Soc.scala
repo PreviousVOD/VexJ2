@@ -2,7 +2,7 @@ package j2.soc
 
 import j2.bus.{J2Ahb, J2Apb, J2Biu, J2ReadCache, J2ReadCacheConfig}
 import j2.bus.ahb5._
-import j2.bus.apb.Apb3Matrix
+import j2.bus.apb.Apb4Matrix
 import j2.core.{J2CoreConfig, J2MicrocodedCore}
 import j2.periph._
 import spinal.core._
@@ -82,9 +82,9 @@ final class J2Soc(
   // The standalone system BIU owns the complete peripheral bridge domain.
   private val peripheralBiu = new J2Biu(J2Ahb.config, 2)
   peripheralBiu.io.managers <> matrix.io.destinations(4)
-  private val peripheralBridge = new Ahb5ToApb3Bridge(J2Ahb.config)
+  private val peripheralBridge = new Ahb5ToApb4Bridge(J2Ahb.config, wordInvariantBigEndian = true)
   peripheralBridge.io.ahb <> peripheralBiu.io.subordinate
-  private val peripheralBus = new Apb3Matrix(
+  private val peripheralBus = new Apb4Matrix(
     peripheralBridge.apbConfig,
     Seq(pioMapping, uartMapping, flashControlMapping, timerMapping, cacheControlMapping)
   )

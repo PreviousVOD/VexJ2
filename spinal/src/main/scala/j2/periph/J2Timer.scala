@@ -3,19 +3,19 @@ package j2.periph
 import j2.bus.J2Apb
 import spinal.core._
 import spinal.lib._
-import spinal.lib.bus.amba3.apb.Apb3SlaveFactory
+import j2.bus.apb.Apb4SlaveFactory
 import spinal.lib.misc.Timer
 
 final class J2Timer(clockHz: Int, tickHz: Int = 1000000, width: Int = 32) extends Component {
   require(clockHz > 0 && tickHz > 0 && clockHz % tickHz == 0)
-  require(width > 0)
+  require(width > 0 && width <= 32)
 
   val io = new Bundle {
     val bus       = slave(J2Apb())
     val interrupt = out Bool ()
   }
 
-  private val factory    = Apb3SlaveFactory(io.bus)
+  private val factory    = Apb4SlaveFactory(io.bus)
   private val timer      = new Timer(width)
   private val limitHit   = timer.io.value === timer.io.limit
   private val tickEnable = factory.createReadAndWrite(Bits(1 bits), 0x00, 0) init (0)
@@ -24,7 +24,8 @@ final class J2Timer(clockHz: Int, tickHz: Int = 1000000, width: Int = 32) extend
   private val interruptEnable = factory.createReadAndWrite(Bits(1 bits), 0x0c, 0) init (0)
   factory.read(limitHit, 0x0c, 8)
 
-  private val busClearing = factory.isWriting(0x04) || factory.isWriting(0x08)
+  private val counterLaneWrite = io.bus.PSTRB((width - 1) / 8 downto 0).orR
+  private val busClearing = (factory.isWriting(0x04) || factory.isWriting(0x08)) && counterLaneWrite
   private val divider     = clockHz / tickHz
   private val tick = if (divider == 1) {
     True

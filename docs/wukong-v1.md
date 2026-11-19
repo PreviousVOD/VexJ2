@@ -90,7 +90,7 @@ flowchart LR
   P["Board MMCM + reset + I/O"] --> S["Shared J2Soc"]
   S --> R["Boot ROM / SRAM / microcode<br/>Xilinx block RAM inference"]
   S --> BIU["Standalone system BIU"]
-  BIU --> APB["AHB5-to-APB3 bridge / APB matrix"]
+  BIU --> APB["AHB5-to-APB4 bridge / APB matrix"]
   APB --> U["UART / timer / GPIO<br/>SPI and cache control"]
   S --> C["XIP cache<br/>physical application offset"]
   C --> F["SPI on J11<br/>Pmod SF3 application flash"]

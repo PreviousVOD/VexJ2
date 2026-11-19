@@ -22,7 +22,12 @@ static int cache_test(void) {
             /* Execute this store from XIP, exercising a concurrent instruction read.
              * The invalidate command self-clears; only the busy bit may read as one.
              */
-            XIP_CACHE_CONTROL = 1;
+            if (pass & 1) {
+                *(volatile uint8_t *)0xff004003 = 1;
+            } else {
+                XIP_CACHE_CONTROL = 1;
+            }
+
             if (XIP_CACHE_CONTROL & ~2U) {
                 return 0;
             }
@@ -96,6 +101,70 @@ static int sdram_test(void) {
 #define TIMER_IRQ         (*(volatile uint32_t *)0xff00300c)
 #define TIMER_IRQ_PENDING 0x100
 #define TIMER_COUNT       (*(volatile uint32_t *)0x80710000)
+
+/* APB4 uses data byte lanes; SH-2 maps the low lane to word address + 3. */
+static int apb_test(void) {
+    volatile uint8_t  *limit_bytes  = (volatile uint8_t *)0xff003004;
+    volatile uint16_t *limit_halves = (volatile uint16_t *)0xff003004;
+    unsigned           index;
+
+    TIMER_ENABLE = 0;
+    TIMER_IRQ    = 0;
+    TIMER_LIMIT  = 0x11223344;
+    for (index = 0; index < 4; ++index) {
+        if (limit_bytes[index] != (0x11U * (index + 1))) {
+            return 0;
+        }
+    }
+
+    if (limit_halves[0] != 0x1122) {
+        return 0;
+    }
+
+    if (limit_halves[1] != 0x3344) {
+        return 0;
+    }
+
+    for (index = 0; index < 4; ++index) {
+        uint32_t shift     = (3 - index) * 8;
+        uint32_t before    = TIMER_LIMIT;
+        limit_bytes[index] = 0xa0 + index;
+        if (TIMER_LIMIT != ((before & ~(0xffU << shift)) | ((0xa0U + index) << shift))) {
+            return 0;
+        }
+    }
+
+    limit_halves[0] = 0xbeef;
+    if (TIMER_LIMIT != 0xbeefa2a3) {
+        return 0;
+    }
+
+    limit_halves[1] = 0x1234;
+    if (TIMER_LIMIT != 0xbeef1234) {
+        return 0;
+    }
+
+    /* An upper byte cannot change the low enable bit. */
+    *(volatile uint8_t *)0xff003000 = 1;
+    if (TIMER_ENABLE != 0) {
+        return 0;
+    }
+
+    *(volatile uint8_t *)0xff003003 = 1;
+    if (TIMER_ENABLE != 1) {
+        return 0;
+    }
+
+    *(volatile uint16_t *)0xff003002 = 0;
+    if (TIMER_ENABLE != 0) {
+        return 0;
+    }
+
+    TIMER_VALUE = 0;
+    TIMER_LIMIT = 0;
+
+    return 1;
+}
 
 static void timer_set_mask(uint32_t mask) {
     uint32_t status;
@@ -189,6 +258,13 @@ void xip_main(void) {
     }
 
     uart_puts("Startup initialization passed\n");
+    if (!apb_test()) {
+        uart_puts("APB4 subword tests failed\n");
+        for (;;) {
+        }
+    }
+
+    uart_puts("APB4 subword tests passed\n");
     if (!cache_test()) {
         uart_puts("XIP cache tests failed\n");
         for (;;) {

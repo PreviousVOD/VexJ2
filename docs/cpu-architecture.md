@@ -172,8 +172,8 @@ The SoC routes AHB through `Ahb5RoutingMatrix` to independent arbiters for ROM,
 SRAM, XIP and external memory. A standalone system `J2Biu` precedes the AHB-to-APB
 bridge and peripheral matrix. BIUs are outside the AMBA library. The generic
 fabric has no CPU pairing or instruction-port borrowing. Memory leaf adapters
-retain the existing Wishbone data backends; peripheral registers are native
-APB3 and require aligned 32-bit accesses. See [SoC bus domains](soc.md#bus-matrix),
+use native AHB5 interfaces; peripheral registers use APB4 with naturally aligned
+byte, halfword and word AHB accesses. APB reads and their side effects remain word-wide. See [SoC bus domains](soc.md#bus-matrix),
 [APB subsystem](apb.md) and [AHB5 protocol contracts](ahb5.md).
 
 The native CPU/fabric regression covers TAS with both T outcomes, a conditional

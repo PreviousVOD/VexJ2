@@ -1,6 +1,6 @@
 # Native AHB memory paths
 
-All production CPU and memory interfaces use the SH-2 AHB5 profile. APB3 serves
+All production CPU and memory interfaces use the SH-2 AHB5 profile. APB4 serves
 peripheral registers. Wishbone exists only in historical verification fixtures
 under `spinal/src/test/scala`; it is absent from production RTL.
 

@@ -3,8 +3,8 @@ package j2.periph
 import j2.bus.{J2Apb, J2ReadBurst}
 import spinal.core._
 import spinal.lib._
-import spinal.lib.bus.amba3.apb.{Apb3, Apb3Config}
-import spinal.lib.com.spi.ddr.{Apb3SpiXdrMasterCtrl, SpiXdrMasterCtrl, SpiXdrParameter}
+import j2.bus.apb._
+import spinal.lib.com.spi.ddr.{SpiXdrMaster, SpiXdrMasterCtrl, SpiXdrParameter}
 import spinal.lib.io.TriStateArray
 
 final class J2SpiFlash(lineBytes: Int = 32) extends Component {
@@ -41,7 +41,7 @@ final class J2SpiFlash(lineBytes: Int = 32) extends Component {
     xipDummyModInit          = 1,
     xipPayloadModInit        = 1
   )
-  private val controller = Apb3SpiXdrMasterCtrl(parameters)
+  private val controller = new Apb4SpiXdrMasterCtrl(parameters)
   // Keep byte ordering and SPI-specific command timing outside the generic cache.
   controller.io.xip.cmd.valid   := io.xip.cmd.valid
   controller.io.xip.cmd.address := io.xip.cmd.address(23 downto 0)
@@ -87,9 +87,9 @@ final class J2SpiFlash(lineBytes: Int = 32) extends Component {
   controller.io.apb.PENABLE := controlState === ControlState.ACCESS
   io.control.PREADY         := controlState === ControlState.ACCESS && controller.io.apb.PREADY
   io.control.PRDATA         := controller.io.apb.PRDATA
-  io.control.PSLVERROR := (if (controller.io.apb.config.useSlaveError)
-                             io.control.PREADY && controller.io.apb.PSLVERROR
-                           else False)
+  controller.io.apb.PSTRB   := io.control.PSTRB
+  controller.io.apb.PPROT   := io.control.PPROT
+  io.control.PSLVERR        := io.control.PREADY && controller.io.apb.PSLVERR
   switch(controlState) {
     is(ControlState.IDLE) {
       when(io.control.PSEL(0) && controlAllowed)(controlState := ControlState.SETUP)
@@ -98,7 +98,7 @@ final class J2SpiFlash(lineBytes: Int = 32) extends Component {
     is(ControlState.ACCESS)(when(io.control.PREADY)(controlState := ControlState.IDLE))
   }
   io.invalidate := io.control.PSEL(0) && io.control.PENABLE && io.control.PREADY &&
-    io.control.PWRITE && !io.control.PSLVERROR
+    io.control.PWRITE && io.control.PSTRB.orR && !io.control.PSLVERR
 
   // The XDR controller's receive pipeline assumes one output-register cycle
   // and one input-register cycle. Driving its raw PHY signals straight onto
@@ -114,4 +114,23 @@ final class J2SpiFlash(lineBytes: Int = 32) extends Component {
     spiPins.data.read(pin)       := io.spi.data.read(pin)
   }
 
+}
+
+/** Native APB4 mapping of the SPI controller; no APB3 adapter or RMW. */
+private class Apb4SpiXdrMasterCtrl(p: SpiXdrMasterCtrl.MemoryMappingParameters) extends Component {
+  val io = new Bundle {
+    val apb       = slave(Apb4(Apb4Config(8, 32)))
+    val xip       = slave(SpiXdrMasterCtrl.XipBus(p.xip))
+    val spi       = master(SpiXdrMaster(p.ctrl.spi))
+    val interrupt = out Bool ()
+  }
+  private val ctrl    = SpiXdrMasterCtrl(p.ctrl)
+  private val factory = Apb4SlaveFactory(io.apb)
+  factory.requireWriteStrobes(0x00, 3)
+  factory.requireWriteStrobes(0x50, 15)
+  factory.requireWriteStrobes(0x54, 15)
+  private val mapping = SpiXdrMasterCtrl.driveFrom(ctrl, factory)(p)
+  io.xip <> mapping.xip.xipBus
+  io.spi <> ctrl.io.spi
+  io.interrupt <> mapping.interruptCtrl.interrupt
 }

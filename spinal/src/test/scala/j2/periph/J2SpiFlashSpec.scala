@@ -90,18 +90,20 @@ class J2SpiFlashSpec extends munit.FunSuite {
       dut.clockDomain.deassertReset()
       tick()
 
-      def access(write: Boolean, value: Int = 0): Long = {
+      def access(write: Boolean, value: Int = 0, mask: Int = 15, error: Boolean = false): Long = {
         dut.io.control.CYC      #= true
         dut.io.control.STB      #= true
         dut.io.control.WE       #= write
+        dut.io.control.SEL      #= mask
         dut.io.control.DAT_MOSI #= value
         sleep(1)
         var waitCycles = 0
-        while (!dut.io.control.ACK.toBoolean && waitCycles < 100) {
+        while (!dut.io.control.ACK.toBoolean && !dut.io.control.ERR.toBoolean && waitCycles < 100) {
           tick()
           waitCycles += 1
         }
         assert(waitCycles < 100, "SPI control bus stalled")
+        assertEquals(dut.io.control.ERR.toBoolean, error)
         val result = dut.io.control.DAT_MISO.toLong
         tick()
         dut.io.control.CYC #= false
@@ -109,7 +111,13 @@ class J2SpiFlashSpec extends munit.FunSuite {
         tick()
         result
       }
-      access(true, 0x881) // assert CS0
+      access(true, 0x881, mask = 0) // Empty writes must not enqueue commands.
+      access(true, 0x881, mask = 1, error  = true)
+      access(true, 0x881, mask = 12, error = true)
+      for (_ <- 0 until 40) tick()
+      assert(dut.io.spi.cs.toBoolean)
+      assert(commands.isEmpty)
+      access(true, 0x881, mask = 3) // Low-halfword command: assert CS0
       access(true, 0x39f) // read/write 0x9f
       for (_ <- 0 until 3) access(true, 0x300)
       access(true, 0x800) // release CS0

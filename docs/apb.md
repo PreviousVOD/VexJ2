@@ -3,7 +3,7 @@
 [SoC reference](soc.md) · [AHB5 library](ahb5.md) · [Tang Primer](tang-primer.md)
 
 The CPU and memory subsystem use AHB5. GPIO, UART, timer, SPI control and cache
-control use 32-bit APB3. ROM, SRAM, SDRAM/DDR and XIP data use
+control use 32-bit APB4. ROM, SRAM, SDRAM/DDR and XIP data use
 [native AHB memory paths](ahb-memory.md). The peripheral address map is unchanged.
 
 ```mermaid
@@ -13,7 +13,7 @@ flowchart LR
   ROUTE --> MEMARB[Independent AHB memory arbiters]
   MEMARB --> MEM[ROM / SRAM / SDRAM / XIP data]
   ROUTE --> BIU[Standalone J2Biu]
-  BIU --> BRIDGE[AHB5-to-APB3 bridge]
+  BIU --> BRIDGE[AHB5-to-APB4 bridge]
   BRIDGE --> MATRIX[APB matrix]
   MATRIX --> GPIO[GPIO]
   MATRIX --> UART[UART]
@@ -33,16 +33,16 @@ flowchart LR
   peripheral bridge. It currently composes a generic round-robin arbiter with
   persistent atomic ownership. It is **not an AMBA-defined component** and does
   not yet implement programmable access permissions or an SH-2A-compatible CSR set.
-- `Ahb5ToApb3Bridge` performs protocol conversion, without arbitration or a lock
+- `Ahb5ToApb4Bridge` performs protocol conversion, without arbitration or a lock
   policy. It belongs to the generic bus library and can be reused independently.
-- `Apb3Matrix` decodes one APB manager into non-overlapping peripheral ranges.
+- `Apb4Matrix` decodes one APB manager into non-overlapping peripheral ranges.
   One input is sufficient because the upstream BIU serializes all managers.
   There is no second APB arbitration stage.
 
 A locked sequence reserves the complete peripheral domain, including IDLE gaps.
 The owner may address different APB peripherals behind that same AHB subordinate
 region; competitors cannot enter until release. Independent AHB memory arbiters
-continue. HMASTER is preserved up to the bridge; APB3 has neither HMASTER nor
+continue. HMASTER is preserved up to the bridge; APB4 has neither HMASTER nor
 HMASTLOCK. Ownership therefore stays on the AHB side, independent of APB PSEL.
 In the current single-core SoC only the data port can reach the peripheral BIU;
 its multiple-input interface is exercised by competing-manager simulation.
@@ -52,7 +52,7 @@ its multiple-input interface is exercised by competing-manager simulation.
 The same clock and reset drive both sides. The bridge accepts an AHB address
 only on HSEL, HREADY and NONSEQ/SEQ. It captures the following write-data phase,
 then emits a full APB SETUP cycle followed by ACCESS. Address, select, direction
-and write data remain stable through PREADY waits. It captures the peripheral
+write data, strobes and protection remain stable through PREADY waits. It captures the peripheral
 response before completing AHB; writes are never acknowledged early.
 
 PSLVERR is sampled only on a completing APB ACCESS. An APB error produces the
@@ -61,65 +61,103 @@ they do not select a peripheral. IDLE/BUSY AHB cycles never create APB accesses.
 The final AHB response cycle may also accept the next address. Reset clears
 pending state; peripherals and bridge must be reset together.
 
-The APB3 profile has no PSTRB. The reusable bridge supports matching 8-, 16- or
-32-bit AHB/APB data widths and addresses up to 32 bits, with naturally aligned,
-full-width transfers only. Partial write strobes, other sizes and unaligned
-requests return ERROR without peripheral side effects. The SoC selects 32 bits:
-software must use aligned 32-bit peripheral register loads/stores. Byte and
-halfword **memory** accesses are unaffected. Data is not byte-swapped. APB3 does
-not carry AHB protection/security attributes; this bridge is not an access filter.
+The project-owned `j2.bus.apb` library implements the **APB4 profile** in Arm
+IHI0024E (`../IHI0024E_amba_apb_architecture_spec.pdf`), not the optional APB5
+extensions. `Apb4Config` supports 8-, 16- and 32-bit data, 1–32 address bits
+(with enough bits for the word offset), and one select per interface. PREADY,
+PSLVERR, PSTRB and PPROT are present; clock/reset come from the Spinal clock domain.
 
-These rules follow [Arm's APB specification, IHI0024C](https://documentation-service.arm.com/static/60d5b617677cf7536a55c273)
-and the [AHB5 specification](ahb5.md). APB3 uses PREADY/PSLVERR; APB4 write strobes
-and protection signals are not part of this implementation.
+The bridge supports matching AHB/APB widths and naturally aligned accesses
+of any size up to that width. Unsupported HSIZE or misalignment produces AHB
+ERROR without selecting APB. The APB address is always aligned to the bus word.
+Data is not byte-swapped. `wordInvariantBigEndian = false` selects the lane mapping
+shared by little-endian and byte-invariant big-endian (BE8) AHB. The SoC selects `true` for SH-2
+word-invariant big-endian (BE32), which this bridge supports on 32-bit buses.
+This parameter determines active byte lanes, not data byte swapping. AHB
+IHI0033C §6.2 defines these distinct mappings; §3.5.2 requires HSIZE/HADDR
+masking even when HWSTRB is present. APB PSTRB itself is endian-independent.
+
+For writes, HSIZE/HADDR determine the active lanes; optional AHB HWSTRB is
+intersected with them. Inactive AHB strobes are ignored, as required by AHB5.
+PSTRB[n] enables PWDATA[8n+7:8n]. Sparse and all-zero strobes are supported.
+For the 32-bit SH-2 profile:
+
+| AHB access | Aligned APB offset | PSTRB |
+| --- | --- | --- |
+| Byte at base + 0 / +1 / +2 / +3 | 0 | 1000 / 0100 / 0010 / 0001 |
+| Halfword at base + 0 / +2 | 0 | 1100 / 0011 |
+| Word at base | 0 | 1111 |
+| Any read | 0 | 0000 |
+
+**APB has no read size or read strobes.** A byte or halfword read fetches the
+complete aligned APB word; the AHB manager selects its lane afterward. Read-pop
+or read-clear side effects therefore apply to that word. Future private INTC/PPB
+registers must account for this when packing adjacent registers.
+
+PPROT[0] receives HPROT[1] (privileged), PPROT[1] receives HNONSEC (or zero when
+AHB security signals are absent), and PPROT[2] receives !HPROT[0] (instruction).
+These attributes are captured with the address, then held through APB waits.
+The matrix forwards them; current peripherals do not enforce access permissions.
+HMASTER/HMASTLOCK remain on the AHB side of the standalone BIU.
 
 ## Peripheral implementation
 
-GPIO, UART and timer use `Apb3SlaveFactory`. UART keeps `UartCtrl.driveFrom32`
-and the existing FIFO depths/register map. The timer keeps its registered IRQ,
-1 MHz tick and clear/rearm semantics. Cache control is a native APB register:
-offset zero reads busy in bit 1; writing bit 0 invalidates the cache. Other cache
-control offsets return PSLVERR.
+GPIO, UART and timer use the project-owned `Apb4SlaveFactory`, built on Spinal's
+`BusSlaveFactoryDelayed`. Ordinary register fields honor byte enables, including
+packed halfwords. W1C/W1S and W0C/W0S helpers preserve unselected lanes. An
+all-zero write completes without register updates or write callbacks. Aligned
+unmapped register offsets retain the existing zero-read/no-op behavior unless a
+peripheral explicitly reports an error; unaligned factory accesses report PSLVERR.
+Callbacks for address-wide commands must explicitly account for payload lanes.
+Custom `readError`/`writeError` report errors with the usual BusSlaveFactory
+semantics; they do not roll back side effects.
 
-SPI control remains backed by `Apb3SpiXdrMasterCtrl`. A pending control request
-holds new XIP admissions, waits for an existing refill and physical CS release,
-then supplies the controller its own SETUP/ACCESS sequence. This prevents
-starting a downstream transfer halfway through ACCESS when a refill finishes.
-A successful control write invalidates the XIP cache. The quad-SPI PHY timing
-and data refill interface are unchanged.
+UART keeps `UartCtrl.driveFrom32` and the existing FIFO depths/register map.
+Its TX command at offset 0 requires PSTRB[0]; a low-byte, low-halfword or word
+write is accepted. SPI maps `SpiXdrMasterCtrl.driveFrom` directly through APB4.
+Its command at offset 0 requires PSTRB[1:0], and large commands at 0x50/0x54
+require all four lanes. Nonempty writes missing required payload lanes report
+PSLVERR and enqueue nothing. Configuration fields support ordinary masked writes;
+there is no read-modify-write emulation of FIFOs.
+
+The timer keeps its registered IRQ, 1 MHz tick and clear/rearm semantics. A write
+to limit/value clears the counter only when a counter byte lane is selected.
+Cache control offset zero reads busy in bit 1; writing bit 0 with PSTRB[0] set
+invalidates the cache. Other cache control offsets return PSLVERR.
+
+A pending SPI control request holds new XIP admissions, waits for an existing
+refill and physical CS release, then supplies the controller its own SETUP/ACCESS
+sequence. This prevents starting a transfer halfway through ACCESS when a refill
+finishes. A successful nonempty control write invalidates the XIP cache.
+The quad-SPI PHY timing and refill interface are unchanged.
 
 ## Validation
 
-The Tang Primer build targets 32 MHz and passes timing in both clock domains:
-minimum setup/hold slack is **7.045/0.104 ns**. The static timing estimate for
-the SoC clock is 41.314 MHz; this is not a hardware frequency sweep. Resources
-are **11,196 LUTs**, **4,543 registers**, five DSPs, 51 9K BRAMs and ten 32K
-BRAMs. The vendor PLL model and all **70 Scala tests** pass.
-
-Full-SoC reset, cold-boot and UART-loader simulations pass. FPGA application
-upload and an independent volatile JTAG reload both pass cache, SDRAM, timer,
-atomics, instruction fetch, forwarding, MUL/MAC and exception checks. Results,
-UART logs and source/image hashes are in `build/apb-migration/{sim,hardware}/`;
-the hardware directory also retains the tested bitstream and timing/area reports.
-
-
+`Apb4Spec` checks 8/16/32-bit bridge widths with LE/BE8 lanes and 32-bit BE32 lanes, every
+supported size/alignment, sparse/zero strobes, protection mapping, waited payload
+stability, packed register updates, flag helpers and command side effects.
 `J2ApbFabricSpec` exercises the routing matrix, standalone BIU, bridge and APB
-matrix together with three contending managers and waited peripheral models.
-It checks setup/access stability, following-phase write data, response ownership,
-unmapped accesses, peripheral errors, rejection without side effects, back-to-back
-AHB addresses, whole-domain locks and independent AHB-domain progress. Native
-APB timer tests cover registered IRQ assertion/clear/rearm. SPI tests cover
-refill/control serialization and physical flash sampling. The complete SoC
-validation application checks the real APB registers in simulation and on FPGA.
+matrix with three managers: waits, errors, subword accesses, back-to-back AHB
+addresses, whole-domain locks and independent AHB-domain progress.
+
+Peripheral tests cover UART command lanes, SPI command lanes and refill/control
+serialization, timer clear/IRQ behavior, and cache invalidation strobes.
+`sw/xipapp` tests actual SH-2 byte/halfword loads and stores against timer registers
+and byte writes to cache invalidation. The shared Tang simulator/FPGA validator
+requires the `APB4 subword tests passed` marker. Wukong runs the same application.
 
 ```sh
 make spinal-test
 make -C verilog xip-sim-build
-python3 tools/isa_validation.py sim --output build/apb-migration --timeout 300
-TD_HOME=/path/to/TD_4.6.7_Linux make verilog-fpga fpga-clock-test
-TD_HOME=/path/to/TD_4.6.7_Linux python3 tools/isa_validation.py hardware \
-  --output build/apb-migration --timeout 300
+python3 tools/isa_validation.py sim --output build/apb4-validation --timeout 300
+make wukong-boot-sim
 ```
 
-The hardware command programs volatile FPGA configuration SRAM and uploads the
-test application to the dedicated application flash. Wukong also passes at 72 MHz; see [Wukong validation](wukong-v1.md#ahb5apb-validation-at-72-mhz).
+Validation on 2026-11-19 passed all **94 Scala tests**, all **three Tang boot
+scenarios**, all **four Wukong boot scenarios**, and hardware RTL generation for
+both boards. Scala formatting and the unchanged C formatting configuration also
+pass. FPGA synthesis, timing and hardware execution have not been rerun for APB4.
+Logs are under `build/apb4-validation/`.
+
+Earlier APB3 hardware timing and boot evidence remains in `build/apb-migration/`; it is not
+an APB4 hardware result. INTC and the core-private PPB are subsequent work.

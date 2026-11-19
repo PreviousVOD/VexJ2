@@ -18,7 +18,7 @@ import xip_image
 ROOT = Path(__file__).resolve().parents[1]
 MARKERS = (
     "Startup initialization passed",
-    "XIP cache tests passed",
+    "APB4 subword tests passed", "XIP cache tests passed",
     "SDRAM tests passed", "Timer tests passed",
     "ISA atomics passed (SRAM/SDRAM)", "ISA word fetch passed (SRAM/SDRAM)",
     "ISA forwarding passed",

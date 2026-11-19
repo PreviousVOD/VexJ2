@@ -14,6 +14,8 @@ class J2TimerSpec extends munit.FunSuite {
       bus.PWRITE  #= false
       bus.PADDR   #= 0
       bus.PWDATA  #= 0
+      bus.PSTRB   #= 0
+      bus.PPROT   #= 0
 
       dut.clockDomain.clockSim #= false
 
@@ -28,6 +30,7 @@ class J2TimerSpec extends munit.FunSuite {
         bus.PSEL    #= 1
         bus.PENABLE #= false
         bus.PWRITE  #= true
+        bus.PSTRB   #= 15
         bus.PADDR   #= address
         bus.PWDATA  #= value
         tick() // SETUP
@@ -49,6 +52,7 @@ class J2TimerSpec extends munit.FunSuite {
       // so observing status does not move the clock under test.
       def status(): Long = {
         bus.PWRITE #= false
+        bus.PSTRB  #= 0
         bus.PADDR  #= 0x0c
         sleep(1)
         bus.PRDATA.toLong
@@ -111,6 +115,8 @@ class J2TimerSpec extends munit.FunSuite {
       bus.PWRITE  #= false
       bus.PADDR   #= 0
       bus.PWDATA  #= 0
+      bus.PSTRB   #= 0
+      bus.PPROT   #= 0
 
       dut.clockDomain.clockSim #= false
 
@@ -121,10 +127,11 @@ class J2TimerSpec extends munit.FunSuite {
         sleep(5)
       }
 
-      def access(write: Boolean, address: Long, value: Long = 0): Long = {
+      def access(write: Boolean, address: Long, value: Long = 0, mask: Int = 15): Long = {
         bus.PSEL    #= 1
         bus.PENABLE #= false
         bus.PWRITE  #= write
+        bus.PSTRB   #= (if (write) mask else 0)
         bus.PADDR   #= address
         bus.PWDATA  #= value
         tick() // SETUP
@@ -167,6 +174,10 @@ class J2TimerSpec extends munit.FunSuite {
       assertEquals(read(0x08), 3L)
       assertEquals(read(0x08), 3L)
 
+      access(true, 0x08, 0, mask    = 0)
+      access(true, 0x04, 0xff, mask = 8)
+      assertEquals(read(0x08), 3L)
+      assertEquals(read(0x04), 3L)
       write(0x0c, 1)
       sleep(1)
       assert(dut.io.interrupt.toBoolean)

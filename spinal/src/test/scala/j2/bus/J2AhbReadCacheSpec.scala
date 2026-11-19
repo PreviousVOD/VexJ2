@@ -23,6 +23,7 @@ class J2AhbReadCacheSpec extends munit.FunSuite {
         dut.clockDomain.clockSim #= false
         dut.io.invalidate        #= false; dut.io.hold           #= false
         control.PSEL             #= 0; control.PENABLE           #= false; control.PWRITE  #= false
+        control.PSTRB            #= 0; control.PPROT             #= 0
         control.PADDR            #= 0; control.PWDATA            #= 0
         refill.cmd.ready         #= false; refill.rsp.valid      #= false
         refill.rsp.fragment.data #= 0; refill.rsp.fragment.error #= false; refill.rsp.last #= false
@@ -89,12 +90,13 @@ class J2AhbReadCacheSpec extends munit.FunSuite {
         def flush(): Unit = {
           manualInvalidate = true; master.tick(); manualInvalidate = false; master.tick()
         }
-        def csr(write: Boolean, data: Int = 0, address: Int = 0): BigInt = {
+        def csr(write: Boolean, data: Int = 0, address: Int = 0, mask: Int = 15): BigInt = {
           control.PSEL    #= 1; control.PENABLE      #= false; control.PWRITE #= write
+          control.PSTRB   #= (if (write) mask else 0)
           control.PADDR   #= address; control.PWDATA #= data; master.tick()
           control.PENABLE #= true; sleep(1)
           assert(control.PREADY.toBoolean)
-          assertEquals(control.PSLVERROR.toBoolean, address != 0)
+          assertEquals(control.PSLVERR.toBoolean, address != 0)
           val result = control.PRDATA.toBigInt
           master.tick(); control.PSEL #= 0; control.PENABLE #= false; master.tick()
           result
@@ -114,7 +116,7 @@ class J2AhbReadCacheSpec extends munit.FunSuite {
         for (i <- 0 until config.lineBytes) read(base + i)
         val before = commands.size
         assertEquals(csr(false), BigInt(0))
-        csr(true, 0); csr(true, 2); read(base)
+        csr(true, 0); csr(true, 2); csr(true, 1, mask = 0); csr(true, 1, mask = 8); read(base)
         assertEquals(commands.size, before)
         csr(true, 1); salt ^= 0x22; read(base)
         assertEquals(commands.size, before + 1)

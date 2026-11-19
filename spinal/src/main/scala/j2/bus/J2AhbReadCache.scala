@@ -19,9 +19,9 @@ final class J2ReadCache(val config: J2ReadCacheConfig = J2ReadCacheConfig()) ext
   io.control.PREADY    := True
   io.control.PRDATA    := 0
   io.control.PRDATA(1) := cache.io.busy
-  io.control.PSLVERROR := io.control.PSEL(0) && io.control.PENABLE && !validAddress
+  io.control.PSLVERR   := io.control.PSEL(0) && io.control.PENABLE && !validAddress
   val softwareInvalidate = io.control.PSEL(0) && io.control.PENABLE && validAddress &&
-    io.control.PWRITE && io.control.PWDATA(0)
+    io.control.PWRITE && io.control.PSTRB(0) && io.control.PWDATA(0)
   io.refill <> cache.io.refill
   cache.io.invalidate := io.invalidate || softwareInvalidate
   cache.io.hold       := io.hold
