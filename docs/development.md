@@ -95,7 +95,8 @@ Both reuse its settings/core generation and select their memory backend locally.
 Both boards use `fpga/<board>/board.properties`, with the same keys and shared
 `j2.board.BoardProfile` / `tools/board_config.py` loaders. The profile defines the
 FPGA, input/system clocks, PLL selection, UART, flash layout, and external memory
-type/base/size. The loaders reject settings unsupported by the physical board.
+type/base/size. The loaders check generic numeric/address invariants; board descriptions are
+trusted inputs, with hardware-specific constraints owned by each board.
 `flashType` selects the Winbond or Micron initialization path in the common
 `sw/bootrom` sources through `J2_FLASH_MICRON`. JEDEC ID is reported at startup;
 the selected protocol comes from the board profile, not runtime autodetection.
@@ -110,8 +111,8 @@ The board wrappers own SDRAM/DDR controllers; the common SoC routes a generic AH
 memory window and the core has no knowledge of physical memory technology.
 Run `python3 tools/board_config.py tang-primer` or `... wukong-v1` to generate
 `build/<board>/rom/board.h` and `build/<board>/board.tcl`.
-Tang's legacy `J2_CLOCK_HZ` / `J2_USE_PLL` diagnostic overrides are applied by
-both loaders and never override the Wukong profile.
+Optional `<field>Env` properties declare environment overrides in both loaders.
+Tang declares `J2_CLOCK_HZ` / `J2_USE_PLL`; Wukong does not inherit these overrides.
 Both ROMs are built with `make -C sw/bootrom BOARD=<board>` and written to
 `build/<board>/rom/`. They share image validation, XIP boot and the UART loader. The ROM initializes
 its own data/BSS and uses only internal SRAM for a 256-byte upload buffer. It
@@ -148,3 +149,6 @@ fixes are recorded in [the integration notes](microcoded-core-debug.md).
 For benchmark builds, duration requirements and result comparisons, see
 [CoreMark](coremark.md). Recorded test counts and timing figures in the
 architecture and bring-up pages describe the revisions validated there.
+
+Board FPGA builds use `make BOARD=<name> fpga`. Each board owns its Tcl entry
+point and sources the common Xilinx or Anlogic workflow; see [FPGA build flows](fpga-build.md).

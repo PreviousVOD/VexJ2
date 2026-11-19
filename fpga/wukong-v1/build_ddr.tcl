@@ -1,4 +1,4 @@
-set root [file normalize [file join [file dirname [info script]] ..]]
+set root [file normalize [file join [file dirname [info script]] .. ..]]
 set out [file join $root build wukong-v1 ddr]
 file delete -force [file join $out implementation.pass]
 if {$argc == 1 && [lindex $argv 0] eq "resume"} {
@@ -9,7 +9,7 @@ if {$argc == 1 && [lindex $argv 0] eq "resume"} {
     # The platform and DDR diagnostic share the same proc_sys_reset parameters.
     set saved_out $out
     set out [file join $root build wukong-v1]
-    source [file join $root tools wukong_ip.tcl]
+    source [file join $root fpga wukong-v1 reset_ip.tcl]
     set out $saved_out
     read_verilog [file join $out rtl j2_wukong_ddr_test.v]
     read_xdc [file join $root fpga wukong-v1 ddr_test.xdc]

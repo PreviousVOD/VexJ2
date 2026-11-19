@@ -1,7 +1,7 @@
 # Toggle mailboxes hold source data until destination capture is acknowledged.
 # Bound bundled-data paths to one receiving clock period, which is shorter than
 # the two-stage synchronized toggle latency; leave destination logic timed.
-source [file join [file dirname [info script]] wukong_bridge_paths.tcl]
+source [file join [file dirname [info script]] bridge_paths.tcl]
 set bridge_root [wukong_bridge_root]
 foreach {channel clock_name} {requests clk_pll_i responses pll_CLKOUT0} {
     set clock [get_clocks $clock_name]

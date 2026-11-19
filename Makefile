@@ -7,9 +7,10 @@ SBT ?= $(TOOL_SBT)
 VERILATOR ?= $(TOOL_VERILATOR)
 SPINAL_DIR := spinal
 SPINAL_OUT := build/spinal/verilog
+BOARD ?= tang-primer
 TD_HOME ?=
 ifndef J2_CLOCK_HZ
-J2_CLOCK_HZ := $(shell python3 tools/board_config.py tang-primer --get clockHz)
+J2_CLOCK_HZ := $(shell python3 tools/board_config.py $(BOARD) --get clockHz)
 endif
 WUKONG_CLOCK_HZ = $(shell python3 tools/board_config.py wukong-v1 --get clockHz)
 export J2_CLOCK_HZ
@@ -126,12 +127,11 @@ wukong-rom: $(TOOL_SH_GCC)
 wukong-generate: wukong-rom microcode-data $(TOOL_SBT)
 	cd $(SPINAL_DIR) && $(SBT) -batch "runMain j2.Generate_Wukong"
 
-wukong-synth: export J2_SPINAL_OUT := ../build/wukong-v1/rtl
-wukong-synth: wukong-mig wukong-generate
-	VIVADO_HOME="$(VIVADO_HOME)" bash tools/build_wukong.sh
+wukong-synth:
+	$(MAKE) BOARD=wukong-v1 fpga-synth
 
-wukong-bitstream: wukong-synth
-	VIVADO_HOME="$(VIVADO_HOME)" bash tools/implement_wukong.sh
+wukong-bitstream:
+	$(MAKE) BOARD=wukong-v1 fpga
 
 wukong-sim: wukong-boot-sim
 
@@ -139,17 +139,11 @@ wukong-reset-sim: wukong-synth
 	mkdir -p build/wukong-v1/reset_sim
 	rm -f build/wukong-v1/reset_sim/validation.pass
 	cd build/wukong-v1/reset_sim && VIVADO_HOME="$(VIVADO_HOME)" bash "$(CURDIR)/tools/run_vivado.sh" \
-		-mode batch -notrace -source "$(CURDIR)/tools/check_wukong_reset.tcl" -log driver.log -journal driver.jou
+		-mode batch -notrace -source "$(CURDIR)/fpga/wukong-v1/check_reset.tcl" -log driver.log -journal driver.jou
 	test -s build/wukong-v1/reset_sim/validation.pass
 
-# Requires an explicitly supplied, implemented and validated bitstream.
 wukong-program:
-	test -n "$(WUKONG_BITSTREAM)" && test -f "$(WUKONG_BITSTREAM)"
-	mkdir -p build/wukong-v1/program
-	rm -f build/wukong-v1/program/program.pass
-	cd build/wukong-v1/program && VIVADO_HOME="$(VIVADO_HOME)" bash "$(CURDIR)/tools/run_vivado.sh" -mode batch -notrace \
-		-source "$(CURDIR)/tools/program_wukong.tcl" -tclargs "$(abspath $(WUKONG_BITSTREAM))"
-	test -s build/wukong-v1/program/program.pass
+	$(MAKE) BOARD=wukong-v1 fpga-program BITSTREAM="$(WUKONG_BITSTREAM)"
 
 wukong-uart:
 	VIVADO_HOME="$(VIVADO_HOME)" python3 tools/check_wukong_uart.py
@@ -240,17 +234,17 @@ xip-upload: $(XIP_IMAGE)
 	tools/xip_image.py upload $(XIP_IMAGE)
 
 verilog-fpga: $(BOOTROM) $(XIP_IMAGE)
-	TD_HOME="$(TD_HOME)" J2_ROM="$(BOOTROM)" tools/build_tang_primer_verilog_td.sh
+	$(MAKE) BOARD=tang-primer fpga J2_ROM="$(BOOTROM)"
 
 verilog-program: verilog-fpga
-	TD_HOME="$(TD_HOME)" tools/program_tang_primer_verilog_td.sh
+	$(MAKE) BOARD=tang-primer fpga-program
 
 .PHONY: wukong-mig wukong-ddr-generate wukong-ddr-sim wukong-ddr-bitstream
 wukong-mig:
 	mkdir -p build/wukong-v1/ddr
 	rm -f build/wukong-v1/ddr/generation.pass build/wukong-v1/ddr/implementation.pass
 	cd build/wukong-v1/ddr && VIVADO_HOME="$(VIVADO_HOME)" bash "$(CURDIR)/tools/run_vivado.sh" -mode batch -notrace \
-		-source "$(CURDIR)/tools/generate_wukong_mig.tcl" -log generate.log -journal generate.jou
+		-source "$(CURDIR)/fpga/wukong-v1/generate_mig.tcl" -log generate.log -journal generate.jou
 	test -s build/wukong-v1/ddr/generation.pass
 
 wukong-ddr-generate: $(TOOL_SBT)
@@ -262,7 +256,7 @@ wukong-ddr-sim: $(TOOL_SBT) $(TOOL_VERILATOR)
 wukong-ddr-bitstream: export J2_SPINAL_OUT := ../build/wukong-v1/ddr/rtl
 wukong-ddr-bitstream: wukong-mig wukong-ddr-generate
 	cd build/wukong-v1/ddr && VIVADO_HOME="$(VIVADO_HOME)" bash "$(CURDIR)/tools/run_vivado.sh" -mode batch -notrace \
-		-source "$(CURDIR)/tools/build_wukong_ddr.tcl" -log implementation.log -journal implementation.jou
+		-source "$(CURDIR)/fpga/wukong-v1/build_ddr.tcl" -log implementation.log -journal implementation.jou
 	test -s build/wukong-v1/ddr/implementation.pass
 
 .PHONY: wukong-ddr-uart
@@ -301,3 +295,5 @@ wukong-probes: $(TOOL_SH_GCC)
 wukong-boot-hw: wukong-bitstream wukong-apps
 	VIVADO_HOME="$(VIVADO_HOME)" python3 tools/check_wukong_boot.py --upload --image build/wukong-v1/app-xip/flash.bin --output build/wukong-v1/boot/xip-upload
 	VIVADO_HOME="$(VIVADO_HOME)" python3 tools/check_wukong_boot.py --image build/wukong-v1/app-xip/flash.bin --output build/wukong-v1/boot/xip-warm
+
+include tools/fpga/targets.mk

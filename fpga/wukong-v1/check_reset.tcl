@@ -1,4 +1,4 @@
-set root [file normalize [file join [file dirname [info script]] ..]]
+set root [file normalize [file join [file dirname [info script]] .. ..]]
 set out [file join $root build wukong-v1]
 source [file join $out board.tcl]
 create_project -force reset_check [file join $out reset_project] -part $board_part

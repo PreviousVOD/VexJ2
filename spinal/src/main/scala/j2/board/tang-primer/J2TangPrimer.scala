@@ -8,6 +8,10 @@ final class J2TangPrimer(
     forFpga: Boolean = false,
     usePll: Boolean = true
 ) extends Component {
+  require(
+    socConfig.memoryBytes == 0x800000 && socConfig.memoryBase % 0x800000 == 0,
+    "Tang SDRAM controller uses an aligned 8 MiB window"
+  )
   private val clockHz = socConfig.clockHz
   require(clockHz > 0)
   require(

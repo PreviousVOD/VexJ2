@@ -246,3 +246,8 @@ that revision. CAS was subsequently removed from the supported ISA; see [SH-2 be
 The corrected 32 MHz build uses 11,217 LUTs and 2,668 registers, with
 1.981/0.149 ns setup/hold slack and unchanged BRAM counts. Multi-CPU pairing and
 sparse-connectivity cases are covered in RTL simulation.
+
+The reusable FPGA entry point is `make BOARD=tang-primer fpga`. Its board-owned
+`build.tcl` sources the Anlogic workflow; `verilog-fpga` remains an alias. Timing
+constraints are rendered from `j2_tang_primer.sdc.in` using the profile. See
+[FPGA build flows](fpga-build.md).

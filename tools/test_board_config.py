@@ -1,14 +1,13 @@
 import tempfile
 import unittest
 from pathlib import Path
-from board_config import generate, load, validate
+from board_config import generate, load, load_file, validate, tcl_quote
 
 
 class BoardConfigTests(unittest.TestCase):
     def test_shared_schema(self):
         tang = load("tang-primer", {})
         wukong = load("wukong-v1", {})
-        self.assertEqual(tang.keys(), wukong.keys())
         self.assertEqual(tang["memoryType"], "sdram")
         self.assertEqual(wukong["memoryType"], "ddr3")
 
@@ -16,15 +15,31 @@ class BoardConfigTests(unittest.TestCase):
         env = dict(J2_CLOCK_HZ="24000000", J2_USE_PLL="0")
         self.assertEqual(load("tang-primer", env)["clockHz"], "24000000")
         self.assertEqual(load("wukong-v1", env)["clockHz"], "72000000")
-        with self.assertRaises(ValueError):
-            load("tang-primer", dict(J2_USE_PLL="0"))
+        self.assertEqual(load("tang-primer", dict(J2_USE_PLL="0"))["usePll"], "0")
 
     def test_invalid_hardware_and_flash_windows(self):
         for board in ("tang-primer", "wukong-v1"):
-            for key, value in (("memoryType", "unknown"), ("memoryBytes", "0x20000000"),
-                               ("xipBytes", "0x2000000"), ("memoryBase", "0x80000001")):
+            for key, value in (("xipBytes", "0x2000000"), ("memoryBase", "0x80000001")):
                 with self.subTest(board=board, key=key), self.assertRaises(ValueError):
                     validate(dict(load(board, {}), **{key: value}))
+
+    def test_new_board_without_registry(self):
+        profile = dict(load("wukong-v1", {}), name="example-board", part="another-fpga",
+                       memoryType="psram", memoryBytes="0x02000000", clockHz="40000000",
+                       uartBaud="115200", clockHzEnv="EXAMPLE_CLOCK")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "board.properties"
+            path.write_text("\n".join(f"{k}={v}" for k, v in profile.items()))
+            result = load_file(path, dict(EXAMPLE_CLOCK="48000000"))
+            self.assertEqual(result["name"], "example-board")
+            self.assertEqual(result["clockHz"], "48000000")
+
+    def test_tcl_values_are_data(self):
+        import subprocess
+        value = 'part [error bad] $name "quoted" \\ path'
+        script = f"set part {tcl_quote(value)}\nputs $part\n"
+        result = subprocess.run(["tclsh"], input=script, text=True, capture_output=True, check=True)
+        self.assertEqual(result.stdout.strip(), value)
 
     def test_generated_header_and_clock_constraints(self):
         for board in ("tang-primer", "wukong-v1"):

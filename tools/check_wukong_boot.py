@@ -112,9 +112,8 @@ def main():
         termios.tcsetattr(fd, termios.TCSANOW, attrs)
         termios.tcflush(fd, termios.TCIFLUSH)
         with (out / "program.log").open("w") as log:
-            proc = subprocess.Popen(["bash", str(ROOT / "tools/run_vivado.sh"), "-mode", "batch", "-notrace",
-                "-source", str(ROOT / "tools/program_wukong.tcl"), "-log", str(out / "vivado.log"),
-                "-journal", str(out / "vivado.jou"), "-tclargs", str(bitstream)],
+            proc = subprocess.Popen(["python3", str(ROOT / "tools/fpga.py"), "--board", "wukong-v1",
+                "program", "--bitstream", str(bitstream), "--program-dir", str(out)],
                 cwd=out, stdout=log, stderr=subprocess.STDOUT)
             serial.until(b"Send U to load\r\n", args.timeout)
             if args.upload:

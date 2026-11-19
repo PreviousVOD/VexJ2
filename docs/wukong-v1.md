@@ -118,7 +118,7 @@ existing SDRAM window. Peripheral registers require aligned 32-bit accesses;
 see [APB and standalone BIU contracts](apb.md).
 
 The native AHB DDR mailboxes live at `bridge/{requests,responses}`.
-`tools/wukong_bridge_paths.tcl` resolves exactly one backend, supporting both
+`fpga/wukong-v1/bridge_paths.tcl` resolves exactly one backend, supporting both
 this path and the former wrapped `bridge/bridge/{requests,responses}` hierarchy. Synthesis
 constraints and the Fmax tool use that shared resolver. Missing or ambiguous
 mailboxes still fail the build; payload max-delay, bus-skew and toggle/reset
@@ -129,7 +129,7 @@ output, its external reset is KEY0, and its lock input requires both clock
 generator locks, configuration EOS and synchronized MIG readiness. The CPU
 stays in reset until DDR calibration completes. Readiness is registered in the
 UI domain before crossing to the reset controller. The SoC uses `peripheral_reset`. IP parameters are
-versioned in `tools/wukong_ip.tcl`; generated products stay under `build/`.
+versioned in `fpga/wukong-v1/reset_ip.tcl`; generated products stay under `build/`.
 
 `sw/bootrom` initializes the SF3 for **4-4-4 quad protocol** at 4 MHz:
 command, address and payload all use DQ0..3. It first recovers single SPI if a
@@ -156,6 +156,10 @@ nonvolatile defaults. The ROM offers application loading or boots the installed 
 Both boards now build these shared ROM sources, selecting their flash protocol from the board profile.
 
 ## Build and validation
+
+The reusable entry point is `make BOARD=wukong-v1 fpga`; the board-owned
+`fpga/wukong-v1/build.tcl` sources the common Xilinx flow. Existing Wukong targets
+remain aliases. See [FPGA build flows](fpga-build.md).
 
 ```sh
 make wukong-generate  # common ROM configured for Wukong and board RTL

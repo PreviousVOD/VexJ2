@@ -17,7 +17,7 @@ final case class BoardProfile(values: Map[String, String]) {
   val usePll  = number("usePll") == 1
   require(number("usePll") == 0 || number("usePll") == 1)
   require(clockHz > 0 && number("clockHz").isValidInt)
-  require(text("uartDevice").nonEmpty && number("uartBaud") == 19200)
+  require(text("uartDevice").nonEmpty && number("uartBaud").isValidInt && number("uartBaud") > 0)
   require(
     number("configurationSlotBytes") >= 0 && 2 * number("configurationSlotBytes") <= number(
       "configurationFlashBytes"
@@ -26,34 +26,6 @@ final case class BoardProfile(values: Map[String, String]) {
   require(number("flashOffset") % 65536 == 0 && number("xipBytes") % 65536 == 0)
   require(number("xipBase") >= 0 && number("xipBase") + number("xipBytes") <= (BigInt(1) << 32))
   require(number("memoryBase") % 16 == 0)
-  name match {
-    case "tang-primer" =>
-      require(text("flashType") == "winbond")
-      require(text("memoryType") == "sdram")
-      require(text("part") == "EG4S20BG256" && number("inputClockHz") == 24000000)
-      require(number("memoryBytes") == 0x00800000, "Tang has 8 MiB of SDRAM")
-      require(
-        number("memoryBase") % number("memoryBytes") == 0,
-        "Tang SDRAM window must align to its size"
-      )
-      require(number("flashOffset") == 0, "Tang loader uploads start at flash offset zero")
-      val vcoHz = if (clockHz == 32000000) 384000000 else 360000000
-      require(
-        if (usePll) vcoHz % clockHz == 0 else clockHz == 24000000,
-        "invalid Tang PLL/bypass clock"
-      )
-    case "wukong-v1" =>
-      require(text("flashType") == "micron")
-      require(text("memoryType") == "ddr3")
-      require(text("part") == "xc7a100tfgg676-2" && number("inputClockHz") == 50000000)
-      require(
-        clockHz == 72000000 && usePll,
-        "update and validate the Wukong MMCM before changing clocks"
-      )
-      require(number("memoryBytes") == 0x10000000, "Wukong MIG exposes 256 MiB of DDR3")
-      require(number("configurationSlotBytes") > 0)
-    case _ => throw new IllegalArgumentException(s"unsupported board $name")
-  }
   def socConfig(romHex: String): J2SocConfig = J2SocConfig(
     clockHz     = clockHz,
     romHex      = romHex,
@@ -72,23 +44,27 @@ final case class BoardProfile(values: Map[String, String]) {
 }
 
 object BoardProfile {
-  def load(board: String, environment: Map[String, String] = sys.env): BoardProfile = {
+  def load(board: String, environment: Map[String, String] = sys.env): BoardProfile =
+    loadPath(
+      environment.getOrElse("J2_BOARD_PROPERTIES", s"../fpga/$board/board.properties"),
+      environment
+    )
+
+  def loadPath(path: String, environment: Map[String, String] = sys.env): BoardProfile = {
     val properties = new Properties
-    val stream     = Files.newInputStream(Paths.get(s"../fpga/$board/board.properties"))
+    val stream     = Files.newInputStream(Paths.get(path))
     try properties.load(stream)
     finally stream.close()
     import scala.jdk.CollectionConverters._
     val values =
       properties.stringPropertyNames().asScala.map(key => key -> properties.getProperty(key)).toMap
-    // Legacy Tang diagnostic overrides must not leak into Wukong through recursive Make.
-    val overrides =
-      if (board == "tang-primer")
-        Seq("J2_CLOCK_HZ" -> "clockHz", "J2_USE_PLL" -> "usePll").flatMap { case (env, key) =>
-          environment.get(env).map(key -> _)
-        }.toMap
-      else Map.empty[String, String]
-    val profile = BoardProfile(values ++ overrides)
-    require(profile.name == board, "board profile name does not match its directory")
-    profile
+    val overrides = values.iterator
+      .collect {
+        case (key, env) if key.endsWith("Env") =>
+          environment.get(env).map(key.stripSuffix("Env") -> _)
+      }
+      .flatten
+      .toMap
+    BoardProfile(values ++ overrides)
   }
 }

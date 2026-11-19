@@ -8,7 +8,12 @@ object Generate_Wukong extends App {
   require(args.isEmpty, "Generate_Wukong takes no arguments")
   private val profile = BoardProfile.load("wukong-v1")
   private val socConfig =
-    profile.socConfig(sys.env.getOrElse("WUKONG_ROM_HEX", "../build/wukong-v1/rom/boot.hex"))
+    profile.socConfig(
+      sys.env.getOrElse(
+        "J2_ROM_HEX",
+        sys.env.getOrElse("WUKONG_ROM_HEX", "../build/wukong-v1/rom/boot.hex")
+      )
+    )
   private val output = sys.env.getOrElse("J2_SPINAL_OUT", "../build/wukong-v1/rtl")
   private val config = MemoryBackend.Xilinx.configure(Generate.config(output))
   Generate.core(config, exposeDebug = false)

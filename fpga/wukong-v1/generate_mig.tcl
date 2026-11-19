@@ -1,5 +1,5 @@
 # Regenerate MIG for the physical DDR3L device and board pinout.
-set root [file normalize [file join [file dirname [info script]] ..]]
+set root [file normalize [file join [file dirname [info script]] .. ..]]
 set out [file join $root build wukong-v1 ddr]
 file mkdir $out
 file delete -force [file join $out generation.pass]

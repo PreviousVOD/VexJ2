@@ -1,0 +1,4 @@
+create_clock -name clk24 -period @inputClockPeriod@ [get_ports clk24]
+@if usePll@
+create_clock -name soc_clk -period @clockPeriod@ [get_nets {eg4Bufg_o}]
+@endif@
