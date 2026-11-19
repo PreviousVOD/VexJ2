@@ -11,7 +11,7 @@ SCALA_SRC := $(shell find $(SPINAL_DIR)/src/main/scala -name '*.scala' -type f)
 SPINAL_RESOURCES := $(shell find $(SPINAL_DIR)/src/main/resources -type f)
 SPINAL_BUILD := $(SPINAL_DIR)/build.sbt $(SPINAL_DIR)/project/build.properties \
 	$(SPINAL_DIR)/project/plugins.sbt
-HARNESS_HEADERS := $(REF_COMMON)/sysmodel.h $(REF_COMMON)/wbslave.h
+HARNESS_HEADERS := $(REF_COMMON)/sysmodel.h
 REFSRC := $(ROOT)/reference/soc_top/components/cpu/cpu2j0_pkg.vhd
 
 .PHONY: all generate rom test microcode-test clean

@@ -8,7 +8,7 @@ Generation and SoC integration use the configuration constructor.
 The organization follows VexiiRiscv's plugin host, typed services, and generic
 pipeline links. The implemented ISA is now SH-2: J2's `BGND`, `CAS.L`, `SHAD`
 and `SHLD` encodings raise illegal-instruction exceptions. Complex instructions
-retain microcode and classic Wishbone interfaces. The reference ROM's unused
+retain microcode; the CPU exposes native AHB5 interfaces. The reference ROM's unused
 extension rows remain at their original addresses, but have no legal predecode
 entry. See [the SH-2 pipeline page](sh2-pipeline.md) for the manual mapping and
 current validation results. Historical measurements below describe their
@@ -48,7 +48,7 @@ does not define hardware priority or elaboration order.
 flowchart LR
   IF["IF: word fetch / halfword buffer<br/>opcode, PC, first operation"] --> ID["ID: direct first operation<br/>continuation ROM / hazards"]
   ID --> EX["EX: ALU, fixed shifts<br/>branch, address, store data"]
-  EX --> MA["MA: registered request<br/>Wishbone waits / response"]
+  EX --> MA["MA: registered request<br/>AHB5 phases / response"]
   MA --> WB["WB: load result + validity<br/>destination + metadata"]
   EX -->|Z forwarding| RF["Registers / SR / PC"]
   WB -->|W forwarding| RF
@@ -142,54 +142,37 @@ buffer does not serve as a persistent instruction cache.
 
 ## Bus contracts
 
-Both buses use classic Wishbone with byte addresses. Requests hold address,
-data, byte selects, and write control stable through ACK or ERR. ERR wins if
-both responses are asserted; failed reads cannot write registers, SR, MACH, or
-MACL. Misaligned requests fault before reaching the bus.
+Both CPU buses use 32-bit AHB5 with byte addresses and separate address/data
+phases. Each port has one outstanding SINGLE transfer. A request completes
+only at the final HREADY response; HRESP marks an error. Failed reads cannot
+write registers, SR, MACH or MACL. Misaligned requests fault before reaching
+the bus. HMASTER is 0 for instruction fetch and 1 for data.
 
-Instruction responses contain the full aligned big-endian word; adapters and
-CPU testbenches must not select a halfword before returning it. Data lane
-selection, replicated subword stores, and sign extension remain big-endian.
-Atomic operations hold CYC and
-LOCK across the read/write sequence, including the gap between transfers.
+Instruction responses contain the full aligned big-endian word. Data lane
+selection, replicated subword stores and sign extension remain big-endian.
+HPROT marks privileged, non-bufferable access, cacheable for memory and
+non-cacheable for peripheral data accesses at `0xffxxxxxx`.
 
-`J2WishboneIntercon` provides the complete two-stage matrix: a native
-`WishboneDecoder` per master and a `J2WishboneArbiter` per shared slave. The
-D-bus reaches every slave; the read-only I-bus reaches only memories. The SoC
-declares this connectivity instead of instantiating individual muxes, arbiters
-and response muxes. Each decoder gates LOCK with its selected CYC, so an atomic
-operation does not reserve unrelated slaves.
+TAS holds HMASTLOCK across its read/write sequence and intervening IDLE cycles.
+The destination arbiter reserves the route for the data ingress port. Prefetch is deferred
+while that reservation is active; TAS continuation slots can advance without
+fetch, but the next instruction cannot. The reservation releases on atomic
+write completion or bus error, independently of pipeline advance. A retained
+EX microstep cannot reassert a completed reservation.
 
-Each instruction master is explicitly paired with its CPU's data master:
+The SoC routes AHB through `Ahb5RoutingMatrix` to independent arbiters for ROM,
+SRAM, XIP and external memory. A standalone system `J2Biu` precedes the AHB-to-APB
+bridge and peripheral matrix. BIUs are outside the AMBA library. The generic
+fabric has no CPU pairing or instruction-port borrowing. Memory leaf adapters
+retain the existing Wishbone data backends; peripheral registers are native
+APB3 and require aligned 32-bit accesses. See [SoC bus domains](soc.md#bus-matrix),
+[APB subsystem](apb.md) and [AHB5 protocol contracts](ahb5.md).
 
-```scala
-matrix.addMaster(dataBus, dataSlaves)
-matrix.addInstructionMaster(instructionBus, dataBus, instructionSlaves)
-```
-
-Registration order is unrestricted. The matrix resolves each pair into the
-local input indices for each slave's arbiter. If the paired data master cannot
-reach a particular slave, the instruction master arbitrates there normally.
-It cannot borrow another CPU's or DMA master's lock.
-
-During an idle data beat inside a locked cycle, only that owner's paired,
-read-only instruction port may borrow the route. The route stays stable until
-the instruction cycle ends, including wait states and ERR completion; data
-ownership and downstream LOCK remain intact. This allows the owning CPU to
-fetch the instructions needed to finish its atomic operation while excluding
-unrelated masters. Multiple CPU pairs are supported, including instruction
-ports at arbiter input zero.
-
-The J2 arbiter uses one-hot round-robin selection. Pair mappings are validated
-for distinct data/instruction roles and one instruction partner per data
-master. The matrix validates pairs after all masters are registered, allowing
-an instruction master to be declared before its data partner. Decoder CYC
-qualification confines LOCK to the selected slave and releases the reservation
-when the master ends its cycle. The routed STB is also qualified with its CYC.
-
-TAS tests cover contention, response waits and reset. Matrix regressions
-cover both CPU pairs, unrelated-master exclusion, registration order, sparse
-connectivity, delayed responses, ERR ownership and service after lock release.
+The native CPU/fabric regression covers TAS with both T outcomes, a conditional
+branch immediately following TAS, a competing manager and response waits.
+Legacy Wishbone fixtures remain for older architectural fault-injection tests;
+their adapters drive the CPU through its real AHB5 interfaces. Historical bus
+measurements later on this page describe the earlier Wishbone revisions.
 
 ## Extending and validating the design
 

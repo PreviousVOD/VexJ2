@@ -1,9 +1,9 @@
 package j2.periph
 
-import j2.bus.J2Wishbone
+import j2.bus.J2Apb
 import spinal.core._
 import spinal.lib._
-import spinal.lib.bus.wishbone.WishboneSlaveFactory
+import spinal.lib.bus.amba3.apb.Apb3SlaveFactory
 import spinal.lib.misc.Timer
 
 final class J2Timer(clockHz: Int, tickHz: Int = 1000000, width: Int = 32) extends Component {
@@ -11,13 +11,11 @@ final class J2Timer(clockHz: Int, tickHz: Int = 1000000, width: Int = 32) extend
   require(width > 0)
 
   val io = new Bundle {
-    val bus       = slave(J2Wishbone())
+    val bus       = slave(J2Apb())
     val interrupt = out Bool ()
   }
 
-  private val wordBus = J2Wishbone()
-  J2Wishbone.connectToWordAddressed(io.bus, wordBus, io.bus.ADR(11 downto 0))
-  private val factory    = WishboneSlaveFactory(wordBus)
+  private val factory    = Apb3SlaveFactory(io.bus)
   private val timer      = new Timer(width)
   private val limitHit   = timer.io.value === timer.io.limit
   private val tickEnable = factory.createReadAndWrite(Bits(1 bits), 0x00, 0) init (0)

@@ -37,7 +37,7 @@ The Wukong flow uses Vivado through `tools/run_vivado.sh`; see its
 - `spinal/src/main/scala/j2/{fetch,decode,execute,regfile,schedule,misc}/`: subsystem plugins.
 - `spinal/src/main/scala/j2/isa/`: ISA definitions and microcode predecoder.
 - `spinal/src/main/scala/j2/microcode/`: ROM data, control decoding, sequencing.
-- `spinal/src/main/scala/j2/bus/`: byte-addressed CPU Wishbone and native adapters.
+- `spinal/src/main/scala/j2/bus/`: generic AHB5/APB IP, standalone system BIU and retained Wishbone memory backends.
 - `spinal/src/main/scala/j2/periph/`: ROM/SRAM, GPIO, SPI/XIP, SDRAM peripherals.
 - `spinal/src/main/scala/j2/soc/`: board-independent SoC, interconnect and reset control.
 - `spinal/src/main/scala/j2/board/tang_primer/`: Tang Primer top, EG4 PLL/pads, SDRAM PHY and memory wrappers.

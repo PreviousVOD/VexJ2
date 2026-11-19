@@ -28,7 +28,7 @@ class J2ReadCacheWindowSpec extends munit.FunSuite {
     test(
       s"cache window ${config.baseAddress.toString(16)} + ${config.rangeBytes}, line ${config.lineBytes}"
     ) {
-      SimConfig.withVerilator.compile(new J2ReadCache(config)).doSim { dut =>
+      SimConfig.withVerilator.compile(new J2WishboneReadCache(config)).doSim { dut =>
         dut.clockDomain.clockSim #= false
         for (bus <- Seq(dut.io.bus, dut.io.control)) {
           bus.CYC #= false; bus.STB #= false; bus.WE #= false

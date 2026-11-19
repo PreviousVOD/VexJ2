@@ -2,8 +2,8 @@
 
 The reusable library in `spinal/src/main/scala/j2/bus/ahb5/` implements the profile
 below against **Arm IHI0033C**, including its AHB-Lite base protocol. It has no CPU,
-Wishbone, memory-map, endianness or board dependencies. The existing SoC still uses
-Wishbone; these components are the foundation for its later migration.
+Wishbone, memory-map, endianness or board dependencies. The shared SoC now uses
+these components; its system-specific leaf adapters live outside this library.
 
 The reference is the [Arm AMBA AHB protocol specification, Issue C](https://documentation-service.arm.com/static/6141bf0d674a052ae36ca811).
 A local copy is `../IHI0033C_amba_ahb_protocol_spec.pdf`.
@@ -50,18 +50,22 @@ agreed endianness. Both little- and big-endian integrations can use this fabric.
 | `Ahb5` | Subordinate port: input HSEL/HREADY, output HREADYOUT/HRESP/HRDATA |
 | `Ahb5DefaultSubordinate` | Two-cycle ERROR for actual accesses; zero-wait OKAY for IDLE/BUSY |
 | `Ahb5Decoder` | One-manager pipelined decoder; separate address and data selection |
-| `Ahb5Biu` | Standalone multi-manager arbitration and reservation for one destination |
-| `Ahb5Interconnect` | Independent BIUs with per-manager routing and optional sparse connectivity |
+| `Ahb5SubordinateDecoder` | Subordinate-facing decoder behind an arbiter, qualified by upstream HSEL/HREADY |
+| `Ahb5Arbiter` | Standalone multi-manager arbitration and reservation for one destination |
+| `Ahb5Interconnect` | Buffered routing and independent destination arbiters, with optional sparse connectivity |
+| `Ahb5RoutingMatrix` | Routing only; exposes each manager/destination port for external composition |
+| `Ahb5SubordinateArbiter` | Arbiter for decoded inputs carrying HSEL and upstream HREADY |
+| `Ahb5ToApb3Bridge` | Same-clock full-width AHB/APB conversion with two-cycle AHB errors |
 
-The decoder adds no buffering or wait cycles of its own. It can forward an
+The AHB decoder adds no buffering or wait cycles of its own. It can forward an
 address to one subordinate while returning data from the preceding subordinate.
 Data selection advances only on HREADY. Its default subordinate handles gaps in
 the address map.
 
-The matrix and standalone BIU use an internal elastic request/response transport.
+The buffered interconnect and standalone arbiter use an internal elastic request/response transport.
 This transport is private implementation detail, not an AMBA interface. Each
 manager ingress captures the address/control phase, then its following write
-data/strobes. Each BIU has one active downstream transaction and retains the
+data/strobes. Each arbiter has one active downstream transaction and retains the
 response until the corresponding manager completes it. Read and write responses
 are never acknowledged before the subordinate completes them, including accesses
 marked Bufferable.
@@ -72,19 +76,31 @@ response latency. It is not a one-beat-per-clock matrix. The direct decoder does
 support pipelined transfers without this serialization. Timing/throughput
 optimization should retain the tests and protocol contracts below.
 
+`Ahb5RoutingMatrix` is the routing-only alternative: its per-manager decoders
+expose `io.destinations(destination)(manager)` as subordinate-facing AHB ports.
+Attach `Ahb5SubordinateArbiter` or a system-specific BIU explicitly. Each input
+uses the upstream decoder's HREADY to qualify address acceptance and lock
+changes; HREADYOUT is only that subordinate's response. This matters when the
+manager is stalled on a different destination.
+
+**BIU is not an AMBA component.** The system's `J2Biu` lives outside this package
+in `j2.bus`, and is not instantiated by either generic interconnect. It composes
+the protocol arbiter at a system bridge boundary. See [APB and BIU integration](apb.md).
+The former `Ahb5Biu` API is now named `Ahb5Arbiter` to make this distinction explicit.
+
 ## Destination domains and identity
 
-Each `SizeMapping` in the matrix defines a BIU arbitration and lock domain. A
+Each `SizeMapping` in the matrix defines an arbitration and lock domain. A
 destination can feed a peripheral decoder/bridge containing many devices, or a
 memory controller. It need not be an individual peripheral. Regions cannot
 overlap, must fit the address width, and must start and end on 1KB boundaries,
-as required by section 4.2. Different BIUs can work concurrently.
+as required by section 4.2. Different arbiters can work concurrently.
 
 The optional connectivity list specifies which destinations each manager can
 reach. Unconnected and unmapped accesses receive ERROR. This is elaboration-time
 connectivity, not a programmable firewall.
 
-HMASTER follows each request through buffering to the destination. The BIU uses
+HMASTER follows each request through buffering to the destination. The arbiter uses
 the **physical ingress port** to retain arbitration ownership and route the
 response; HMASTER does not replace the return route. The integrator assigns
 globally distinguishable HMASTER values if downstream logic uses them as a global
@@ -95,8 +111,8 @@ other's reservations. There is no special instruction/data pairing or CPU policy
 flowchart LR
   M0[Manager 0] --> I0[Address/data capture and routing]
   M1[Manager 1] --> I1[Address/data capture and routing]
-  I0 --> B0[BIU: destination domain 0]
-  I0 --> B1[BIU: destination domain 1]
+  I0 --> B0[arbiter: destination domain 0]
+  I0 --> B1[arbiter: destination domain 1]
   I1 --> B0
   I1 --> B1
   B0 --> P[Peripheral decoder / bridge]
@@ -108,13 +124,13 @@ flowchart LR
 Section 3.3 distinguishes transfer acceptance from reservation lifetime. The
 ingress samples lock changes only at HREADY boundaries, including IDLE cycles.
 Reservation routing is independent of whether a request is currently valid.
-Consequently, an unlocked IDLE can release a BIU without a dummy memory access.
+Consequently, an unlocked IDLE can release an arbiter without a dummy memory access.
 Changing HMASTLOCK while the preceding data phase is stalled does not release
 the reservation prematurely.
 
 Leading locked IDLE, locked gaps between accesses, and release without any data
-transfer are supported. A BIU blocks other ingress ports while reserved, but
-other BIUs continue. All transfers in a locked sequence must remain in the same
+transfer are supported. An arbiter blocks other ingress ports while reserved, but
+other arbiters continue. All transfers in a locked sequence must remain in the same
 subordinate address region. The manager must follow that protocol rule; the
 interconnect does not turn an invalid cross-region sequence into a global lock.
 
@@ -161,11 +177,11 @@ val matrix = new Ahb5Interconnect(
   connections = Seq(Set(0, 1), Set(1))
 )
 // matrix.io.managers: Ahb5Master ports
-// matrix.io.subordinates: Ahb5 ports, one per BIU domain
+// matrix.io.subordinates: Ahb5 ports, one per arbiter domain
 // Address signals are under .address, e.g. .address.HMASTER.
 ```
 
-For one arbitration domain, instantiate `new Ahb5Biu(config, managerCount = 2)`.
+For one arbitration domain, instantiate `new Ahb5Arbiter(config, managerCount = 2)`.
 For one manager requiring a fully pipelined decoder, instantiate
 `new Ahb5Decoder(config, mappings)` instead.
 
@@ -180,7 +196,7 @@ PATH="$PWD/../tools/local/bin:$PATH" ../tools/local/bin/sbt 'testOnly j2.bus.Ahb
 The suite uses Verilator and a cycle-driven subordinate model that separates
 accepted addresses from pending data responses. It checks:
 
-- Contending managers and concurrent independent BIUs, with delayed subordinates.
+- Contending managers and concurrent independent arbiters, with delayed subordinates.
 - Address/data ownership, HMASTER, HPROT, HNONSEC and write strobes.
 - Locked read/modify/write sequences, leading locked IDLE and stalled release.
 - All HBURST encodings, wrapping addresses, inserted BUSY gaps and actual beat counts.
@@ -188,10 +204,19 @@ accepted addresses from pending data responses. It checks:
 - Back-to-back upstream address acceptance on a previous response's final cycle.
 - Seeded randomized concurrent reads/writes, masks and wait states.
 - Reset with a held reservation and waiting competitor.
-- Standalone BIU elaboration across all eight legal data widths, optional properties,
+- Standalone arbiter elaboration across all eight legal data widths, optional properties,
   one manager and a non-power-of-two manager count.
 - Direct decoder pipelining, stalled data selection and the default subordinate.
 
-The full CPU/SoC and FPGA suites are not evidence for this library until it is
-integrated into those systems. Neither the existing SoC bus nor board images are
-changed by adding these IP components.
+The system boundary tests (`testOnly j2.bus.J2AhbBoundarySpec`) additionally
+check following-phase write-data capture, all BE32 byte/halfword lanes, waited
+leaf accesses, exactly two ERROR cycles, response-edge address acceptance,
+upstream HSEL qualification and peripheral decoder response ownership.
+
+The CPU/SoC integration uses native AHB5 instruction/data ports and this matrix,
+using a routing-only matrix, independent memory arbiters and a standalone system
+BIU before the APB bridge. Architectural
+regressions include TAS followed by a conditional branch under competing bus
+traffic and wait states. See [SoC integration](soc.md#bus-matrix) and
+[Tang Primer validation](tang-primer.md#ahb5-migration-validation) for the
+integration boundary and board results.

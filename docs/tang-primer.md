@@ -15,23 +15,25 @@ flowchart LR
   PLL --> RESET[PLL-lock reset controller<br/>32 MHz SoC clock]
   RESET --> CPU[J2MicrocodedCore]
 
-  CPU -->|I-bus| IGUARD[I-bus error guard<br/>aligned 32-bit words]
-  CPU -->|D-bus| DGUARD[D-bus error guard]
-  IGUARD -->|memories only| MATRIX[J2WishboneIntercon<br/>decoders plus atomic-safe arbiters]
-  DGUARD -->|memory and peripherals| MATRIX
+  CPU -->|AHB5 I-bus: memories only| MATRIX[AHB5 routing matrix]
+  CPU -->|AHB5 D-bus: all domains| MATRIX
 
-  MATRIX --> ROM[Internal ROM<br/>32 KiB]
-  MATRIX --> SRAM[Internal SRAM<br/>32 KiB]
-  MATRIX --> CACHE[J2ReadCache<br/>4 KiB, two-way, 32-byte lines]
+  MATRIX --> ARB[Independent AHB memory arbiters]
+  ARB --> ROM[Internal ROM<br/>32 KiB]
+  ARB --> SRAM[Internal SRAM<br/>32 KiB]
+  ARB --> CACHE[J2ReadCache<br/>4 KiB, two-way, 32-byte lines]
   CACHE -->|line refill| XIP[J2SpiFlash XIP<br/>Apb3SpiXdrMasterCtrl]
   XIP --> FLASH[Winbond 25Q80<br/>quad-SPI flash]
-  MATRIX --> SDRAM[BmbSdramCtrl<br/>8 MiB SiP SDRAM]
+  ARB --> SDRAM[BmbSdramCtrl<br/>8 MiB SiP SDRAM]
 
-  MATRIX --> GPIO[32-bit GPIO<br/>0xff000000]
-  MATRIX --> UART[UART<br/>0xff001000]
-  MATRIX -->|flash control| CTRL[J2SpiFlash control<br/>0xff002000]
-  MATRIX --> TIMER[Architecture timer<br/>0xff003000]
-  MATRIX -->|cache control| CACHE
+  MATRIX --> BIU[Standalone system BIU]
+  BIU --> BRIDGE[AHB5 to APB3 bridge]
+  BRIDGE --> PB[APB matrix]
+  PB --> GPIO[32-bit GPIO<br/>0xff000000]
+  PB --> UART[UART<br/>0xff001000]
+  PB -->|flash control| CTRL[J2SpiFlash control<br/>0xff002000]
+  PB --> TIMER[Architecture timer<br/>0xff003000]
+  PB -->|cache control| CACHE
   CTRL -->|APB| XIP
   CTRL -. invalidate and refill hold .-> CACHE
 ```
@@ -109,6 +111,63 @@ and `build/sh2-decode-fetch/hardware/reboot.log`; earlier bring-up notes are in
 
 Generated output and logs stay under ignored `build/` directories; Verilog TD
 logs are under `build/logs/td_verilog`.
+
+## APB peripheral validation
+
+The APB/standalone-BIU build passes all 70 Scala tests, all three SoC simulation
+boot modes, and FPGA application upload plus independent JTAG reboot at 32 MHz.
+ROM, SRAM, SDRAM and XIP data remain on AHB5. The peripheral path is standalone
+`J2Biu` → AHB-to-APB bridge → APB matrix; see [architecture and validation](apb.md).
+Minimum setup/hold slack is **7.045/0.104 ns** with **11,196 LUTs** and **4,543
+registers**. Logs, source hashes, tested bitstream and reports are under
+`build/apb-migration/`.
+
+## AHB5 migration validation
+
+These results record the earlier all-AHB peripheral revision, before the APB
+and standalone-BIU change described in [the APB subsystem](apb.md).
+
+The 2026-11-19 migration uses native AHB5 CPU ports, independent memory BIUs and
+one shared peripheral BIU. Public leaf ports are AHB5; the existing cache,
+peripheral and SDRAM backends remain behind protocol adapters. The software
+map and application image format are unchanged. See [bus contracts](soc.md#bus-matrix).
+
+The 32 MHz Tang Dynasty build has zero setup/hold violations in both clock
+domains, minimum setup/hold slack of **5.619/0.146 ns**, and an STA estimate of
+39.015 MHz for the SoC clock. This is a 32 MHz validated configuration, not a
+hardware Fmax sweep. Resource use is **11,341 LUTs**, **4,379 registers**, five
+DSPs, 51 9K BRAMs and ten 32K BRAMs. The vendor PLL model measures 31.249950 ns
+against the expected 31.250000 ns period.
+
+Full-SoC simulation passes reset, cold-boot and UART-loader modes. The native
+AHB CPU ROM passes in 28,109 clocks with 3,539 instruction and 1,630 data
+transfers; RTE and interrupt ROMs also pass. Compared with the earlier Wishbone
+CPU ROM result below, the extra clocks reflect the initial AHB transaction
+handling. The matrix and leaf adapters are deliberately serialized.
+
+All **68 Scala tests** pass, including the generic AHB protocol suite and the
+new boundary/atomic-branch regressions. FPGA UART upload and an independent
+volatile JTAG reload both pass cache, SDRAM, timer, SRAM/SDRAM TAS and word
+fetch, forwarding, multiply pipeline, MAC saturation, exceptions and illegal
+SH-2 extension checks. Hardware UART logs are
+`build/ahb5-migration/hardware/upload.log` and `reboot.log`.
+
+Run the integration validation with:
+
+```sh
+make spinal-test spinal-microcode-verif
+make -C verilog xip-sim-build
+python3 tools/isa_validation.py sim --output build/ahb5-migration --timeout 300
+TD_HOME=/path/to/TD_4.6.7_Linux make verilog-fpga fpga-clock-test
+TD_HOME=/path/to/TD_4.6.7_Linux python3 tools/isa_validation.py hardware \
+  --output build/ahb5-migration --timeout 300
+```
+
+The hardware command programs volatile FPGA configuration SRAM and uploads
+`build/sw/xipapp/flash.bin` to the dedicated application flash. Logs and source,
+image and simulator/bitstream hashes are under `build/ahb5-migration/`.
+Wukong's shared integration now uses the AHB DDR frontend, but its implementation
+and hardware validation are deferred to the next board step.
 
 ## Validation and implementation history
 

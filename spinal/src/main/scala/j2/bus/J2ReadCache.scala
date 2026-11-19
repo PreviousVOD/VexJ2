@@ -29,7 +29,8 @@ case class J2ReadCacheConfig(
   * published only after its complete refill. The upstream master drops STB between classic
   * transfers.
   */
-final class J2ReadCache(val config: J2ReadCacheConfig = J2ReadCacheConfig()) extends Component {
+final class J2WishboneReadCache(val config: J2ReadCacheConfig = J2ReadCacheConfig())
+    extends Component {
   private val cacheBytes   = config.cacheBytes
   private val lineBytes    = config.lineBytes
   private val sets         = cacheBytes / (2 * lineBytes)

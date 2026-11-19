@@ -25,19 +25,25 @@ instruction metadata together through stalls and faults.
 
 ## SoC organization
 
-Separate instruction and data buses connect through a Wishbone matrix with
-per-slave arbitration and atomic locking. A shared, configurable set-associative
-read cache serves the SPI XIP region. The SoC includes boot ROM, SRAM, UART,
-GPIO and a timer; board wrappers supply external memory, clocks, reset and pins.
+Separate AHB5 instruction and data buses connect through a routing matrix.
+Memory domains use independent arbiters. A standalone system BIU precedes the
+AHB-to-APB bridge and peripheral matrix; it is separate from the AMBA library.
+A shared, configurable set-associative read cache serves the SPI XIP region.
+The SoC includes boot ROM, SRAM, UART, GPIO and a timer; board wrappers supply
+external memory, clocks, reset and pins.
 
 ```mermaid
 flowchart LR
-  CPU["SH-2 CPU<br/>FiberPlugins / hybrid decode"] -->|Instruction and data buses| BUS["Wishbone matrix<br/>atomic locking"]
-  BUS --> MEM["Boot ROM / SRAM"]
-  BUS --> CACHE["XIP read cache"]
+  CPU["SH-2 CPU<br/>FiberPlugins / hybrid decode"] --> BUS["AHB5 routing matrix"]
+  BUS --> ARB["Independent AHB memory arbiters"]
+  ARB --> MEM["Boot ROM / SRAM"]
+  ARB --> CACHE["XIP read cache"]
   CACHE --> SPI["SPI application flash"]
-  BUS --> EXT["Board external memory"]
-  BUS --> IO["UART / GPIO / timer"]
+  ARB --> EXT["Board external memory"]
+  BUS --> BIU["Standalone system BIU"]
+  BIU --> BRIDGE["AHB5 to APB3"]
+  BRIDGE --> APB["APB matrix"]
+  APB --> IO["UART / GPIO / timer<br/>SPI and cache control"]
 ```
 
 Applications can execute from cached SPI flash or be loaded into external RAM.
@@ -52,7 +58,8 @@ Wukong v1 / Xilinx XC7A100T with DDR3 and Pmod SF3 application flash.
 | CPU ownership, services and timing contracts | [CPU architecture](docs/cpu-architecture.md) |
 | SH-2 stages, instruction issue, MUL/MAC and fetch | [SH-2 pipeline](docs/sh2-pipeline.md) |
 | Bus matrix, memory map, cache, boot images and registers | [SoC reference](docs/soc.md) |
-| Generic AHB5 interfaces, interconnects and BIUs | [AHB5 IP library](docs/ahb5.md) |
+| Generic AHB5 interfaces, interconnects and arbiters | [AHB5 IP library](docs/ahb5.md) |
+| APB peripherals, bridge and standalone BIU | [APB subsystem](docs/apb.md) |
 | Toolchain, source layout and verification commands | [Development](docs/development.md) |
 | Tang Primer clocks, pins, build and programming | [Tang Primer](docs/tang-primer.md) |
 | Wukong clocks, SF3, DDR3, build and programming | [Wukong v1](docs/wukong-v1.md) |

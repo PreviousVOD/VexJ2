@@ -3,10 +3,28 @@ package j2.bus.ahb5
 import spinal.core._
 import spinal.lib._
 
-/** Captures one address and its following data phase. No response is posted early. */
+/** Manager-port ingress uses the same implementation with HSEL tied active. */
 private[ahb5] class Ahb5Ingress(config: Ahb5Config) extends Component {
   val io = new Bundle {
     val bus       = slave(Ahb5Master(config))
+    val transport = master(Ahb5Transport(config))
+  }
+  private val ingress = new Ahb5SubordinateIngress(config)
+  ingress.io.bus.address                         := io.bus.address
+  ingress.io.bus.HSEL                            := True
+  ingress.io.bus.HREADY                          := ingress.io.bus.HREADYOUT
+  ingress.io.bus.HWDATA                          := io.bus.HWDATA
+  if (config.writeStrobes) ingress.io.bus.HWSTRB := io.bus.HWSTRB
+  io.bus.HREADY                                  := ingress.io.bus.HREADYOUT
+  io.bus.HRESP                                   := ingress.io.bus.HRESP
+  io.bus.HRDATA                                  := ingress.io.bus.HRDATA
+  io.transport <> ingress.io.transport
+}
+
+/** Ingress behind a decoder: selection and data completion use upstream HREADY. */
+private[ahb5] class Ahb5SubordinateIngress(config: Ahb5Config) extends Component {
+  val io = new Bundle {
+    val bus       = slave(Ahb5(config))
     val transport = master(Ahb5Transport(config))
   }
   val busy               = RegInit(False)
@@ -19,10 +37,10 @@ private[ahb5] class Ahb5Ingress(config: Ahb5Config) extends Component {
   val continuing         = RegInit(False)
 
   val response = io.transport.response
-  io.bus.HREADY  := !busy || (response.valid && (!response.error || errorSecond))
-  io.bus.HRESP   := busy && response.valid && response.error
-  io.bus.HRDATA  := response.data
-  response.ready := busy && io.bus.HREADY
+  io.bus.HREADYOUT := !busy || (response.valid && (!response.error || errorSecond))
+  io.bus.HRESP     := busy && response.valid && response.error
+  io.bus.HRDATA    := response.data
+  response.ready   := busy && io.bus.HREADY
 
   io.transport.request.valid      := busy && haveData && !issued
   io.transport.request.payload    := request
@@ -35,20 +53,21 @@ private[ahb5] class Ahb5Ingress(config: Ahb5Config) extends Component {
     if (config.writeStrobes) request.strobes := io.bus.HWSTRB
     haveData                                 := True
   }
-  when(io.transport.request.fire)(issued := True)
+  when(io.transport.request.fire)(issued                     := True)
   when(busy && response.valid && response.error)(errorSecond := True)
 
   // The final response cycle may simultaneously accept the next address phase.
   when(io.bus.HREADY) {
-    busy        := io.bus.address.isTransfer
-    haveData    := False
-    issued      := False
-    errorSecond := False
-    when(io.bus.address.isTransfer)(request.control := io.bus.address)
-    reservation := io.bus.address.HMASTLOCK
-    when(!reservation && io.bus.address.HMASTLOCK) {
+    busy                            := io.bus.accepted
+    haveData                        := False
+    issued                          := False
+    errorSecond                     := False
+    when(io.bus.accepted)(request.control                     := io.bus.address)
+    when(!io.bus.address.HMASTLOCK)(reservation               := False)
+    when(io.bus.HSEL && io.bus.address.HMASTLOCK)(reservation := True)
+    when(!reservation && io.bus.HSEL && io.bus.address.HMASTLOCK) {
       reservationControl := io.bus.address
     }
-    continuing := io.bus.address.HTRANS === Ahb5Trans.SEQ || io.bus.address.HTRANS === Ahb5Trans.BUSY
+    continuing := io.bus.HSEL && (io.bus.address.HTRANS === Ahb5Trans.SEQ || io.bus.address.HTRANS === Ahb5Trans.BUSY)
   }
 }

@@ -14,7 +14,7 @@ class J2AtomicBusSpec extends munit.FunSuite {
         val competitor        = slave(J2Wishbone())
         val cpuCycle, cpuLock = out Bool ()
       }
-      val cpu = new J2MicrocodedCore(exposeDebug = false)
+      val cpu = new J2WishboneCoreFixture(exposeDebug = false)
       cpu.io.event.valid := False
       cpu.io.event.payload.assignFromBits(B(0, cpu.io.event.payload.getBitsWidth bits))
       io.ibus <> cpu.io.ibus

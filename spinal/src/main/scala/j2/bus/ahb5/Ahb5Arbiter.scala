@@ -7,7 +7,7 @@ import spinal.lib._
   * while the next beat is buffered. Locks additionally survive burst boundaries. HMASTER is
   * transported unchanged; the physical ingress port owns arbitration state.
   */
-private[ahb5] class Ahb5BiuEngine(config: Ahb5Config, inputCount: Int) extends Component {
+private[ahb5] class Ahb5ArbiterEngine(config: Ahb5Config, inputCount: Int) extends Component {
   require(inputCount > 0)
   val io = new Bundle {
     val inputs = Vec(slave(Ahb5Transport(config)), inputCount)
@@ -34,7 +34,7 @@ private[ahb5] class Ahb5BiuEngine(config: Ahb5Config, inputCount: Int) extends C
   chosen := OHToUInt(proposal).resized
   when(locked || bursting)(chosen := owner)
   val selected = if (inputCount == 1) io.inputs.head else io.inputs(chosen)
-  val current  = if (inputCount == 1) io.inputs.head else io.inputs(owner)
+  val current = if (inputCount == 1) io.inputs.head else io.inputs(owner)
 
   for ((input, index) <- io.inputs.zipWithIndex) {
     input.request.ready := state === State.IDLE && chosen === index &&
@@ -44,8 +44,8 @@ private[ahb5] class Ahb5BiuEngine(config: Ahb5Config, inputCount: Int) extends C
   }
 
   when(state === State.IDLE) {
-    // Release is observed even when no transfer addresses this BIU.
-    when(locked && !current.reservation)(locked := False)
+    // Release is observed even when no transfer addresses this arbiter.
+    when(locked && !current.reservation)(locked                              := False)
     when(bursting && !current.continuing && !current.request.valid)(bursting := False)
     when(bursting && current.request.valid && current.request.control.HTRANS === Ahb5Trans.NONSEQ) {
       bursting := False
@@ -63,9 +63,9 @@ private[ahb5] class Ahb5BiuEngine(config: Ahb5Config, inputCount: Int) extends C
     }
   }
 
-  io.output.address.HTRANS.allowOverride
-  io.output.address.HADDR.allowOverride
-  io.output.address.HMASTLOCK.allowOverride
+  io.output.address.HTRANS.allowOverride()
+  io.output.address.HADDR.allowOverride()
+  io.output.address.HMASTLOCK.allowOverride()
   io.output.address           := request.control
   io.output.address.HTRANS    := Ahb5Trans.IDLE
   io.output.address.HADDR     := nextAddress
@@ -96,8 +96,8 @@ private[ahb5] class Ahb5BiuEngine(config: Ahb5Config, inputCount: Int) extends C
       bursting  := request.control.HBURST =/= Ahb5Burst.SINGLE
       remaining := 0 // INCR has no fixed end count.
       switch(request.control.HBURST) {
-        is(Ahb5Burst.WRAP4, Ahb5Burst.INCR4)(remaining := 3)
-        is(Ahb5Burst.WRAP8, Ahb5Burst.INCR8)(remaining := 7)
+        is(Ahb5Burst.WRAP4, Ahb5Burst.INCR4)(remaining   := 3)
+        is(Ahb5Burst.WRAP8, Ahb5Burst.INCR8)(remaining   := 7)
         is(Ahb5Burst.WRAP16, Ahb5Burst.INCR16)(remaining := 15)
       }
     } otherwise
@@ -116,16 +116,32 @@ private[ahb5] class Ahb5BiuEngine(config: Ahb5Config, inputCount: Int) extends C
   when(state === State.RESPONSE && current.response.ready)(state := State.IDLE)
 }
 
-/** Standalone BIU for one destination domain. All inputs use the same clock and reset. */
-class Ahb5Biu(config: Ahb5Config, managerCount: Int) extends Component {
+/** Standalone AHB arbiter for one destination domain. All inputs use the same clock and reset. */
+class Ahb5Arbiter(config: Ahb5Config, managerCount: Int) extends Component {
   require(managerCount > 0)
   val io = new Bundle {
     val managers    = Vec(slave(Ahb5Master(config)), managerCount)
     val subordinate = master(Ahb5(config))
   }
-  private val engine = new Ahb5BiuEngine(config, managerCount)
+  private val engine = new Ahb5ArbiterEngine(config, managerCount)
   for (index <- 0 until managerCount) {
     val ingress = new Ahb5Ingress(config)
+    ingress.io.bus <> io.managers(index)
+    engine.io.inputs(index) <> ingress.io.transport
+  }
+  io.subordinate <> engine.io.output
+}
+
+/** Arbiter inputs behind AHB decoders, including HSEL and global HREADY. */
+class Ahb5SubordinateArbiter(config: Ahb5Config, managerCount: Int) extends Component {
+  require(managerCount > 0)
+  val io = new Bundle {
+    val managers    = Vec(slave(Ahb5(config)), managerCount)
+    val subordinate = master(Ahb5(config))
+  }
+  private val engine = new Ahb5ArbiterEngine(config, managerCount)
+  for (index <- 0 until managerCount) {
+    val ingress = new Ahb5SubordinateIngress(config)
     ingress.io.bus <> io.managers(index)
     engine.io.inputs(index) <> ingress.io.transport
   }

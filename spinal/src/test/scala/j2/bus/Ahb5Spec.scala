@@ -400,7 +400,7 @@ class Ahb5Spec extends munit.FunSuite {
     }
   }
 
-  test("generic width/property combinations and standalone BIU elaborate") {
+  test("generic width/property combinations and standalone arbiter elaborate") {
     for ((width, index) <- Seq(8, 16, 32, 64, 128, 256, 512, 1024).zipWithIndex) {
       val c = Ahb5Config(
         addressWidth        = 40,
@@ -411,7 +411,7 @@ class Ahb5Spec extends munit.FunSuite {
         extendedMemoryTypes = index % 2 == 1
       )
       SpinalConfig(targetDirectory = s"target/ahb5-width-$width")
-        .generateVerilog(new Ahb5Biu(c, if (index % 2 == 0) 1 else 5))
+        .generateVerilog(new Ahb5Arbiter(c, if (index % 2 == 0) 1 else 5))
     }
   }
 

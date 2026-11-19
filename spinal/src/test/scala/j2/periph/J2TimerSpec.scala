@@ -5,15 +5,16 @@ import scala.language.reflectiveCalls
 
 class J2TimerSpec extends munit.FunSuite {
   test("IRQ registers the enabled comparator level on assertion, disable, clear and rearm") {
-    SimConfig.withVerilator.compile(new J2Timer(clockHz = 4, tickHz = 1, width = 8)).doSim { dut =>
+    val compiled =
+      SimConfig.withVerilator.compile(new J2Timer(clockHz = 4, tickHz = 1, width = 8))
+    compiled.doSim { dut =>
       val bus = dut.io.bus
-      bus.CYC                  #= false
-      bus.STB                  #= false
-      bus.WE                   #= false
-      bus.ADR                  #= 0
-      bus.DAT_MOSI             #= 0
-      bus.SEL                  #= 15
-      bus.LOCK                 #= false
+      bus.PSEL    #= 0
+      bus.PENABLE #= false
+      bus.PWRITE  #= false
+      bus.PADDR   #= 0
+      bus.PWDATA  #= 0
+
       dut.clockDomain.clockSim #= false
 
       def tick(): Unit = {
@@ -24,31 +25,33 @@ class J2TimerSpec extends munit.FunSuite {
       }
 
       def write(address: Int, value: Int): Unit = {
-        bus.CYC      #= true
-        bus.STB      #= true
-        bus.WE       #= true
-        bus.ADR      #= address
-        bus.DAT_MOSI #= value
+        bus.PSEL    #= 1
+        bus.PENABLE #= false
+        bus.PWRITE  #= true
+        bus.PADDR   #= address
+        bus.PWDATA  #= value
+        tick() // SETUP
+        bus.PENABLE #= true
         sleep(1)
         var waitCycles = 0
-        while (!bus.ACK.toBoolean && waitCycles < 20) {
+        while (!bus.PREADY.toBoolean && waitCycles < 20) {
           tick()
           waitCycles += 1
         }
-        assert(bus.ACK.toBoolean)
+        assert(bus.PREADY.toBoolean)
         tick()
-        bus.CYC #= false
-        bus.STB #= false
+        bus.PSEL    #= 0
+        bus.PENABLE #= false
         sleep(1)
       }
 
       // Peek at the combinational CSR read-data decode while the bus is idle,
       // so observing status does not move the clock under test.
       def status(): Long = {
-        bus.WE  #= false
-        bus.ADR #= 0x0c
+        bus.PWRITE #= false
+        bus.PADDR  #= 0x0c
         sleep(1)
-        bus.DAT_MISO.toLong
+        bus.PRDATA.toLong
       }
 
       dut.clockDomain.assertReset()
@@ -98,16 +101,17 @@ class J2TimerSpec extends munit.FunSuite {
     }
   }
 
-  test("Wishbone timer counts, stops, interrupts, clears, and rearms") {
-    SimConfig.withVerilator.compile(new J2Timer(clockHz = 4, tickHz = 1, width = 8)).doSim { dut =>
+  test("APB timer counts, stops, interrupts, clears, and rearms") {
+    val compiled =
+      SimConfig.withVerilator.compile(new J2Timer(clockHz = 4, tickHz = 1, width = 8))
+    compiled.doSim { dut =>
       val bus = dut.io.bus
-      bus.CYC                  #= false
-      bus.STB                  #= false
-      bus.WE                   #= false
-      bus.ADR                  #= 0
-      bus.DAT_MOSI             #= 0
-      bus.SEL                  #= 15
-      bus.LOCK                 #= false
+      bus.PSEL    #= 0
+      bus.PENABLE #= false
+      bus.PWRITE  #= false
+      bus.PADDR   #= 0
+      bus.PWDATA  #= 0
+
       dut.clockDomain.clockSim #= false
 
       def tick(): Unit = {
@@ -118,22 +122,24 @@ class J2TimerSpec extends munit.FunSuite {
       }
 
       def access(write: Boolean, address: Long, value: Long = 0): Long = {
-        bus.CYC      #= true
-        bus.STB      #= true
-        bus.WE       #= write
-        bus.ADR      #= address
-        bus.DAT_MOSI #= value
+        bus.PSEL    #= 1
+        bus.PENABLE #= false
+        bus.PWRITE  #= write
+        bus.PADDR   #= address
+        bus.PWDATA  #= value
+        tick() // SETUP
+        bus.PENABLE #= true
         sleep(1)
         var waitCycles = 0
-        while (!bus.ACK.toBoolean && waitCycles < 20) {
+        while (!bus.PREADY.toBoolean && waitCycles < 20) {
           tick()
           waitCycles += 1
         }
         assert(waitCycles < 20, s"timer bus access stalled at 0x${address.toHexString}")
-        val result = bus.DAT_MISO.toLong
+        val result = bus.PRDATA.toLong
         tick()
-        bus.CYC #= false
-        bus.STB #= false
+        bus.PSEL    #= 0
+        bus.PENABLE #= false
         tick()
         result
       }

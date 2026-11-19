@@ -2,19 +2,52 @@
 
 [Project overview](../README.md) · [CPU architecture](cpu-architecture.md)
 
-`J2Soc` combines the shared CPU, Wishbone matrix, memories and native
+`J2Soc` combines the shared CPU, AHB5 matrix, memories and native
 SpinalHDL peripherals. Board wrappers supply clocks, reset, memory primitives
 and external-memory controllers. Source paths and commands below are relative
 to the repository root.
 
 ## Bus matrix
 
-`J2WishboneIntercon` generates native per-master decoders and atomic-safe
-per-slave arbiters. The D-bus reaches all slaves; the read-only I-bus reaches
-only memories and may borrow idle beats during its paired D-bus atomic cycles.
-The matrix supports multiple explicit I/D pairs, independent of registration
-order; unrelated masters remain excluded while a data owner holds a lock.
-Unmapped accesses return a Wishbone error.
+`Ahb5RoutingMatrix` connects native 32-bit, big-endian CPU instruction and data
+ports, with HMASTER values 0 and 1. Both use SINGLE transfers and separate
+address/data phases. The I-bus reaches ROM, SRAM, XIP and external memory; the
+D-bus additionally reaches the peripheral domain. Unmapped or forbidden
+accesses return the standard two-cycle AHB ERROR response.
+
+ROM, SRAM, XIP and external memory remain on AHB5, each behind an independent
+`Ahb5SubordinateArbiter`. The routing matrix exposes decoded ports; these
+arbiters are instantiated explicitly by `J2Soc`.
+
+A standalone **`J2Biu`**, outside the generic AMBA library, covers the peripheral
+domain `0xff000000`–`0xff007fff`. It precedes `Ahb5ToApb3Bridge` and `Apb3Matrix`,
+which selects GPIO, UART, SPI control, timer or cache control. The BIU composes
+standard AHB arbitration and persistent lock ownership at that system boundary;
+programmable access-control policy is not implemented yet. Destination ownership
+uses the physical ingress port. HMASTER reaches the bridge unchanged; APB3 has
+no master-ID or lock signals. See [APB and BIU architecture](apb.md).
+
+TAS holds HMASTLOCK across its read/modify/write sequence, including idle gaps.
+The instruction port defers prefetch while the data port holds a reservation.
+The sequencer can finish TAS without that prefetch, releases the reservation
+on write completion (or error), then waits for fetch before starting the next
+instruction. No instruction port borrows another port's reservation.
+
+HPROT marks privileged, non-bufferable accesses, distinguishing instruction
+from data. Memory accesses are cacheable; the `0xffxxxxxx` peripheral aperture
+is non-cacheable. The matrix transports attributes without applying a security
+policy. See the [generic AHB5 library](ahb5.md) for protocol and identity rules.
+
+CPU and memory ports remain AHB5. `J2AhbToWishbone` adapters retain the existing
+ROM, SRAM, cache data engine and SDRAM backends. GPIO, UART, timer, SPI control
+and cache control now expose native APB3 interfaces. There is no Wishbone
+protocol conversion on the production peripheral path.
+
+Peripheral registers require aligned **32-bit** loads/stores. APB3 has no write
+strobes; byte/halfword, unaligned or partial-strobe peripheral accesses receive
+AHB ERROR without an APB transaction. The bridge preserves data bits without
+byte swapping. Memory byte/halfword accesses are unchanged. The software
+addresses and flash image format are unchanged.
 
 ## Memory map
 
@@ -49,7 +82,7 @@ drive pins directly. Flash protocol setup differs between
 [Wukong's SF3](wukong-v1.md#integration-boundary).
 
 A shared 4 KiB, two-way XIP read cache uses 64 sets, 32-byte lines and exact LRU
-replacement. The reusable `J2ReadCache` module sits between the flash arbiter and
+replacement. The reusable `J2ReadCache` module sits between the XIP AHB arbiter and
 the SPI controller, using a generic word-burst refill interface.
 `J2ReadCacheConfig` sets capacity, line size, base address and mapped range; the
 SoC derives its XIP mapping from the same configuration. Misses refill a
@@ -99,7 +132,7 @@ Tang Primer UART uploader.
 
 ## 32-bit GPIO
 
-`J2Pio` wraps native `WishboneGpio` with 32 bidirectional pins:
+`J2Pio` uses native APB3 registers with 32 bidirectional pins:
 
 | Offset | Function |
 |---:|---|
@@ -113,7 +146,7 @@ Pad primitives and pin assignments are board-specific; see
 
 ## Architecture timer
 
-`J2Timer` wraps the native SpinalHDL `Timer` with a `WishboneSlaveFactory`.
+`J2Timer` connects the native SpinalHDL `Timer` through `Apb3SlaveFactory`.
 Its 32-bit counter ticks at 1 MHz, derived from the parameterized SoC clock, and
 stops at the programmable limit. The interrupt is a level request on vector
 `0x40` at priority 14; software must stop, clear, or rearm the timer in the ISR.

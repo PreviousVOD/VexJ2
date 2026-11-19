@@ -80,7 +80,7 @@ class J2SleepFaultSpec extends munit.FunSuite {
     )
     for (exposeDebug <- Seq(true, false)) {
       val compiled =
-        SimConfig.withVerilator.compile(new J2MicrocodedCore(exposeDebug = exposeDebug))
+        SimConfig.withVerilator.compile(new J2WishboneCoreFixture(exposeDebug = exposeDebug))
       for (scenario <- scenarios; latency <- Seq(0, 3))
         compiled.doSim(scenario.name.replace(' ', '_') + latency) { dut =>
           val code = mutable.Map[Long, Int](

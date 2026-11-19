@@ -1,50 +1,55 @@
 package j2.core
 import j2.bus._
+import j2.bus.ahb5._
+import spinal.lib.bus.misc.SizeMapping
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import scala.collection.mutable
 class J2ReviewRegressionSpec extends munit.FunSuite {
-  test("atomic instructions can fetch from their locked memory") {
+  test(
+    "AHB TAS releases its domain before fetching and preserves an immediate conditional branch"
+  ) {
     class SharedMemory extends Component {
       val io = new Bundle {
         val bus                                     = master(J2Wishbone())
         val pc                                      = out UInt (32 bits)
         val instructionPending, dataPending, locked = out Bool ()
-        val competitor                              = slave(J2Wishbone())
+        val competitor                              = slave(J2Ahb.manager())
       }
       val cpu = new J2MicrocodedCore
       cpu.io.event.valid := False
       cpu.io.event.payload.assignFromBits(B(0, cpu.io.event.payload.getBitsWidth bits))
-      val arb    = new J2WishboneArbiter(3, instructionPairs = Map(0 -> 1))
-      val inputs = arb.io.inputs
-      val output = arb.io.output
-      inputs(2) <> io.competitor
-      inputs(0) <> cpu.io.dbus
-      val i = inputs(1)
-      i.CYC                := cpu.io.ibus.CYC
-      i.STB                := cpu.io.ibus.STB
-      i.WE                 := False
-      i.ADR                := cpu.io.ibus.ADR
-      i.DAT_MOSI           := 0
-      i.SEL                := B"1111"
-      i.LOCK               := False
-      cpu.io.ibus.ACK      := i.ACK
-      cpu.io.ibus.ERR      := i.ERR
-      cpu.io.ibus.DAT_MISO := i.DAT_MISO
-      io.bus <> output
+      val matrix = new Ahb5Interconnect(J2Ahb.config, 3, Seq(SizeMapping(0, 0x1000)))
+      matrix.io.managers(0) <> cpu.io.ibus
+      matrix.io.managers(1) <> cpu.io.dbus
+      matrix.io.managers(2) <> io.competitor
+      val target = new J2AhbToWishbone
+      target.io.ahb <> matrix.io.subordinates(0)
+      io.bus <> target.io.wb
       io.pc                 := cpu.io.pc
-      io.instructionPending := cpu.io.ibus.CYC
-
-      io.dataPending := cpu.io.dbus.STB
-      io.locked      := cpu.io.dbus.LOCK
+      io.instructionPending := cpu.io.ibus.address.HTRANS(1)
+      io.dataPending        := cpu.io.dbus.address.HTRANS(1)
+      io.locked             := cpu.io.dbus.address.HMASTLOCK
     }
     val completed = mutable.ArrayBuffer.empty[Boolean]
     val compiled  = SimConfig.withVerilator.compile(new SharedMemory)
-    for (latency <- Seq(0, 4))
-      compiled.doSim(s"tas-wait-$latency") { dut =>
+    for (latency <- Seq(0, 4); initial <- Seq(0L, 0x55000000L))
+      compiled.doSim(s"tas-wait-$latency-initial-$initial") { dut =>
         val code = Seq(
-          0xd00b, 0xd10c, 0xd20c, 0x401b, 0xd30c, 0xe407, 0x2342, 0xaffe, 9
+          0xd00b,
+          0xd10c,
+          0xd20c,
+          9,
+          0x401b,
+          (if (initial == 0) 0x8901 else 0x8b01), // immediately consume TAS T
+          0xaffe,
+          9, // wrong T loops here
+          0xd30a,
+          0xe407,
+          0x2342,
+          0xaffe,
+          9
         )
         val mem = mutable.Map[Long, Long](
           0L -> 0x100L,
@@ -53,7 +58,7 @@ class J2ReviewRegressionSpec extends munit.FunSuite {
           0x134L -> 0x11223344L,
           0x138L -> 0x12345678L,
           0x13cL -> 0x600L,
-          0x300L -> 0L
+          0x300L -> initial
         )
         code.zipWithIndex.foreach { case (op, index) =>
           val addr = 0x100L + index * 2
@@ -72,18 +77,20 @@ class J2ReviewRegressionSpec extends munit.FunSuite {
           dut.clockDomain.clockSim #= false
           sleep(1)
         }
-        dut.io.competitor.CYC      #= false
-        dut.io.competitor.STB      #= false
-        dut.io.competitor.WE       #= true
-        dut.io.competitor.ADR      #= 0x900
-        dut.io.competitor.DAT_MOSI #= 123
-        dut.io.competitor.SEL      #= 15
-
-        dut.io.competitor.LOCK #= false
-        var atomicRead    = false
-        var atomicWrite   = false
-        var competingDone = false
-        var waits         = 0
+        dut.io.competitor.address.HTRANS    #= 0
+        dut.io.competitor.address.HADDR     #= 0x900
+        dut.io.competitor.address.HWRITE    #= true
+        dut.io.competitor.address.HSIZE     #= 2
+        dut.io.competitor.address.HBURST    #= 0
+        dut.io.competitor.address.HPROT     #= 3
+        dut.io.competitor.address.HMASTER   #= 2
+        dut.io.competitor.address.HMASTLOCK #= false
+        dut.io.competitor.HWDATA            #= 123
+        var competitorIssued = false
+        var atomicRead       = false
+        var atomicWrite      = false
+        var competingDone    = false
+        var waits            = 0
         dut.io.bus.ACK           #= false
         dut.io.bus.ERR           #= false
         dut.io.bus.DAT_MISO      #= 0
@@ -94,8 +101,7 @@ class J2ReviewRegressionSpec extends munit.FunSuite {
         dut.clockDomain.deassertReset()
         sleep(1)
         for (cycle <- 0 until 3000 if !mem.contains(0x600L) || !competingDone) {
-          dut.io.competitor.CYC #= (atomicRead && !competingDone)
-          dut.io.competitor.STB #= (atomicRead && !competingDone)
+          dut.io.competitor.address.HTRANS #= (if (atomicRead && !competitorIssued) 2 else 0)
           sleep(1)
           dut.io.bus.ACK #= false
           if (dut.io.bus.CYC.toBoolean && dut.io.bus.STB.toBoolean) {
@@ -129,6 +135,8 @@ class J2ReviewRegressionSpec extends munit.FunSuite {
               dut.io.bus.ACK      #= true
             }
           }
+          if (dut.io.competitor.address.HTRANS.toInt == 2 && dut.io.competitor.HREADY.toBoolean)
+            competitorIssued = true
           tick()
         }
         println(
@@ -136,7 +144,7 @@ class J2ReviewRegressionSpec extends munit.FunSuite {
         )
         assertEquals(
           mem.get(0x300L),
-          Some(0x80000000L)
+          Some(initial | 0x80000000L)
         )
         assert(competingDone)
         completed += (mem.get(0x600L) == Some(7L))
@@ -144,7 +152,7 @@ class J2ReviewRegressionSpec extends munit.FunSuite {
     assert(completed.forall(identity))
   }
   test("load-use stalls preserve the faulting instruction resume PC") {
-    val compiled = SimConfig.withVerilator.compile(new J2MicrocodedCore)
+    val compiled = SimConfig.withVerilator.compile(new J2WishboneCoreFixture)
     for (padded <- Seq(true, false); latency <- Seq(0, 3); busError <- Seq(false, true))
       compiled.doSim(s"fault-padded-$padded-wait-$latency-error-$busError") { dut =>
         val prefix =

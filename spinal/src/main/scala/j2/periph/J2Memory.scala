@@ -20,7 +20,7 @@ object J2RomData {
   }
 }
 
-final class J2Rom(backend: j2.memory.J2MemoryBackend, initFile: String) extends Component {
+final class J2WishboneRom(backend: j2.memory.J2MemoryBackend, initFile: String) extends Component {
   val io = new Bundle {
     val bus = slave(J2Wishbone())
   }
@@ -61,7 +61,7 @@ final class J2Rom(backend: j2.memory.J2MemoryBackend, initFile: String) extends 
   io.bus.ERR      := False
 }
 
-final class J2Sram(backend: j2.memory.J2MemoryBackend = j2.memory.J2MemoryBackend.Inferred)
+final class J2WishboneSram(backend: j2.memory.J2MemoryBackend = j2.memory.J2MemoryBackend.Inferred)
     extends Component {
   val io = new Bundle {
     val bus = slave(J2Wishbone())

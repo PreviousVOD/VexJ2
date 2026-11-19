@@ -10,7 +10,7 @@ class J2ReadCacheSpec extends munit.FunSuite {
       val lastIndex = lineSize / 4 - 1
       val stride    = capacity / 2
       SimConfig.withVerilator
-        .compile(new J2ReadCache(J2ReadCacheConfig(capacity, lineSize)))
+        .compile(new J2WishboneReadCache(J2ReadCacheConfig(capacity, lineSize)))
         .doSim { dut =>
           dut.clockDomain.clockSim         #= false
           dut.io.bus.CYC                   #= false

@@ -40,10 +40,10 @@ class Ahb5Interconnect(
     decoder
   }
   for (index <- mappings.indices) {
-    val biu = new Ahb5BiuEngine(config, managerCount)
-    biu.setName(s"biu_$index")
+    val arbiter = new Ahb5ArbiterEngine(config, managerCount)
+    arbiter.setName(s"arbiter_$index")
     for (manager <- 0 until managerCount)
-      biu.io.inputs(manager) <> decoders(manager).io.outputs(index)
-    io.subordinates(index) <> biu.io.output
+      arbiter.io.inputs(manager) <> decoders(manager).io.outputs(index)
+    io.subordinates(index) <> arbiter.io.output
   }
 }

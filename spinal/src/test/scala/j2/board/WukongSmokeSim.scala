@@ -1,7 +1,7 @@
 package j2.board
 
 import j2.soc.{J2Soc, J2SocConfig}
-import j2.bus.{J2WishboneDdrBridge, J2MigPort}
+import j2.bus.{J2AhbDdrBridge, J2MigPort}
 import spinal.lib._
 import spinal.lib.io.TriStateArray
 import spinal.core._
@@ -20,7 +20,7 @@ final class WukongSocFixture(config: J2SocConfig) extends Component {
   soc.io.gpio.read := 0
   io.spiCs         := soc.io.spiCs; io.spiClk := soc.io.spiClk; io.spiData <> soc.io.spiData
   val bridge =
-    new J2WishboneDdrBridge(busDomain, memoryDomain, config.memoryBase, config.memoryBytes)
+    new J2AhbDdrBridge(busDomain, memoryDomain, config.memoryBase, config.memoryBytes)
   bridge.io.bus <> soc.io.memory; bridge.io.native <> io.native
   bridge.io.calibrated := !io.reset
 }

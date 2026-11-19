@@ -1,7 +1,8 @@
-// Wishbone/ISS harness for the SpinalHDL SH-2 core.
+// AHB5/ISS harness for the SpinalHDL SH-2 core.
 //
-// The system model and Wishbone slave are reused from the archived verification
-// infrastructure. Instruction responses are full aligned big-endian words;
+// The system model is reused from the archived verification infrastructure.
+// Addresses are sampled before the edge; write data belongs to the following phase.
+// Instruction responses are full aligned big-endian words;
 // the core selects and retains their instruction halfwords.
 #ifdef USE_MICROCODED_CORE
 #include "VJ2MicrocodedCore.h"
@@ -11,7 +12,6 @@ using CoreModel = VJ2MicrocodedCore;
 using CoreModel = VJ2Core;
 #endif
 #include "sysmodel.h"
-#include "wbslave.h"
 #include "verilated.h"
 
 #include <cstdio>
@@ -23,6 +23,30 @@ using CoreModel = VJ2Core;
 
 using namespace j2sim;
 
+struct AhbSlave {
+  bool pending = false;
+  unsigned waits = 0;
+  uint32_t address = 0, data = 0;
+  unsigned select = 15;
+  bool write = false;
+  uint64_t txns = 0;
+  template <class F>
+  bool step(bool wasReady, bool accept, uint32_t a, bool w, unsigned size,
+            uint32_t writeData, uint32_t &readData, F access) {
+    if (wasReady) pending = false;
+    if (accept) {
+      pending = true; address = a; write = w; data = writeData; waits = 1;
+      select = size == 0 ? (8u >> (a & 3)) : size == 1 ? ((a & 2) ? 3 : 12) : 15;
+    }
+    readData = 0;
+    if (!pending) return true;
+    if (waits) { --waits; return false; }
+    readData = access(address, write, select, data);
+    ++txns;
+    return true;
+  }
+};
+
 int main(int argc, char **argv) {
   if (argc < 2) {
     fprintf(stderr, "usage: %s image.bin [--expect STR] [--max-cycles N] [--quiet] [--log-retired]\n",
@@ -31,7 +55,7 @@ int main(int argc, char **argv) {
   }
 
   SysBus sys;
-  WbSlave ibus, dbus;
+  AhbSlave ibus, dbus;
   uint64_t max_cycles = 8000000;
   uint64_t stop_pc = ~0ull;
   uint64_t bus_log_from = ~0ull;
@@ -64,12 +88,12 @@ int main(int argc, char **argv) {
   }
 
   CoreModel top;
-  top.io_ibus_ACK = 0;
-  top.io_ibus_DAT_MISO = 0;
-  top.io_ibus_ERR = 0;
-  top.io_dbus_ACK = 0;
-  top.io_dbus_DAT_MISO = 0;
-  top.io_dbus_ERR = 0;
+  top.io_ibus_HREADY = 1;
+  top.io_ibus_HRDATA = 0;
+  top.io_ibus_HRESP = 0;
+  top.io_dbus_HREADY = 1;
+  top.io_dbus_HRDATA = 0;
+  top.io_dbus_HRESP = 0;
   top.io_event_valid = 0;
   top.io_event_payload_command = 0;
   top.io_event_payload_vector = 0;
@@ -96,14 +120,18 @@ int main(int argc, char **argv) {
 
   while (cycles < max_cycles && !done) {
     sys.timer_tick();
+    const bool ir = top.io_ibus_HREADY, dr = top.io_dbus_HREADY;
+    const bool ia = ir && (top.io_ibus_address_HTRANS & 2);
+    const bool da = dr && (top.io_dbus_address_HTRANS & 2);
+    const uint32_t iaddr = top.io_ibus_address_HADDR, daddr = top.io_dbus_address_HADDR;
+    const unsigned dsize = top.io_dbus_address_HSIZE;
+    const bool dwrite = top.io_dbus_address_HWRITE;
     top.clk = 1;
     top.eval();
 
-    bool stall = false;
     uint32_t data = 0;
-    top.io_ibus_ACK =
-        ibus.step(top.io_ibus_CYC, top.io_ibus_STB, top.io_ibus_ADR,
-                  false, top.io_ibus_SEL, 0, stall, data,
+    top.io_ibus_HREADY =
+        ibus.step(ir, ia, iaddr, false, 2, 0, data,
                   [&](uint32_t address, bool, unsigned, uint32_t) {
                     uint32_t value = sys.fetch32(address);
                     if (cycles >= bus_log_from) {
@@ -112,12 +140,10 @@ int main(int argc, char **argv) {
                     }
                     return value;
                   });
-    top.io_ibus_DAT_MISO = data;
+    top.io_ibus_HRDATA = data;
 
-    top.io_dbus_ACK =
-        dbus.step(top.io_dbus_CYC, top.io_dbus_STB, top.io_dbus_ADR,
-                  top.io_dbus_WE, top.io_dbus_SEL, top.io_dbus_DAT_MOSI,
-                  stall, data,
+    top.io_dbus_HREADY =
+        dbus.step(dr, da, daddr, dwrite, dsize, top.io_dbus_HWDATA, data,
                   [&](uint32_t address, bool write, unsigned select, uint32_t value) {
                     uint32_t result = sys.access(address, write, select, value);
                     if (cycles >= bus_log_from) {
@@ -127,7 +153,7 @@ int main(int argc, char **argv) {
                     }
                     return result;
                   });
-    top.io_dbus_DAT_MISO = data;
+    top.io_dbus_HRDATA = data;
 
     top.io_event_valid = sys.ev_en();
     top.io_event_payload_command = sys.ev_cmd();

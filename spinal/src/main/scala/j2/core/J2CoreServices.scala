@@ -2,7 +2,7 @@ package j2.core
 
 import spinal.core._
 import spinal.lib._
-import j2.bus.J2Wishbone
+import j2.bus.J2Ahb
 import j2.microcode.J2Operation
 
 final case class J2CoreConfig(
@@ -11,8 +11,8 @@ final case class J2CoreConfig(
 )
 
 final class J2CoreIo(config: J2CoreConfig) extends Bundle {
-  val ibus              = master(J2Wishbone())
-  val dbus              = master(J2Wishbone())
+  val ibus              = master(J2Ahb.manager())
+  val dbus              = master(J2Ahb.manager())
   val event             = slave(Stream(new J2Event))
   val eventAck          = out Bool ()
   val pc                = if (config.exposeDebug) out UInt (32 bits) else null
@@ -51,6 +51,7 @@ final class J2FetchPort extends Bundle {
 final class J2MemoryPort extends Bundle {
   val read                                         = UInt(32 bits)
   val readValid, active, fault, entryFault, issued = Bool()
+  val locked                                       = Bool()
   val faultPc                                      = UInt(32 bits)
 }
 final class J2DecodePort extends Bundle {

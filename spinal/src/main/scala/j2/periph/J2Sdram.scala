@@ -6,7 +6,7 @@ import spinal.lib._
 import spinal.lib.bus.wishbone.WishboneToBmb
 import spinal.lib.memory.sdram.sdr.{BmbSdramCtrl, EG4S20, SdramInterface}
 
-final class J2Sdram extends Component {
+final class J2WishboneSdram extends Component {
   val io = new Bundle {
     val bus   = slave(J2Wishbone())
     val sdram = master(SdramInterface(EG4S20.layout))

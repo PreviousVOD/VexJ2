@@ -1,12 +1,13 @@
 package j2.soc
 
-import j2.bus.{J2Wishbone, J2WishboneIntercon, J2ReadCache, J2ReadCacheConfig}
+import j2.bus.{J2Ahb, J2Apb, J2Biu, J2ReadCache, J2ReadCacheConfig}
+import j2.bus.ahb5._
+import j2.bus.apb.Apb3Matrix
 import j2.core.{J2CoreConfig, J2MicrocodedCore}
 import j2.periph._
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.misc.SizeMapping
-import spinal.lib.com.uart.{UartCtrlMemoryMappedConfig, WishboneUartCtrl}
 import spinal.lib.io.TriStateArray
 
 final class J2Soc(
@@ -14,7 +15,7 @@ final class J2Soc(
 ) extends Component {
   private val clockHz = config.clockHz
   val io = new Bundle {
-    val memory  = master(J2Wishbone())
+    val memory  = master(J2Ahb.subordinate())
     val uartRx  = in Bool ()
     val uartTx  = out Bool ()
     val gpio    = master(TriStateArray(32))
@@ -45,9 +46,7 @@ final class J2Soc(
   private val flash = new J2SpiFlash(xipConfig.lineBytes)
   private val pio   = new J2Pio
   private val timer = new J2Timer(clockHz, config.timerTickHz)
-  private val uart = new WishboneUartCtrl(
-    UartCtrlMemoryMappedConfig(config.uartBaud, txFifoDepth = 32, rxFifoDepth = 32)
-  )
+  private val uart  = new J2Uart(config.uartBaud)
 
   // Cache tags/refill commands use absolute addresses. Only the backend adapter
   // translates the mapped window to flash offsets, so relocation is explicit.
@@ -63,88 +62,38 @@ final class J2Soc(
   xipCache.io.invalidate := flash.io.invalidate
   flash.io.readBusy      := xipCache.io.busy
 
-  private val instructionMappings = Seq(romMapping, sramMapping, flashMapping, memoryMapping)
-  private val dataMappings = instructionMappings ++ Seq(
-    pioMapping,
-    uartMapping,
-    flashControlMapping,
-    timerMapping,
-    cacheControlMapping
+  // Routing and AMBA arbitration are separate from the system peripheral BIU.
+  private val peripheralMapping = SizeMapping(0xff000000L, 0x8000)
+  private val matrix = new Ahb5RoutingMatrix(
+    J2Ahb.config,
+    managerCount = 2,
+    mappings     = Seq(romMapping, sramMapping, flashMapping, memoryMapping, peripheralMapping),
+    connections  = Seq(Set(0, 1, 2, 3), Set(0, 1, 2, 3, 4))
   )
-  private val instructionUnmapped = !instructionMappings.map(_.hit(cpu.io.ibus.ADR)).reduce(_ || _)
-  private val dataUnmapped        = !dataMappings.map(_.hit(cpu.io.dbus.ADR)).reduce(_ || _)
-  private val instructionError    = RegInit(False)
-  private val dataError           = RegInit(False)
-  when(instructionUnmapped && cpu.io.ibus.CYC) {
-    instructionError := True
-  }.elsewhen(!cpu.io.ibus.CYC) {
-    instructionError := False
+  matrix.io.managers(0) <> cpu.io.ibus
+  matrix.io.managers(1) <> cpu.io.dbus
+  private val memoryPorts = Seq(rom.io.bus, sram.io.bus, xipCache.io.bus, io.memory)
+  for (index <- memoryPorts.indices) {
+    val arbiter = new Ahb5SubordinateArbiter(J2Ahb.config, 2)
+    arbiter.setName(s"memoryArbiter_$index")
+    arbiter.io.managers <> matrix.io.destinations(index)
+    arbiter.io.subordinate <> memoryPorts(index)
   }
-  when(dataUnmapped && cpu.io.dbus.CYC) {
-    dataError := True
-  }.elsewhen(!cpu.io.dbus.CYC) {
-    dataError := False
-  }
-
-  private val instructionBus = J2Wishbone()
-  instructionBus.CYC      := cpu.io.ibus.CYC && !instructionUnmapped
-  instructionBus.STB      := cpu.io.ibus.STB
-  instructionBus.WE       := cpu.io.ibus.WE
-  instructionBus.ADR      := cpu.io.ibus.ADR
-  instructionBus.DAT_MOSI := cpu.io.ibus.DAT_MOSI
-  instructionBus.SEL      := cpu.io.ibus.SEL
-  instructionBus.LOCK     := cpu.io.ibus.LOCK
-
-  private val dataBus = J2Wishbone()
-  dataBus.CYC      := cpu.io.dbus.CYC && !dataUnmapped
-  dataBus.STB      := cpu.io.dbus.STB
-  dataBus.WE       := cpu.io.dbus.WE
-  dataBus.ADR      := cpu.io.dbus.ADR
-  dataBus.DAT_MOSI := cpu.io.dbus.DAT_MOSI
-  dataBus.SEL      := cpu.io.dbus.SEL
-  dataBus.LOCK     := cpu.io.dbus.LOCK
-
-  private val uartBus = J2Wishbone()
-  J2Wishbone.connectToWordAddressed(uartBus, uart.io.bus)
-
-  private val matrix = J2WishboneIntercon()
-  matrix.addSlaves(
-    rom.io.bus -> romMapping,
-    sram.io.bus -> sramMapping,
-    xipCache.io.bus -> flashMapping,
-    io.memory -> memoryMapping,
-    pio.io.bus -> pioMapping,
-    uartBus -> uartMapping,
-    flash.io.control -> flashControlMapping,
-    timer.io.bus -> timerMapping,
-    xipCache.io.control -> cacheControlMapping
+  // The standalone system BIU owns the complete peripheral bridge domain.
+  private val peripheralBiu = new J2Biu(J2Ahb.config, 2)
+  peripheralBiu.io.managers <> matrix.io.destinations(4)
+  private val peripheralBridge = new Ahb5ToApb3Bridge(J2Ahb.config)
+  peripheralBridge.io.ahb <> peripheralBiu.io.subordinate
+  private val peripheralBus = new Apb3Matrix(
+    peripheralBridge.apbConfig,
+    Seq(pioMapping, uartMapping, flashControlMapping, timerMapping, cacheControlMapping)
   )
-  matrix.addMaster(
-    dataBus,
-    Seq(
-      rom.io.bus,
-      sram.io.bus,
-      xipCache.io.bus,
-      io.memory,
-      pio.io.bus,
-      uartBus,
-      flash.io.control,
-      timer.io.bus,
-      xipCache.io.control
-    )
-  )
-  matrix.addInstructionMaster(
-    instructionBus,
-    dataBus,
-    Seq(rom.io.bus, sram.io.bus, xipCache.io.bus, io.memory)
-  )
-
-  cpu.io.ibus.ACK      := Mux(instructionUnmapped, False, instructionBus.ACK)
-  cpu.io.ibus.DAT_MISO := instructionBus.DAT_MISO
-  cpu.io.ibus.ERR      := Mux(instructionUnmapped, instructionError, instructionBus.ERR)
-  cpu.io.dbus.ACK      := Mux(dataUnmapped, False, dataBus.ACK)
-  cpu.io.dbus.ERR      := Mux(dataUnmapped, dataError, dataBus.ERR)
-  cpu.io.dbus.DAT_MISO := dataBus.DAT_MISO
+  peripheralBus.io.input <> peripheralBridge.io.apb
+  J2Apb.connect(peripheralBus.io.outputs(0), pio.io.bus)
+  J2Apb.connect(peripheralBus.io.outputs(1), uart.io.bus)
+  J2Apb.connect(peripheralBus.io.outputs(2), flash.io.control)
+  J2Apb.connect(peripheralBus.io.outputs(3), timer.io.bus)
+  J2Apb.connect(peripheralBus.io.outputs(4), xipCache.io.control)
 
   cpu.io.event.valid              := timer.io.interrupt
   cpu.io.event.payload.command    := 0

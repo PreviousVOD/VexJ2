@@ -57,12 +57,14 @@ final class J2SchedulePlugin extends FiberPlugin with J2ScheduleService with J2P
     a.memoryRequest.data    := e.memoryWriteData
     a.memoryRequest.write   := a.graph.state.ex.memoryWrite
     a.memoryRequest.size    := a.graph.state.ex.memorySize
-    a.advance               := a.ready && d.ready && !mul.blocked
-    a.control               := d.control
-    a.metadata              := pc.metadata
-    a.nextIdStall           := d.nextIdStall
-    a.cancelExWriteback     := m.fault
-    when(!m.active && !f.active && !t.sleeping && !t.halted) {
+// TAS continuation may run while its prefetch is deferred, but the next
+    // instruction must wait for that fetch to finish.
+    a.advance           := a.ready && d.ready && !mul.blocked && !(f.active && d.startInstruction)
+    a.control           := d.control
+    a.metadata          := pc.metadata
+    a.nextIdStall       := d.nextIdStall
+    a.cancelExWriteback := m.fault
+    when(!m.active && (!f.active || m.locked) && !t.sleeping && !t.halted) {
       a.ready := True
     } otherwise { a.ready := False }
     // Stop on the issue edge; waiting for registered busy would move one extra slot.

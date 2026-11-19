@@ -1,6 +1,6 @@
 package j2.periph
 
-import j2.bus.{J2ReadCache, J2ReadCacheConfig, J2Wishbone}
+import j2.bus.{J2WishboneReadCache, J2ReadCacheConfig, J2Wishbone}
 import spinal.lib._
 import spinal.lib.io.TriStateArray
 import spinal.core._
@@ -16,13 +16,15 @@ class J2CachedFlashFixture(baseAddress: BigInt = 0x10000000L) extends Component 
       val data    = master(TriStateArray(4))
     }
   }
-  private val cache = new J2ReadCache(
+  private val cache = new J2WishboneReadCache(
     J2ReadCacheConfig(baseAddress = baseAddress, rangeBytes = 0x100000)
   )
   private val flash = new J2SpiFlash
   io.xip <> cache.io.bus
   io.cacheControl <> cache.io.control
-  io.control <> flash.io.control
+  val controlBridge = new J2WishboneToApb(j2.bus.J2Apb.config)
+  io.control <> controlBridge.io.input
+  controlBridge.io.output <> flash.io.control
   flash.io.xip.cmd.valid      := cache.io.refill.cmd.valid
   flash.io.xip.cmd.address    := cache.io.refill.cmd.address - U(baseAddress, 32 bits)
   flash.io.xip.cmd.length     := cache.io.refill.cmd.length

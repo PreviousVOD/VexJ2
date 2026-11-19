@@ -2,6 +2,7 @@ package j2.fetch
 
 import j2.isa.J2Predecoder
 import j2.core._
+import j2.bus.ahb5._
 import spinal.core._
 import spinal.lib.misc.plugin.FiberPlugin
 
@@ -17,6 +18,7 @@ final class J2FetchPlugin extends FiberPlugin with J2FetchService {
     val firstLine               = RegInit(U(0, 72 bits))
     val legal, delaySlotIllegal = RegInit(False)
     val pending, active         = RegInit(False)
+    val addressSent             = RegInit(False)
     val address                 = RegInit(U(0, 32 bits))
     val word                    = RegInit(B(0, 32 bits))
     val wordAddress             = RegInit(U(0, 30 bits))
@@ -43,6 +45,7 @@ final class J2FetchPlugin extends FiberPlugin with J2FetchService {
     val e       = host[J2ExecuteService].execute
     val pc      = host[J2ArchitecturalService].architectural
     val t       = host[J2TrapService].trap
+    val memory  = host[J2MemoryService].memory
     val issue   = s.advance && d.instructionIssue && !a.active
     val address = Mux(d.instructionAddress, e.zbus, pc.sequentialPc)
     // Retain only the unused lower half of a successful sequential word fetch.
@@ -52,27 +55,37 @@ final class J2FetchPlugin extends FiberPlugin with J2FetchService {
       address(1) && !address(0) && !d.instructionAddress
     a.port.issued := issue && !hit
     a.port.entryFault := t.inService &&
-      ((a.active && io.ERR) || (issue && address(0)))
+      ((a.active && a.addressSent && io.HREADY && io.HRESP) || (issue && address(0)))
 
-    io.CYC      := a.active
-    io.STB      := a.active
-    io.WE       := False
-    io.ADR      := (a.address & U(0xfffffffcL, 32 bits))
-    io.SEL      := B"1111"
-    io.DAT_MOSI := 0
-    io.LOCK     := False
-    when(a.active && (io.ACK || io.ERR)) {
-      a.nextFault := io.ERR
+    io.address.HADDR  := a.address & U(0xfffffffcL, 32 bits)
+    io.address.HWRITE := False
+    io.address.HSIZE  := 2
+    io.address.HBURST := Ahb5Burst.SINGLE
+    // Cacheable, non-bufferable, privileged instruction access.
+    io.address.HPROT     := B"1010"
+    io.address.HMASTER   := 0
+    io.address.HMASTLOCK := False
+    // A pending prefetch must not enter the fabric behind our own TAS reservation.
+    io.address.HTRANS := Mux(
+      a.active && !a.addressSent && !memory.locked,
+      Ahb5Trans.NONSEQ,
+      Ahb5Trans.IDLE
+    )
+    io.HWDATA := 0
+    when(a.active && !a.addressSent && !memory.locked && io.HREADY)(a.addressSent := True)
+    when(a.active && a.addressSent && io.HREADY) {
+      a.nextFault := io.HRESP
       a.next := Mux(
-        io.ERR,
+        io.HRESP,
         U(0x0009, 16 bits),
-        Mux(a.address(1), io.DAT_MISO(15 downto 0), io.DAT_MISO(31 downto 16)).asUInt
+        Mux(a.address(1), io.HRDATA(15 downto 0), io.HRDATA(31 downto 16)).asUInt
       )
-      a.word        := io.DAT_MISO
+      a.word        := io.HRDATA
       a.wordAddress := a.address(31 downto 2)
-      a.wordValid   := !io.ERR && !a.address(1)
+      a.wordValid   := !io.HRESP && !a.address(1)
       a.pending     := True
       a.active      := False
+      a.addressSent := False
     }
     when(s.advance) {
       when(d.startInstruction && a.fault && d.delaySlot) {
@@ -95,9 +108,10 @@ final class J2FetchPlugin extends FiberPlugin with J2FetchService {
         a.pending := False
       }
       when(issue) {
-        a.address   := address
-        a.active    := !hit && !address(0)
-        a.wordValid := False
+        a.address     := address
+        a.active      := !hit && !address(0)
+        a.addressSent := False
+        a.wordValid   := False
         // A non-delayed redirect discards the prefetched fallthrough instruction,
         // including its error. Delayed redirects must retain the slot's fault.
         when(d.instructionAddress && !d.control.delayJump) {

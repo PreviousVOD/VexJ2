@@ -1,38 +1,16 @@
 package j2.periph
 
-import j2.bus.{J2Wishbone, J2ReadBurst}
+import j2.bus.{J2Apb, J2ReadBurst}
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.amba3.apb.{Apb3, Apb3Config}
 import spinal.lib.com.spi.ddr.{Apb3SpiXdrMasterCtrl, SpiXdrMasterCtrl, SpiXdrParameter}
 import spinal.lib.io.TriStateArray
 
-final class J2WishboneToApb(config: Apb3Config) extends Component {
-  val io = new Bundle {
-    val input  = slave(J2Wishbone())
-    val output = master(Apb3(config))
-  }
-  private val enable = RegInit(False)
-  io.output.PADDR   := io.input.ADR(config.addressWidth - 1 downto 0)
-  io.output.PSEL    := B(io.input.CYC && io.input.STB)
-  io.output.PENABLE := enable
-  io.output.PWRITE  := io.input.WE
-  io.output.PWDATA  := io.input.DAT_MOSI
-  when(!enable && io.input.CYC && io.input.STB) {
-    enable := True
-  }
-  when(enable && io.output.PREADY) {
-    enable := False
-  }
-  io.input.ACK      := enable && io.output.PREADY
-  io.input.DAT_MISO := io.output.PRDATA
-  io.input.ERR      := False
-}
-
 final class J2SpiFlash(lineBytes: Int = 32) extends Component {
   require(isPow2(lineBytes) && lineBytes >= 8)
   val io = new Bundle {
-    val control              = slave(J2Wishbone())
+    val control              = slave(J2Apb())
     val xip                  = slave(J2ReadBurst(log2Up(lineBytes / 4)))
     val readBusy             = in Bool ()
     val readHold, invalidate = out Bool ()
@@ -64,7 +42,6 @@ final class J2SpiFlash(lineBytes: Int = 32) extends Component {
     xipPayloadModInit        = 1
   )
   private val controller = Apb3SpiXdrMasterCtrl(parameters)
-  private val apbBridge  = new J2WishboneToApb(Apb3SpiXdrMasterCtrl.getApb3Config)
   // Keep byte ordering and SPI-specific command timing outside the generic cache.
   controller.io.xip.cmd.valid   := io.xip.cmd.valid
   controller.io.xip.cmd.address := io.xip.cmd.address(23 downto 0)
@@ -98,19 +75,30 @@ final class J2SpiFlash(lineBytes: Int = 32) extends Component {
   // before changing SPI configuration or accessing its shared command/RX FIFOs.
   private val draining       = RegInit(False)
   private val controlAllowed = !io.readBusy && !draining
-  io.readHold                 := io.control.CYC && io.control.STB
-  apbBridge.io.input.CYC      := io.control.CYC && controlAllowed
-  apbBridge.io.input.STB      := io.control.STB && controlAllowed
-  apbBridge.io.input.WE       := io.control.WE
-  apbBridge.io.input.ADR      := io.control.ADR
-  apbBridge.io.input.DAT_MOSI := io.control.DAT_MOSI
-  apbBridge.io.input.SEL      := io.control.SEL
-  apbBridge.io.input.LOCK     := io.control.LOCK
-  io.control.ACK              := apbBridge.io.input.ACK
-  io.control.ERR              := apbBridge.io.input.ERR
-  io.control.DAT_MISO         := apbBridge.io.input.DAT_MISO
-  apbBridge.io.output <> controller.io.apb
-  io.invalidate := io.control.CYC && io.control.STB && io.control.WE && io.control.ACK
+  // A waiting outer APB transfer must still give the controller its own SETUP
+  // cycle after the refill drains; never gate PSEL on mid-ACCESS readiness.
+  private object ControlState extends SpinalEnum { val IDLE, SETUP, ACCESS = newElement() }
+  private val controlState = RegInit(ControlState.IDLE)
+  io.readHold               := io.control.PSEL(0)
+  controller.io.apb.PADDR   := io.control.PADDR.resized
+  controller.io.apb.PWRITE  := io.control.PWRITE
+  controller.io.apb.PWDATA  := io.control.PWDATA
+  controller.io.apb.PSEL(0) := controlState =/= ControlState.IDLE
+  controller.io.apb.PENABLE := controlState === ControlState.ACCESS
+  io.control.PREADY         := controlState === ControlState.ACCESS && controller.io.apb.PREADY
+  io.control.PRDATA         := controller.io.apb.PRDATA
+  io.control.PSLVERROR := (if (controller.io.apb.config.useSlaveError)
+                             io.control.PREADY && controller.io.apb.PSLVERROR
+                           else False)
+  switch(controlState) {
+    is(ControlState.IDLE) {
+      when(io.control.PSEL(0) && controlAllowed)(controlState := ControlState.SETUP)
+    }
+    is(ControlState.SETUP)(controlState := ControlState.ACCESS)
+    is(ControlState.ACCESS)(when(io.control.PREADY)(controlState := ControlState.IDLE))
+  }
+  io.invalidate := io.control.PSEL(0) && io.control.PENABLE && io.control.PREADY &&
+    io.control.PWRITE && !io.control.PSLVERROR
 
   // The XDR controller's receive pipeline assumes one output-register cycle
   // and one input-register cycle. Driving its raw PHY signals straight onto

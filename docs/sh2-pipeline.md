@@ -85,7 +85,7 @@ non-delayed BT/BF discard a fault on the unused fallthrough fetch; faults in
 actual delay slots remain pending through the branch.
 
 The core still is not a cycle-exact Renesas SH-2 model. Multi-step schedules,
-classic Wishbone turnaround and collective external waits remain. The IF
+buffered AHB5 transaction latency and collective external waits remain. The IF
 buffer holds one unused halfword, not a queue fetching arbitrary future words.
 The SoC matrix permits parallel I/D transfers where routes differ. Published
 issue counts therefore still need checking instruction by instruction; measure

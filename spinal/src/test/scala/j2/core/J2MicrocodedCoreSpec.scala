@@ -8,7 +8,7 @@ class J2MicrocodedCoreSpec extends munit.FunSuite {
   test("reset vectors, W alignment, compare forwarding and branch delay slots with bus waits") {
     for (reverse <- Seq(false, true)) {
       val compiled = SimConfig.withVerilator.compile(
-        new J2MicrocodedCore(
+        new J2WishboneCoreFixture(
           J2CoreConfig(),
           config => {
             val plugins = J2CorePlugins(config)

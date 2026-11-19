@@ -3,9 +3,9 @@ package j2.board.wukong
 import j2.soc.{J2Soc, J2SocConfig}
 import spinal.core._
 import spinal.lib._
-import j2.bus.J2WishboneDdrBridge
+import j2.bus.J2AhbDdrBridge
 
-/** Wukong SoC with a serialized Wishbone/CDC bridge to the native MIG interface. */
+/** Wukong SoC with a serialized AHB5/CDC bridge to the native MIG interface. */
 final class J2Wukong(config: J2SocConfig) extends Component {
   require(config.clockHz == 72000000)
   setDefinitionName("j2_wukong_v1")
@@ -96,7 +96,7 @@ final class J2Wukong(config: J2SocConfig) extends Component {
   bridgeResetRequest := domain.isResetActive
   val bridgeReset =
     ResetCtrl.asyncAssertSyncDeassert(bridgeResetRequest, uiClock).setName("bridgeReset")
-  val bridge = new J2WishboneDdrBridge(
+  val bridge = new J2AhbDdrBridge(
     domain,
     uiClock.copy(reset = bridgeReset),
     config.memoryBase,
