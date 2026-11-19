@@ -122,5 +122,4 @@ TD_HOME=/path/to/TD_4.6.7_Linux python3 tools/isa_validation.py hardware \
 ```
 
 The hardware command programs volatile FPGA configuration SRAM and uploads the
-test application to the dedicated application flash. Wukong timing and hardware
-validation remain a separate board step.
+test application to the dedicated application flash. Wukong also passes at 72 MHz; see [Wukong validation](wukong-v1.md#ahb5apb-validation-at-72-mhz).

@@ -166,8 +166,8 @@ TD_HOME=/path/to/TD_4.6.7_Linux python3 tools/isa_validation.py hardware \
 The hardware command programs volatile FPGA configuration SRAM and uploads
 `build/sw/xipapp/flash.bin` to the dedicated application flash. Logs and source,
 image and simulator/bitstream hashes are under `build/ahb5-migration/`.
-Wukong's shared integration now uses the AHB DDR frontend, but its implementation
-and hardware validation are deferred to the next board step.
+Subsequent [Wukong validation](wukong-v1.md#ahb5apb-validation-at-72-mhz) covers
+the AHB DDR frontend and APB peripherals at 72 MHz.
 
 ## Validation and implementation history
 

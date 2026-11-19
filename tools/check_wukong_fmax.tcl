@@ -41,8 +41,10 @@ if {abs([get_property PERIOD [get_clocks clk_pll_i]] - 12.0) > 0.001} {
     error "DDR UI frequency changed"
 }
 # Match the bundled response payload bound to its new receiving period.
-set source_regs [get_cells -hier -filter {NAME =~ bridge/responses/pushArea_data*_reg*}]
-set target_regs [get_cells -hier -filter {NAME =~ bridge/responses/popArea_stream_rData*_reg*}]
+source [file join $root tools wukong_bridge_paths.tcl]
+set bridge_root [wukong_bridge_root]
+set source_regs [get_cells -hier -filter "NAME =~ $bridge_root/responses/pushArea_data*_reg*"]
+set target_regs [get_cells -hier -filter "NAME =~ $bridge_root/responses/popArea_stream_rData*_reg*"]
 if {![llength $source_regs] || ![llength $target_regs]} { error "Missing response mailbox" }
 set_max_delay -datapath_only $period -from $source_regs -to $target_regs
 set_bus_skew $period -from $source_regs -to $target_regs

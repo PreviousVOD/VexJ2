@@ -1,6 +1,6 @@
 # Wukong v1 port
 
-The XC7A100T platform shares its CPU, pipeline, Wishbone matrix, peripherals
+The XC7A100T platform shares its CPU, pipeline, AHB5 routing, APB peripherals
 and cache with Tang Primer. The Wukong wrapper connects quad SF3 flash and
 256 MiB DDR3 through MIG. Its ROM supports bounded application updates,
 quad XIP execution and loading applications into DDR.
@@ -85,11 +85,14 @@ loader's Winbond-specific QE/status initialization.
 flowchart LR
   P["Board MMCM + reset + I/O"] --> S["Shared J2Soc"]
   S --> R["Boot ROM / SRAM / microcode<br/>Xilinx block RAM inference"]
-  S --> U["UART / timer / GPIO"]
+  S --> BIU["Standalone system BIU"]
+  BIU --> APB["AHB5-to-APB3 bridge / APB matrix"]
+  APB --> U["UART / timer / GPIO<br/>SPI and cache control"]
   S --> C["XIP cache<br/>physical application offset"]
   C --> F["SPI on J11<br/>Pmod SF3 application flash"]
-  S --> B["External-memory Wishbone port<br/>byte addresses + LOCK + ERR"]
-  B --> E["Wishbone / native burst adapter<br/>toggle mailboxes: 72 ↔ 83.333 MHz"]
+  S --> B["External-memory AHB5 port<br/>byte addresses / HMASTLOCK / HRESP"]
+  B --> FRONT["AHB frontend"]
+  FRONT --> E["Retained Wishbone / native burst backend<br/>toggle mailboxes: 72 ↔ 83.333 MHz"]
   E --> M["MIG 4.2 / 128-bit UI"]
   M --> D["256 MiB DDR3L"]
 ```
@@ -100,10 +103,19 @@ its rising-edge, enabled read and response-address tag. `J2SocConfig` supplies
 the boot image, clocks, address windows and physical flash offset.
 
 The EG4 SDRAM controller now lives in the Tang board wrapper, outside the
-shared SoC. The external-memory port preserves absolute byte addresses, byte
-selects, lock ownership and error responses. Wukong maps its full 256 MiB DDR
-window at `0x80000000–0x8fffffff` through `J2WishboneDdrBridge`. Tang retains
-its existing SDRAM window.
+shared SoC. The external-memory AHB5 port preserves absolute byte addresses,
+transfer sizes, lock ownership and error responses. Wukong maps its full
+256 MiB DDR window at `0x80000000–0x8fffffff` through `J2AhbDdrBridge`, retaining
+the tested `J2WishboneDdrBridge` CDC/MIG backend internally. Tang retains its
+existing SDRAM window. Peripheral registers require aligned 32-bit accesses;
+see [APB and standalone BIU contracts](apb.md).
+
+The AHB frontend places the DDR mailboxes at `bridge/bridge/{requests,responses}`.
+`tools/wukong_bridge_paths.tcl` resolves exactly one backend, supporting both
+this path and the historical `bridge/{requests,responses}` hierarchy. Synthesis
+constraints and the Fmax tool use that shared resolver. Missing or ambiguous
+mailboxes still fail the build; payload max-delay, bus-skew and toggle/reset
+synchronizer checks remain in force.
 
 The board uses Vivado's `proc_sys_reset` v5.0 IP. Its clock is the 72 MHz MMCM
 output, its external reset is KEY0, and its lock input requires both clock
@@ -563,7 +575,7 @@ under `build/wukong-v1/clock-32mhz/`. The timing experiment tool supports both
 PLL integer and MMCM fractional output divisors; with the current 900 MHz VCO,
 divide-by-12.5 means 72 MHz. These timing experiments still generate no bitstream.
 
-Validation on 2026-11-19:
+Validation on 2026-11-19, before the AHB5/APB migration:
 
 - Routed setup WNS **+0.166 ns**, hold WHS **+0.039 ns**, pulse-width slack
   **+0.251 ns**; all timing constraints met. Bus skew, CDC and DRC checks pass.
@@ -585,3 +597,30 @@ and bitstream are under `build/wukong-v1/clock-72mhz/`; `results.json` records
 clock settings, test results and hashes. Full boot-simulation and build logs are
 `build/wukong-v1/clock-72-sim.log` and `clock-72-build.log`. The bitstream SHA-256
 is `fd9e6d5308ea608f09dfb4f2feb20c8bce0d265a23f50a093f7e4885f5702db7`.
+
+## AHB5/APB validation at 72 MHz
+
+The migration was committed as `edf6a58`. Wukong retains the 72 MHz clock and
+uses the shared AHB routing matrix, standalone peripheral BIU and native APB3
+peripherals. ROM, SRAM, XIP data and DDR remain on AHB5. The board-specific fix
+updates the DDR mailbox hierarchy resolution for the AHB frontend; it does not
+relax the CDC constraints or change the clock profile.
+
+Routed setup WNS is **+0.819 ns**, hold WHS **+0.040 ns**, and pulse-width slack
+**+0.251 ns**, with no failing constrained endpoints. Bus skew and critical CDC
+checks pass; DRC has no errors or critical warnings. Utilization is **8,743 LUTs**,
+**7,815 registers**, 17 RAMB36 + 4 RAMB18 and five DSPs. Existing external-I/O
+qualification limits described above still apply.
+
+All five boot simulations pass: XIP execution, DDR execution, XIP upload/recovery,
+DDR upload and corrupt-image rejection. The vendor reset simulation and both
+host image-parser tests also pass. Four hardware
+runs over `/dev/ttyUSB0` pass: DDR upload, DDR warm boot, XIP upload and XIP warm
+boot. Each completes cache, DDR, timer, atomics, fetch, forwarding, multiply/MAC
+and exception/illegal-instruction checks. FPGA programming used volatile Vivado
+JTAG. Each upload preserved the affected 64 KiB SF3 application sector before
+writing; the onboard configuration flash was untouched. The final board state
+is the 72 MHz SoC running the XIP ISA application.
+
+Evidence is isolated under `build/wukong-v1/apb-validation/`: per-run UART logs,
+SF3 backups, report hashes, the tested bitstream, firmware and routed checkpoint.
