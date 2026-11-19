@@ -1,8 +1,9 @@
 # Core-private PPB and NVIC-style INTC generator
 
-Status: plan approved. Step 1 (private PPB routing and access checks) is
-implemented; INTC state and arbitration remain planned. The entire INTC window
-currently reads zero and ignores valid word writes.
+Status: plan approved. Step 1 (private PPB routing and access checks) is committed
+as `eca56d6`. Step 2 (standalone INTC) is implemented and tested. CPU acceptance
+and SoC wiring remain pending, so the live core still exposes a reserved-zero
+INTC window and uses its existing external event input.
 APB4 is committed as `b0867a0`; CMT/SCI and their software migration as `cc7dc4a`.
 The CMT and SCI peripherals keep their existing register interfaces.
 
@@ -283,3 +284,51 @@ Tang Primer and Wukong FPGA RTL generation both succeed. Logs are in
 post-route timing or FPGA download has been performed for this step. The router
 adds no registered stage to external instruction accesses; combinational timing
 impact still needs measurement.
+
+## Standalone INTC implementation
+
+`j2.core.intc.J2Intc(IntcConfig(peripheralCount))` implements the register map,
+NMI, balanced priority selection and a registered candidate. It has a 9-bit
+local APB4 address port, held-level request inputs, asynchronous NMI, current
+SR.I (`maskLevel`), a speculative candidate `Flow` and an `accept` input.
+The candidate carries source, 8-bit vector, entry mask level and NMI status.
+
+The core must pulse `accept` only when it captures a valid candidate at an
+architectural instruction boundary, then inhibit acceptance throughout entry.
+The candidate can change while unaccepted; it is not a backpressured stream.
+Enable, pending, priority and SR.I are rechecked against the registered source.
+An enable/disable, clear-pending or priority write affecting implemented fields
+suppresses maskable acceptance in its APB commit cycle. ISPR does not suppress
+acceptance: a concurrent software set wins the accepted-source clear. NMI is
+independent of these management writes. Synchronization seeds NMI detection
+before enabling edge capture, including when the pin starts low at reset.
+
+The INTC address must be translated as `absoluteAddress - 0xffffe900` before
+narrowing to nine bits. Simple truncation is incorrect because the base is not
+512-byte aligned. `J2IntcPpbSpec` exercises the actual PPB bridge/matrix with this
+translation, BE32 word accesses and subword rejection. The production PPB plugin
+will acquire this connection during CPU integration; its zero responder remains
+in place for now.
+
+Generate standalone RTL and a header from `spinal/`:
+
+```sh
+../tools/local/bin/sbt -batch \
+  'runMain j2.Generate_Intc 6 ../build/intc CMT0 CMT1 SCI_ERI SCI_RXI SCI_TXI SCI_TEI'
+```
+
+The optional ordered source names produce IRQ/vector constants. Register offsets,
+bank capacities and index/mask/priority helpers come from the same constants as
+RTL. The generated header has no fixed peripheral base address. Actual SoC
+wiring and firmware initialization remain step 4.
+
+Standalone validation covers all planned count boundaries, register reset and
+aliases, reserved extension slots, all write strobes, software/hardware pending
+independence, acceptance races, NMI (including count zero), stale candidates and
+100 randomized 192-source priority selections. The full Scala suite passes 120
+tests (16 new INTC tests). Standalone RTL/header generation succeeds; the header
+matches `sw/.clang-format` and passes C11 compilation with static assertions for
+register offsets, source/vector assignments and the highest supported IRQ.
+Logs and generated RTL/header are under `build/intc*`, including
+`build/intc-full-validation.log`. No new INTC hardware is connected to either
+board yet.
