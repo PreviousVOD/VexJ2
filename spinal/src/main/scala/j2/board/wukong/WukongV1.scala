@@ -2,7 +2,6 @@ package j2.board.wukong
 
 import java.nio.file.{Files, Paths}
 import java.util.Properties
-import j2.memory.J2MemoryBackend
 import j2.soc.J2SocConfig
 
 object WukongV1 {
@@ -26,15 +25,14 @@ object WukongV1 {
     require(number("uartBaud") == 19200)
     require(2 * number("configurationSlotBytes") <= number("configurationFlashBytes"))
     J2SocConfig(
-      memoryBackend = J2MemoryBackend.XilinxBlockRam,
-      clockHz       = number("clockHz").toInt,
-      romHex        = romHex,
-      xipBase       = number("xipBase"),
-      xipBytes      = number("xipBytes"),
-      flashOffset   = number("flashOffset"),
-      flashBytes    = number("flashBytes"),
-      memoryBase    = number("memoryBase"),
-      memoryBytes   = number("memoryBytes")
+      clockHz     = number("clockHz").toInt,
+      romHex      = romHex,
+      xipBase     = number("xipBase"),
+      xipBytes    = number("xipBytes"),
+      flashOffset = number("flashOffset"),
+      flashBytes  = number("flashBytes"),
+      memoryBase  = number("memoryBase"),
+      memoryBytes = number("memoryBytes")
     )
   }
 }

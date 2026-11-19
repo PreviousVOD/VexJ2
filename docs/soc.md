@@ -68,8 +68,9 @@ The two external-memory entries below are alternatives selected by the board.
 | Architecture timer | `0xff003000` |
 | XIP cache control | `0xff004000` |
 
-ROM and SRAM use synchronous one-cycle reads. Memory backends provide
-board-specific block RAM implementations; simulation uses inferred memories.
+ROM and SRAM describe native Spinal `Mem` with synchronous one-cycle reads.
+Board generation selects [memory backends](memory-inference.md) independently
+of the core and SoC; the address map and storage sizes are unchanged.
 
 ## SPI XIP and read cache
 

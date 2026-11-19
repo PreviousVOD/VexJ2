@@ -12,11 +12,10 @@ final class J2MicrocodedCore(
   def this(exposeDebug: Boolean = true) =
     this(J2CoreConfig(exposeDebug = exposeDebug))
 
-  val memoryBackend = config.memoryBackend
-  val exposeDebug   = config.exposeDebug
-  val io            = new J2CoreIo(config)
-  val host          = new PluginHost
-  val plugins       = pluginFactory(config) :+ new J2ExternalPlugin(io)
+  val exposeDebug = config.exposeDebug
+  val io          = new J2CoreIo(config)
+  val host        = new PluginHost
+  val plugins     = pluginFactory(config) :+ new J2ExternalPlugin(io)
   J2CorePlugins.validate(plugins)
   host.asHostOf(plugins)
 }

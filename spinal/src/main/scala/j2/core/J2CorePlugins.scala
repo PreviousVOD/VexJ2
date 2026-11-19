@@ -1,11 +1,11 @@
 package j2.core
 
-import j2.fetch._
-import j2.decode._
-import j2.execute._
-import j2.regfile._
-import j2.schedule._
-import j2.misc._
+import j2.core.fetch._
+import j2.core.decode._
+import j2.core.execute._
+import j2.core.regfile._
+import j2.core.schedule._
+import j2.core.misc._
 import spinal.lib.misc.plugin._
 import scala.reflect.ClassTag
 
@@ -13,7 +13,7 @@ object J2CorePlugins {
   def apply(config: J2CoreConfig): Seq[FiberPlugin] = Seq(
     new J2FetchPlugin,
     new J2MemoryPlugin,
-    new J2DecodePlugin(config.memoryBackend),
+    new J2DecodePlugin,
     new J2SchedulePlugin,
     new J2RegisterPlugin,
     new J2ExecutePlugin,

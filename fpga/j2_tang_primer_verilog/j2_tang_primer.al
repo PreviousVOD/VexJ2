@@ -11,7 +11,6 @@
         <Verilog>
             <File>J2MicrocodedCore.v</File>
             <File>j2_tang_primer.v</File>
-            <File>j2_microcode_rom.v</File>
         </Verilog>
         <ADC_FILE>j2_tang_primer.adc</ADC_FILE>
         <SDC_FILE>j2_tang_primer.sdc</SDC_FILE>

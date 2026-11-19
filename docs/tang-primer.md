@@ -38,8 +38,11 @@ flowchart LR
   CTRL -. invalidate and refill hold .-> CACHE
 ```
 
-ROM and SRAM use synchronous one-cycle reads. FPGA boot ROM uses
-`EG_LOGIC_BRAM` with a generated MIF; simulation uses a native `Mem`.
+ROM and SRAM describe native Spinal `Mem` with synchronous one-cycle reads.
+FPGA generation selects the generic `MemoryBackend.Eg4` policy: boot ROM and
+microcode map to `EG_LOGIC_BRAM` in the 32K pool, with MIF files generated from
+their initialized contents. SRAM retains TD inference into 9K BRAMs. Simulation
+uses native memories. See [memory backends](memory-inference.md).
 
 ## Application flash
 

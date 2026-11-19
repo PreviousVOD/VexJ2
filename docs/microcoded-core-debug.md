@@ -18,8 +18,8 @@ Useful entry points:
 - `spinal/src/main/scala/j2/core/J2Pipeline.scala`: EX/WB controls and hazards.
 - `spinal/src/main/scala/j2/core/J2PipelineRegFile.scala`: delayed Z writes and W forwarding.
 - `spinal/src/main/scala/j2/core/J2Multiply.scala`: multi-cycle multiply/MAC.
-- `spinal/src/main/scala/j2/isa/J2Predecoder.scala`: opcode to ROM address.
-- `spinal/src/main/scala/j2/microcode/`: ROM, control-word decoding, and sequencing.
+- `spinal/src/main/scala/j2/core/isa/J2Predecoder.scala`: opcode to ROM address.
+- `spinal/src/main/scala/j2/core/microcode/`: ROM, control-word decoding, and sequencing.
 
 ## Resolution (2026-11-14)
 
@@ -182,11 +182,16 @@ memory.initBigInt(J2MicrocodeData.entries)
 data. Simulation consumes it directly; `make microcode-mif` generates the FPGA
 MIF on demand. Do not add another independently maintained ROM representation.
 
-For the EG4 wrapper, use `setDefinitionName("j2_microcode_rom")`, not
+The historical EG4 wrapper required `setDefinitionName("j2_microcode_rom")`, not
 `setName`: the latter changed only the instance name and left TD trying to
 elaborate an unknown `Eg4MicrocodeRom` module. Drive `rom.io.clk` only from the
 core; combining that assignment with `mapClockDomain(clock = io.clk)` caused a
 TD assignment-overlap error.
+
+The current generation-time [memory backend](memory-inference.md) replaces
+that wrapper with a generic EG4 ROM mapping and emits its MIF directly from
+the initialized `Mem`. Core code no longer selects a backend or imports an
+EG4 primitive. The clock and enabled-read contract is preserved.
 
 ### Reset must allow the first ROM read
 

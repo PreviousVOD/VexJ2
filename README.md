@@ -19,7 +19,8 @@ an aligned 32-bit instruction word. Registered MUL/MAC arithmetic progresses
 independently of stalled CPU slots. The implementation is not a cycle-exact
 Renesas SH-2 model.
 
-The CPU is composed from SpinalHDL FiberPlugins. Each subsystem owns its state
+CPU components and pipeline-stage packages live under `j2.core`. The CPU is
+composed from SpinalHDL FiberPlugins. Each subsystem owns its state
 and exposes typed services; explicit pipeline payloads carry control, data and
 instruction metadata together through stalls and faults.
 

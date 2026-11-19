@@ -16,6 +16,14 @@ respective revisions, including the former J2 extensions.
 
 ## Ownership and interfaces
 
+All CPU components live under `j2.core`. Pipeline plugins are grouped in
+`j2.core.{fetch,decode,execute,regfile,schedule,misc}`; ISA definitions/predecode
+and microcode live in `j2.core.isa` and `j2.core.microcode`. Matching unit tests
+use the same package layout. Board, SoC, bus and peripheral packages remain
+siblings of `j2.core`. CPU microcode and SoC ROM/SRAM describe native Spinal
+`Mem` with synchronous reads and generic `ramBlock` intent. Generation selects
+the implementation outside these components; see [memory backends](memory-inference.md).
+
 | Subsystem | State and responsibilities |
 |---|---|
 | `fetch` | Aligned word request, retained lower halfword, opcode/address/first control word, fetch fault |

@@ -40,13 +40,13 @@ final class J2Soc(
   private val cacheControlMapping = SizeMapping(0xff004000L, 0x1000)
 
   private val xipCache = new J2ReadCache(xipConfig)
-  private val cpu   = new J2MicrocodedCore(J2CoreConfig(config.memoryBackend, exposeDebug = false))
-  private val rom   = new J2Rom(config.memoryBackend, config.romHex)
-  private val sram  = new J2Sram(config.memoryBackend)
-  private val flash = new J2SpiFlash(xipConfig.lineBytes)
-  private val pio   = new J2Pio
-  private val timer = new J2Timer(clockHz, config.timerTickHz)
-  private val uart  = new J2Uart(config.uartBaud)
+  private val cpu      = new J2MicrocodedCore(J2CoreConfig(exposeDebug = false))
+  private val rom      = new J2Rom(config.romHex)
+  private val sram     = new J2Sram
+  private val flash    = new J2SpiFlash(xipConfig.lineBytes)
+  private val pio      = new J2Pio
+  private val timer    = new J2Timer(clockHz, config.timerTickHz)
+  private val uart     = new J2Uart(config.uartBaud)
 
   // Cache tags/refill commands use absolute addresses. Only the backend adapter
   // translates the mapped window to flash offsets, so relocation is explicit.

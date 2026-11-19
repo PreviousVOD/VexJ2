@@ -1,9 +1,6 @@
 package j2.soc
 
-import j2.memory.J2MemoryBackend
-
 final case class J2SocConfig(
-    memoryBackend: J2MemoryBackend = J2MemoryBackend.Inferred,
     clockHz: Int = 32000000,
     timerTickHz: Int = 1000000,
     romHex: String = sys.env.getOrElse("J2_ROM_HEX", "../build/verilog/xip/j2_validation_rom.hex"),

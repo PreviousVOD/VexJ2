@@ -1,20 +1,14 @@
 package j2.core
 
-import j2.regfile.J2RegisterPlugin
+import j2.core.regfile.J2RegisterPlugin
 import spinal.core._
 import spinal.core.sim._
 
 class J2CorePluginsSpec extends munit.FunSuite {
-  test("ROM and observation configurations elaborate through the same composition") {
-    for (
-      rom <- Seq(
-        j2.memory.J2MemoryBackend.Inferred,
-        j2.memory.J2MemoryBackend.Eg4BlockRam,
-        j2.memory.J2MemoryBackend.XilinxBlockRam
-      ); debug <- Seq(false, true)
-    ) {
-      val config = J2CoreConfig(memoryBackend = rom, exposeDebug = debug)
-      SpinalConfig(targetDirectory = s"simWorkspace/plugin-config-$rom-$debug")
+  test("observation configurations elaborate through the same composition") {
+    for (debug <- Seq(false, true)) {
+      val config = J2CoreConfig(exposeDebug = debug)
+      SpinalConfig(targetDirectory = s"simWorkspace/plugin-config-$debug")
         .generateVerilog(new J2MicrocodedCore(config))
     }
   }

@@ -34,13 +34,14 @@ The Wukong flow uses Vivado through `tools/run_vivado.sh`; see its
 ## Project layout
 
 - `spinal/src/main/scala/j2/core/`: CPU composition, service types, reusable datapath/pipeline units.
-- `spinal/src/main/scala/j2/{fetch,decode,execute,regfile,schedule,misc}/`: subsystem plugins.
-- `spinal/src/main/scala/j2/isa/`: ISA definitions and microcode predecoder.
-- `spinal/src/main/scala/j2/microcode/`: ROM data, control decoding, sequencing.
+- `spinal/src/main/scala/j2/core/{fetch,decode,execute,regfile,schedule,misc}/`: subsystem plugins.
+- `spinal/src/main/scala/j2/core/isa/`: ISA definitions and microcode predecoder.
+- `spinal/src/main/scala/j2/core/microcode/`: ROM data, control decoding, sequencing.
+- `spinal/src/main/scala/j2/memory/`: generic generation-time memory backends and vendor mapping.
 - `spinal/src/main/scala/j2/bus/`: generic AHB5/APB IP, standalone system BIU and retained Wishbone memory backends.
 - `spinal/src/main/scala/j2/periph/`: ROM/SRAM, GPIO, SPI/XIP, SDRAM peripherals.
 - `spinal/src/main/scala/j2/soc/`: board-independent SoC, interconnect and reset control.
-- `spinal/src/main/scala/j2/board/tang_primer/`: Tang Primer top, EG4 PLL/pads, SDRAM PHY and memory wrappers.
+- `spinal/src/main/scala/j2/board/tang_primer/`: Tang Primer top, EG4 PLL/pads and SDRAM PHY.
 - `spinal/src/main/scala/j2/board/wukong/`: Wukong top, Xilinx primitives and MIG integration.
 - `sw/wukongrom/`: Wukong platform ROM and SF3 application loader.
 - `sw/xiprom/`: Tang Primer boot ROM, flash driver, and UART loader.
@@ -55,8 +56,10 @@ The Wukong flow uses Vivado through `tools/run_vivado.sh`; see its
 
 The canonical microcode source is `spinal/src/main/resources/j2_microcode.hex`,
 containing all 256 72-bit entries. `j2_predecode.tsv` is the generated opcode
-mapping. `make microcode-mif` generates the FPGA MIF on demand; no separately
-maintained microcode representation is required.
+mapping. Spinal generates the memory initialization files used by both FPGA
+flows; `make microcode-mif` remains an optional export for legacy flows.
+See [memory inference](memory-inference.md) for the synthesis constraints and
+backend selection.
 
 ## Verification
 

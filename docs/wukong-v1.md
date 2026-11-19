@@ -97,10 +97,13 @@ flowchart LR
   M --> D["256 MiB DDR3L"]
 ```
 
-`J2MemoryBackend` selects generic inference, EG4 block RAM or Xilinx block RAM
-inference. Xilinx uses synchronous reads with `ram_style=block`; microcode keeps
-its rising-edge, enabled read and response-address tag. `J2SocConfig` supplies
-the boot image, clocks, address windows and physical flash offset.
+ROM, SRAM and microcode describe native Spinal `Mem` with synchronous reads
+and generic `ramBlock` intent. `GenerateWukong` selects `MemoryBackend.Xilinx`,
+which adds `ram_style=block` during generation. Core and SoC configurations do
+not select backends. Microcode keeps its rising-edge, enabled read and
+response-address tag; boot ROM retains its full 32 KiB storage and address
+window. See [memory backends](memory-inference.md). `J2SocConfig` supplies the
+boot image, clocks, address windows and physical flash offset.
 
 The EG4 SDRAM controller now lives in the Tang board wrapper, outside the
 shared SoC. The external-memory AHB5 port preserves absolute byte addresses,
