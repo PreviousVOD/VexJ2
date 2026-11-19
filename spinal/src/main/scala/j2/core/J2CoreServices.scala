@@ -28,6 +28,10 @@ final class J2CoreIo(config: J2CoreConfig) extends Bundle {
 
 // Services publish wires, never the owning plugin's registers or child components.
 trait J2ExternalService { def external: J2CoreIo }
+trait J2CoreBusService {
+  def instructionBus: j2.bus.ahb5.Ahb5Master
+  def dataBus: j2.bus.ahb5.Ahb5Master
+}
 trait J2FetchService { def fetch: J2FetchPort }
 trait J2MemoryService { def memory: J2MemoryPort }
 trait J2DecodeService { def decode: J2DecodePort }

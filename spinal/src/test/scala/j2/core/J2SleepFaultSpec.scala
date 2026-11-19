@@ -36,7 +36,22 @@ class J2SleepFaultSpec extends munit.FunSuite {
         address      = 0x302,
         healthyValue = Some(0x5678L)
       ),
-      Scenario("valid long load", address = 0x300, healthyValue = Some(0x12345678L)),
+      Scenario("valid long load", address        = 0x300, healthyValue       = Some(0x12345678L)),
+      Scenario("PPB reserved long read", address = 0xffffe900L, healthyValue = Some(0L)),
+      Scenario(
+        "PPB reserved long write",
+        instruction  = 0x2102,
+        address      = 0xffffe900L,
+        healthyValue = Some(77L)
+      ),
+      Scenario("PPB last reserved long read", address   = 0xffffeafcL, healthyValue = Some(0L)),
+      Scenario("PPB byte read faults", instruction      = 0x6010, address           = 0xffffe900L),
+      Scenario("PPB halfword read faults", instruction  = 0x6011, address           = 0xffffe900L),
+      Scenario("PPB byte write faults", instruction     = 0x2100, address           = 0xffffe900L),
+      Scenario("PPB halfword write faults", instruction = 0x2101, address           = 0xffffe900L),
+      Scenario("PPB unmapped word faults", address      = 0xffffe800L),
+      Scenario("PPB TAS faults and releases lock", instruction = 0x411b, address = 0xffffe900L),
+      Scenario("PPB instruction fetch faults", address      = 0xffffe900L, targetFetchError = true),
       Scenario("fault before delayed branch", youngerBranch = true),
       Scenario(
         "taken BF discards fallthrough fetch ERR",
@@ -249,6 +264,11 @@ class J2SleepFaultSpec extends munit.FunSuite {
                 dw = 0
               } else dw += 1
             }
+            for (bus <- Seq(dut.io.ibus, dut.io.dbus) if bus.STB.toBoolean)
+              assert(
+                (bus.ADR.toLong & 0xfffff000L) != 0xffffe000L,
+                "private address escaped to the shared bus"
+              )
             sleep(1)
             val ack = dut.io.eventAck.toBoolean && dut.io.event.valid.toBoolean
             tick()

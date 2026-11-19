@@ -25,7 +25,7 @@ final class J2MemoryPlugin extends FiberPlugin with J2MemoryService {
 
   val logic = during build new Area {
     val a     = allocation.get
-    val io    = host[J2ExternalService].external.dbus
+    val io    = host[J2CoreBusService].dataBus
     val s     = host[J2ScheduleService].schedule
     val e     = host[J2ExecuteService].execute
     val t     = host[J2TrapService].trap

@@ -39,7 +39,7 @@ final class J2FetchPlugin extends FiberPlugin with J2FetchService {
 
   val logic = during build new Area {
     val a       = allocation.get
-    val io      = host[J2ExternalService].external.ibus
+    val io      = host[J2CoreBusService].instructionBus
     val d       = host[J2DecodeService].decode
     val s       = host[J2ScheduleService].schedule
     val e       = host[J2ExecuteService].execute

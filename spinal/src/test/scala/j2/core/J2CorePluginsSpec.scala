@@ -1,6 +1,7 @@
 package j2.core
 
 import j2.core.regfile.J2RegisterPlugin
+import j2.core.ppb.J2PpbPlugin
 import spinal.core._
 import spinal.core.sim._
 
@@ -28,6 +29,24 @@ class J2CorePluginsSpec extends munit.FunSuite {
         )
       }
       assert(error.toString.contains("J2RegisterService"), error.toString)
+    }
+  }
+
+  test("private bus service is mandatory and unique") {
+    for (duplicate <- Seq(false, true)) {
+      val error = intercept[Exception] {
+        SpinalConfig(targetDirectory = "simWorkspace/plugin-invalid-ppb").generateVerilog(
+          new J2MicrocodedCore(
+            J2CoreConfig(),
+            config => {
+              val plugins = J2CorePlugins(config)
+              if (duplicate) plugins :+ new J2PpbPlugin
+              else plugins.filterNot(_.isInstanceOf[J2CoreBusService])
+            }
+          )
+        )
+      }
+      assert(error.toString.contains("J2CoreBusService"), error.toString)
     }
   }
 

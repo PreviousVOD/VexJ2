@@ -52,8 +52,9 @@ writes, zero strobes, periodic compare timing, stopped equality, W0C, registered
 IRQs and counter-write collisions. The shared XIP application tests CPU subword
 accesses, CMI0 entry/rearm/SLEEP wake, and channel-1 polling. Boot/loader simulations
 exercise timeout rollover. The reference-core testbench has a matching CMT
-functional model. INTC routing of CMI0/CMI1 to vectors 184/188 is subsequent work;
-the current SoC still routes CMI0 to vector 64, priority 14.
+functional model. Future CMI0/CMI1 vectors and priority fields follow the
+[count-based PPB/INTC plan](ppb-intc-plan.md), which supersedes the earlier
+SH7125 vector proposal. The current SoC still routes CMI0 to vector 64, priority 14.
 
 ## Validation notes
 

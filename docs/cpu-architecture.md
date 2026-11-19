@@ -17,7 +17,7 @@ respective revisions, including the former J2 extensions.
 ## Ownership and interfaces
 
 All CPU components live under `j2.core`. Pipeline plugins are grouped in
-`j2.core.{fetch,decode,execute,regfile,schedule,misc}`; ISA definitions/predecode
+`j2.core.{fetch,decode,execute,regfile,schedule,misc,ppb}`; ISA definitions/predecode
 and microcode live in `j2.core.isa` and `j2.core.microcode`. Matching unit tests
 use the same package layout. Board, SoC, bus and peripheral packages remain
 siblings of `j2.core`. CPU microcode and SoC ROM/SRAM describe native Spinal
@@ -31,6 +31,7 @@ the implementation outside these components; see [memory backends](memory-infere
 | `schedule` | Registered slot enable, generic pipeline graph, final builder |
 | `regfile` | Register file, W/Z writeback selection and suppression |
 | `execute` | Datapath, multiplier/MACH/MACL, data bus transactions and faults |
+| `ppb` | Private data-bus routing, access checks, APB bridge/matrix and execute-never aperture |
 | `misc` | PC/SR, instruction metadata, traps/events, sleep, debug observation |
 
 Service traits and their port types are in `core/J2CoreServices.scala`.
@@ -49,6 +50,26 @@ The schedule plugin retains the pipeline builder during setup, connects the
 graph during build, and releases the retainer afterward. The builder creates
 the pipeline registers once all connections are registered. Plugin list order
 does not define hardware priority or elaboration order.
+
+## Private peripheral bus
+
+`J2PpbPlugin` provides the required `J2CoreBusService`. Fetch and memory plugins
+use its instruction/data ports; only the PPB plugin connects them to the
+external AHB5 ports. The route retains data-phase response ownership separately
+from address decoding, including waits, faults and private/external transitions.
+
+The private aperture is `0xffffe000`–`0xffffefff`. PPB is data-only: all instruction
+fetches fault locally, without selecting an APB target or reaching the shared
+bus. Data accesses pass through word/alignment checks, the existing BE32 AHB5
+bridge and a private APB4 matrix. Byte, halfword and misaligned accesses fault.
+Unmapped PPB data accesses fault. The future INTC window at
+`0xffffe900`–`0xffffeaff` currently returns zero and ignores valid word writes.
+
+Private traffic suppresses external transfers and lock reservations, including
+IDLE HMASTLOCK signaling. PPB has one manager and needs no BIU. External accesses
+retain the existing bus attributes and introduce no additional registered
+pipeline stage. The INTC register behavior and source wiring remain later steps
+of the [PPB/INTC plan](ppb-intc-plan.md).
 
 ## SH-2 slot pipeline
 
