@@ -9,6 +9,11 @@ with the [toolchain](development.md#toolchain) installed.
 
 ## Board integration
 
+`J2TangPrimerSoc` directly instantiates Tang's CPU, ROM/SRAM, buses, boot SCI,
+CMT, 32-bit GPIO and cached application SPI flash. SCI/CMT addresses come from
+`sciBase`/`cmtBase` in the board profile. `J2TangPrimer` supplies pads, clocks/reset and SDRAM. Native simulation
+uses the same SoC composition as the FPGA top; see [SoC composition](soc.md#board-owned-composition).
+
 ```mermaid
 flowchart LR
   CLK[24 MHz input] --> PLL[EG4 PLL and BUFG]

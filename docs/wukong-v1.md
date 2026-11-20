@@ -85,9 +85,16 @@ loader's Winbond-specific QE/status initialization.
 
 ## Integration boundary
 
+`J2WukongSoc` directly instantiates its CPU, ROM/SRAM, buses, boot SCI, CMT,
+GPIO and cached SF3 endpoint. SCI/CMT addresses come from `sciBase`/`cmtBase`
+in the board profile. The board SoC
+exposes only its 24 available GPIO pads, keeping J11 reserved for SF3 and
+preserving software bit numbering. The FPGA wrapper and boot simulations use
+this same composition; see [SoC composition](soc.md#board-owned-composition).
+
 ```mermaid
 flowchart LR
-  P["Board MMCM + reset + I/O"] --> S["Shared J2Soc"]
+  P["Board MMCM + reset + I/O"] --> S["J2WukongSoc"]
   S --> R["Boot ROM / SRAM / microcode<br/>Xilinx block RAM inference"]
   S --> BIU["Standalone system BIU"]
   BIU --> APB["AHB5-to-APB4 bridge / APB matrix"]
@@ -114,8 +121,9 @@ shared SoC. The external-memory AHB5 port preserves absolute byte addresses,
 transfer sizes, lock ownership and error responses. Wukong maps its full
 256 MiB DDR window at `0x80000000–0x8fffffff` through `J2AhbDdrBridge`, with
 a native AHB frontend, toggle mailboxes and `J2MigBackend`. Tang retains its
-existing SDRAM window. Peripheral registers require aligned 32-bit accesses;
-see [APB and standalone BIU contracts](apb.md).
+existing SDRAM window. Peripheral registers support naturally aligned byte,
+halfword and word accesses through APB4; private INTC registers require words.
+See [APB and standalone BIU contracts](apb.md).
 
 The native AHB DDR mailboxes live at `bridge/{requests,responses}`.
 `fpga/wukong-v1/bridge_paths.tcl` resolves exactly one backend, supporting both
@@ -575,8 +583,11 @@ This is not an exhaustive search of synthesis/implementation strategies.
 
 ## Next steps
 
-1. Run both CoreMark seed sets for at least ten seconds on Wukong.
-2. Broaden DDR retention/throughput testing and external SPI timing qualification.
+Both 300-iteration CoreMark seed sets now pass at 72 MHz with correct CRCs,
+15.720369/15.772302-second durations and 33 CMT interrupts each. The ordinary
+validation application is restored. See [CoreMark qualification](coremark.md#intc-validation-on-wukong-2026-11-19).
+
+Broaden DDR retention/throughput testing and external SPI timing qualification.
 
 ## 72 MHz operating profile
 

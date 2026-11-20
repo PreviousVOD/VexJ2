@@ -1,4 +1,5 @@
 #include "cmt.h"
+#include "j2_board_irqs.h"
 
 .section .text.start
 .align 2
@@ -96,12 +97,25 @@ _xip_vectors:
   .rept 54
   .long xip_halt
   .endr
+  .set xip_vector, 64
+  .rept J2_INTC_SOURCE_COUNT
+  .if xip_vector == J2_VECTOR_CMT0
   .long _xip_timer_isr
+  .elseif xip_vector == J2_VECTOR_CMT1
   .long _xip_cmt1_isr
+  .elseif xip_vector == J2_VECTOR_SCI_ERI
   .long _xip_sci_eri_isr
+  .elseif xip_vector == J2_VECTOR_SCI_RXI
   .long _xip_sci_rxi_isr
+  .elseif xip_vector == J2_VECTOR_SCI_TXI
   .long _xip_sci_txi_isr
+  .elseif xip_vector == J2_VECTOR_SCI_TEI
   .long _xip_sci_tei_isr
+  .else
+  .long xip_halt
+  .endif
+  .set xip_vector, xip_vector + 1
+  .endr
 
 .align 2
 stack_top: .long (0x00008000 + J2_SRAM_BYTES - 4)

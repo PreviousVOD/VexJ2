@@ -23,7 +23,7 @@ XIP_IMAGE := $(CURDIR)/build/sw/xipapp/flash.bin
 # Keep each seed set above CoreMark's 10-second reporting minimum.
 COREMARK_ITERATIONS ?= 300
 COREMARK_LABEL ?= refactored
-COREMARK_RESULTS ?= build/coremark/$(COREMARK_LABEL)
+COREMARK_RESULTS ?= build/coremark/$(BOARD)/$(COREMARK_LABEL)
 SIMTESTS := $(CURDIR)/build/sw/simtests/rte.bin $(CURDIR)/build/sw/simtests/interrupts.bin
 REFSRC := reference/soc_top/components/cpu/cpu2j0_pkg.vhd
 REF_BUILD := $(CURDIR)/build/ref_microcode
@@ -62,18 +62,23 @@ isa-hw: verilog-fpga
 
 .PHONY: coremark-build coremark-sim coremark-fpga-build coremark-hw coremark-compare
 coremark-build: $(TOOL_SH_GCC)
-	$(MAKE) -C sw/coremark ITERATIONS=$(COREMARK_ITERATIONS) RUN=performance
-	$(MAKE) -C sw/coremark ITERATIONS=$(COREMARK_ITERATIONS) RUN=validation
+	$(MAKE) -C sw/coremark BOARD=$(BOARD) ITERATIONS=$(COREMARK_ITERATIONS) RUN=performance
+	$(MAKE) -C sw/coremark BOARD=$(BOARD) ITERATIONS=$(COREMARK_ITERATIONS) RUN=validation
 
+ifeq ($(BOARD),tang-primer)
 coremark-sim: coremark-build $(BOOTROM) $(XIP_IMAGE) $(TOOL_VERILATOR)
 	$(MAKE) -C verilog xip-sim-build
-	python3 tools/coremark.py sim --iterations $(COREMARK_ITERATIONS) --output $(COREMARK_RESULTS)/simulation
+	python3 tools/coremark.py sim --board $(BOARD) --iterations $(COREMARK_ITERATIONS) --output $(COREMARK_RESULTS)/simulation
+else
+coremark-sim:
+	$(error Native CoreMark simulation currently supports BOARD=tang-primer only)
+endif
 
-coremark-fpga-build: coremark-build verilog-fpga
-	$(MAKE) fpga-clock-test
+coremark-fpga-build: coremark-build
+	$(MAKE) BOARD=$(BOARD) fpga
 
 coremark-hw: coremark-build
-	python3 tools/coremark.py hardware --iterations $(COREMARK_ITERATIONS) --output $(COREMARK_RESULTS)/hardware
+	python3 tools/coremark.py hardware --board $(BOARD) --iterations $(COREMARK_ITERATIONS) --output $(COREMARK_RESULTS)/hardware
 
 coremark-compare:
 	python3 tools/coremark.py compare $(COREMARK_BASELINE) $(COREMARK_CANDIDATE)
@@ -221,7 +226,7 @@ $(BOOTROM): force-tang-rom $(wildcard sw/bootrom/*) fpga/tang-primer/board.prope
 $(XIP_ROM): $(BOOTROM) tools/gen_verilog_rom.py
 	python3 tools/gen_verilog_rom.py $(BOOTROM) $@
 
-$(XIPAPP): $(wildcard sw/xipapp/* sw/include/*.h) fpga/tang-primer/board.properties tools/board_config.py
+$(XIPAPP): $(wildcard sw/xipapp/* sw/include/*.h) sw/board-irqs.mk fpga/tang-primer/board.properties tools/board_config.py
 	$(MAKE) -C sw/xipapp
 
 $(XIP_IMAGE): $(XIPAPP) tools/xip_image.py
@@ -286,7 +291,7 @@ wukong-image-test: wukong-rom
 .PHONY: wukong-probes
 wukong-probes: $(TOOL_SH_GCC)
 	mkdir -p build/wukong-v1/probe-xip
-	sh-none-elf-gcc -m2 -mb -nostdlib -T sw/xipapp/app.x sw/bootrom/test/probe.S -o build/wukong-v1/probe-xip/main.elf
+	sh-none-elf-gcc -m2 -mb -nostdlib -Isw/include -DJ2_SCI_BASE=$(shell python3 tools/board_config.py wukong-v1 --get sciBase) -T sw/xipapp/app.x sw/bootrom/test/probe.S -o build/wukong-v1/probe-xip/main.elf
 	sh-none-elf-objcopy -O binary build/wukong-v1/probe-xip/main.elf build/wukong-v1/probe-xip/main.bin
 	python3 tools/xip_image.py pack build/wukong-v1/probe-xip/main.bin build/wukong-v1/probe-xip/flash.bin
 

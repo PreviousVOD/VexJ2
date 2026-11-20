@@ -2,10 +2,76 @@
 
 [Project overview](../README.md) · [CPU architecture](cpu-architecture.md)
 
-`J2Soc` combines the shared CPU, AHB5 matrix, memories and native
-SpinalHDL peripherals. Board wrappers supply clocks, reset, memory primitives
-and external-memory controllers. Source paths and commands below are relative
+`J2TangPrimerSoc` and `J2WukongSoc` are independent, complete SoC definitions.
+Each directly instantiates its CPU, ROM/SRAM, bus matrix, BIU, boot SCI, CMT
+and board peripherals. Physical wrappers supply clocks, reset, pads and
+external-memory controllers. Source paths and commands below are relative
 to the repository root.
+
+## Board-owned composition
+
+| Layer | Responsibility |
+| --- | --- |
+| `j2.core` | Reusable processor, private PPB and INTC |
+| `j2.board.tang_primer.J2TangPrimerSoc` | Tang CPU, ROM/SRAM, AHB/APB topology, SCI/CMT, 32-bit GPIO and cached Winbond endpoint |
+| `j2.board.wukong_v1.J2WukongSoc` | Wukong CPU, ROM/SRAM, AHB/APB topology, SCI/CMT, 24 GPIO pads and cached SF3 endpoint |
+| `J2TangPrimer` / `J2Wukong` | Physical pins, clocks/reset, pad primitives and SDRAM/DDR integration |
+| `j2.bus` / `j2.periph` | Reusable bus and peripheral IP instantiated by each board |
+
+```mermaid
+flowchart TB
+  subgraph BOARD[Complete board-specific SoC]
+    CPU[CPU and private INTC] --> AHB[Board AHB map and memory arbiters]
+    AHB --> RAM[Board ROM and SRAM instances]
+    AHB --> BIU[Peripheral BIU and AHB-to-APB bridge]
+    BIU --> APB[Board APB matrix]
+    APB --> SCI[Boot SCI at sciBase]
+    APB --> CMT[CMT at cmtBase]
+    SCI -. Board IRQ map .-> CPU
+    CMT -. Board IRQ map .-> CPU
+    APB --> GPIO[Board GPIO]
+    APB --> CTRL[Flash and cache controls]
+    AHB --> FLASH[J2CachedSpiFlash]
+    CTRL --> FLASH
+  end
+  AHB --> MEM[Board SDRAM or DDR controller]
+  GPIO --> PADS[Available board GPIO pads]
+  FLASH --> SPI[Board application-flash pins]
+```
+
+There is no shared SoC implementation or common fabric superclass. Each board
+owns its memory instances, address mappings, routing connections, arbitration,
+BIU domains, peripheral instances and interrupt wiring. Changes to one board's
+memory or peripheral architecture do not require changing another board's SoC.
+`J2SocConfig` is configuration data, not a hardware composition.
+
+The `sciBase` and `cmtBase` entries in each `board.properties` select the boot
+peripheral addresses. Both current profiles retain `0xff001000` and `0xff003000`.
+The current peripheral IP uses aligned 4 KiB windows. Overlapping board APB
+mappings are rejected, and SCI/CMT cannot overlap private PPB. Each board's
+BIU window encloses its APB targets; unmapped addresses return bus errors.
+
+`BoardProfile` passes the addresses to RTL. The firmware property loader emits
+assembly-safe `J2_SCI_BASE` and `J2_CMT_BASE` definitions for BootROM; application
+and CoreMark builds read the same properties. C and assembly drivers use these
+macros. Standalone architectural fixtures retain legacy default addresses when
+no board settings are supplied. Rebuild both RTL and firmware after changing
+an address.
+
+Each board's `interruptSources` property lists the source names in INTC index
+order. Its SoC connects these names to its own peripheral request signals and
+sizes the CPU's private INTC accordingly. Elaboration rejects missing, duplicate
+or unknown connections. There is no shared SoC interrupt list.
+
+Both profiles currently use `CMT0,CMT1,SCI_ERI,SCI_RXI,SCI_TXI,SCI_TEI` (sources
+0–5, vectors 64–69), preserving their existing numbering. The firmware build
+generates `j2_board_irqs.h` from the selected profile for both C and assembly.
+BootROM, application and CoreMark vector tables use those definitions, while
+`j2_intc_regs.h` contains only the reusable controller's register definitions.
+Rebuild RTL and firmware together after changing the board's interrupt map.
+Adding a peripheral means defining its physical request connection in that
+board's SoC and adding its name to that board's properties.
+FPGA generation and simulation instantiate the same board-specific SoC.
 
 ## Bus matrix
 
@@ -17,10 +83,10 @@ accesses return the standard two-cycle AHB ERROR response.
 
 ROM, SRAM, XIP and external memory remain on AHB5, each behind an independent
 `Ahb5SubordinateArbiter`. The routing matrix exposes decoded ports; these
-arbiters are instantiated explicitly by `J2Soc`.
+arbiters are instantiated explicitly in each board SoC.
 
 A standalone **`J2Biu`**, outside the generic AMBA library, covers the peripheral
-domain `0xff000000`–`0xff007fff`. It precedes `Ahb5ToApb4Bridge` and `Apb4Matrix`,
+domain covering its board's APB mappings (currently `0xff000000`–`0xff004fff`). It precedes `Ahb5ToApb4Bridge` and `Apb4Matrix`,
 which selects GPIO, SCI, SPI control, CMT or cache control. The BIU composes
 standard AHB arbitration and persistent lock ownership at that system boundary;
 programmable access-control policy is not implemented yet. Destination ownership
@@ -71,9 +137,9 @@ The two external-memory entries below are alternatives selected by the board.
 | Tang Primer SiP SDRAM, 8 MiB | `0x80000000`–`0x807fffff` |
 | Wukong DDR3, 256 MiB | `0x80000000`–`0x8fffffff` |
 | GPIO | `0xff000000` |
-| SCI | `0xff001000` |
+| Boot SCI | `sciBase` (currently `0xff001000`) |
 | SPI flash control | `0xff002000` |
-| CMT | `0xff003000` |
+| CMT | `cmtBase` (currently `0xff003000`) |
 | XIP cache control | `0xff004000` |
 
 ROM and SRAM describe native Spinal `Mem` with synchronous one-cycle reads.
@@ -82,6 +148,9 @@ of the core and SoC; the address map and storage sizes are unchanged.
 
 ## SPI XIP and read cache
 
+`J2CachedSpiFlash` composes the generic read cache with `J2SpiFlash`, keeping
+SPI offset translation, refill hold and invalidation together. Each board
+instantiates this reusable endpoint and maps its two APB control ports.
 `J2SpiFlash` wraps native `Apb4SpiXdrMasterCtrl`. Responses are assembled in
 big-endian order and aligned to 32-bit words before the CPU selects a byte
 or halfword lane. The physical `toSpi()` adapter registers outputs and inputs
@@ -94,7 +163,7 @@ A shared 4 KiB, two-way XIP read cache uses 64 sets, 32-byte lines and exact LRU
 replacement. The reusable `J2ReadCache` module sits between the XIP AHB arbiter and
 the SPI controller, using a generic word-burst refill interface.
 `J2ReadCacheConfig` sets capacity, line size, base address and mapped range; the
-SoC derives its XIP mapping from the same configuration. Misses refill a
+board uses its profile's XIP base/range for both the AHB mapping and cache configuration. Misses refill a
 complete line in one quad-SPI transaction; hits serve both instruction and data
 reads from synchronous RAM. Reset and accepted
 flash-control writes invalidate all lines. Control accesses wait for an active
@@ -142,14 +211,17 @@ and SRAM settings. External-memory tests remain in the application.
 | `0x04` | Output values |
 | `0x08` | Output enable, one bit per pin; reset to zero/input |
 
+Tang exposes all 32 GPIO bits. Wukong exposes 24 pads corresponding to software
+bits 0–15 and 24–31; inputs 16–23 read zero and their output registers cannot
+drive the J11 flash pins. Software numbering and register behavior are preserved.
 Pad primitives and pin assignments are board-specific; see
 [Tang Primer GPIO](tang-primer.md#gpio-pads) and
 [Wukong board wiring](wukong-v1.md#board-profile).
 
 ## Compare match timer
 
-`J2CMT` implements two 16-bit SH7124/SH7125 CMT channels at the existing
-`0xff003000` SoC address. APB PCLK is Pφ; each channel selects PCLK/8, /32,
+`J2CMT` implements two 16-bit SH7124/SH7125 CMT channels at the board's
+`cmtBase` address (currently `0xff003000`). APB PCLK is Pφ; each channel selects PCLK/8, /32,
 /128 or /512. There is no separate timer clock source or fixed 1 MHz tick.
 See [CMT behavior and software migration](cmt.md).
 
@@ -170,16 +242,45 @@ On a match, the counter clears and resumes periodic counting, with period
 `(CMCOR + 1) * divisor` PCLK cycles. Equality can also set CMF while stopped.
 
 The two interrupt outputs are registered `CMIE && CMF` levels, wired to private
-INTC sources 0/1 (vectors 64/65). Firmware programs their priorities and enable
+board-mapped INTC sources (currently 0/1, vectors 64/65). Firmware programs their priorities and enable
 bits; both reset disabled. The validation application and CoreMark use priority
 14 for CMT0.
 
 ## Serial interface
 
-`J2SCI` at `0xff001000` follows the SH7124/SH7125 SCI byte-register layout.
+`J2SCI` at the board's `sciBase` (currently `0xff001000`) follows the SH7124/SH7125 SCI byte-register layout.
 It supports asynchronous 7/8-bit UART framing, parity, stop bits, errors and four
 registered interrupt sources. Unsupported mode bits are hard-wired. The shared
 application driver polls TDRE/RDRF; BootROM receives through an ERI/RXI ISR
-and a 512-byte SRAM queue. ERI/RXI/TXI/TEI connect to private INTC sources
+and a 512-byte SRAM queue. ERI/RXI/TXI/TEI connect through the board interrupt map, currently sources
 2–5 (vectors 66–69), independently enabled and prioritized. See the
 [SCI register and timing reference](sci.md).
+
+
+## Direct SoC validation (2026-11-20)
+
+The direct implementations pass 128 Scala tests and 38 host-tool tests.
+`BoardSocSpec` runs both actual SoCs with their default properties and with SCI
+at `0xff006000`, CMT at `0xff007000`, and SRAM enlarged to 64 KiB. Across three
+reset seeds per configuration, firmware using the production ROM startup and
+UART driver transmits the expected character and services CMT0 through the
+private INTC. The test requires no external memory. Host checks also compile
+generated address definitions in both C and assembly.
+
+Both FPGA RTL generators, both BootROM builds, both CoreMark seed builds for
+each board, and application/probe builds succeed. Tang reset, cold boot and
+full UART-upload simulations pass all application checks. Wukong cold boot
+also passes the complete cache, DDR, CMT, INTC and ISA application.
+
+Evidence: `build/direct-soc-{full-tests,host-tests,relocation-seeds,generate,tang-sim,wukong-boot}.log`.
+Post-route timing and hardware downloads have not been rerun for this change.
+
+The subsequent board interrupt-map change passes 132 Scala tests and 39 host
+checks (`build/board-irqs-{full-tests,all-host}.log`). Each real board SoC runs
+three reset seeds with both its default map and a reordered map
+(`SCI_TEI,SCI_RXI,CMT1,SCI_TXI,CMT0,SCI_ERI`). Firmware exercises the production
+BootROM RX ISR, CMT0, and the application's six-source INTC test, including
+priority/tie arbitration, software pending, CMT1 and SCI TXI/TEI. Reordered
+configurations also relocate SCI/CMT and use 64 KiB SRAM. BootROM, XIP application
+and CoreMark build for both boards. These checks do not include a new hardware
+download or post-route timing run.

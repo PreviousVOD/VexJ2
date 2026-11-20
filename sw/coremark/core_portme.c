@@ -98,6 +98,7 @@ void portable_fini(core_portable *p) {
         ee_printf("J2 timer error\n");
     }
 
+    ee_printf("CMT interrupts: %lu\n", (unsigned long)cmt_overflows);
     ee_printf("J2 CoreMark complete\n");
 }
 

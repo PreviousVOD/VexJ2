@@ -3,12 +3,36 @@
 import argparse
 import os
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def interrupt_sources(values):
+    value = values["interruptSources"].strip()
+    names = [name.strip() for name in value.split(",")] if value else []
+    if len(names) > 192 or len(set(names)) != len(names):
+        raise ValueError("interrupt sources must be unique and at most 192")
+    if any(not re.fullmatch(r"[A-Z][A-Z0-9_]*", name) for name in names):
+        raise ValueError("interrupt source names must be uppercase C identifiers")
+    return names
+
+
+def generate_interrupt_header(values, path):
+    names = interrupt_sources(values)
+    definitions = [("J2_INTC_SOURCE_COUNT", len(names))]
+    for index, name in enumerate(names):
+        definitions.extend(((f"J2_IRQ_{name}", index), (f"J2_VECTOR_{name}", 64 + index)))
+    width = max(len(name) for name, _ in definitions)
+    content = ("/* Generated from this board's interruptSources. Do not edit. */\n"
+               "#ifndef J2_BOARD_IRQS_H\n#define J2_BOARD_IRQS_H\n\n")
+    content += "".join(f"#define {name:<{width}} {value}\n" for name, value in definitions)
+    write_if_changed(path, content + "\n#endif\n")
+
+
 def validate(values):
+    interrupt_sources(values)
     number = lambda key: int(values[key], 0)
     clock = number("clockHz")
     pll = number("usePll")
@@ -28,6 +52,14 @@ def validate(values):
             raise ValueError("invalid address window")
     if number("memoryBase") % 16:
         raise ValueError("memory base must be 16-byte aligned")
+    for key in ("sciBase", "cmtBase"):
+        base = number(key)
+        if base < 0 or base % 4096 or base + 4096 > (1 << 32):
+            raise ValueError("SCI/CMT windows must be 4 KiB aligned in the 32-bit address space")
+        if base < 0xfffff000 and base + 4096 > 0xffffe000:
+            raise ValueError("SCI/CMT overlaps private PPB")
+    if number("sciBase") == number("cmtBase"):
+        raise ValueError("SCI and CMT windows overlap")
     sram = number("sramBytes")
     if sram < 4096 or sram >= (1 << 31) or sram & (sram - 1):
         raise ValueError("SRAM size must be a power of two, at least 4 KiB")
@@ -75,11 +107,13 @@ def generate(values, out):
     definitions = {"J2_CLOCK_HZ": "clockHz", "J2_FLASH_OFFSET": "flashOffset",
                    "J2_FLASH_BYTES": "flashBytes", "J2_XIP_BASE": "xipBase",
                    "J2_XIP_BYTES": "xipBytes", "J2_MEMORY_BASE": "memoryBase",
-                   "J2_MEMORY_BYTES": "memoryBytes", "J2_SRAM_BYTES": "sramBytes"}
+                   "J2_MEMORY_BYTES": "memoryBytes", "J2_SRAM_BYTES": "sramBytes",
+                   "J2_SCI_BASE": "sciBase", "J2_CMT_BASE": "cmtBase"}
     write_if_changed(out / "rom/board.h", "/* Generated from board.properties. */\n" +
                      f'#define J2_BOARD_NAME {json.dumps(values["name"])}\n' +
                      f'#define J2_FLASH_MICRON {int(values["flashType"] == "micron")}\n' +
-                     "".join(f"#define {name} {int(values[key], 0)}{'' if name == 'J2_SRAM_BYTES' else 'u'}\n" for name, key in definitions.items()))
+                     "".join(f"#define {name} {int(values[key], 0)}{'' if name in ('J2_SRAM_BYTES', 'J2_SCI_BASE', 'J2_CMT_BASE') else 'u'}\n" for name, key in definitions.items()))
+    generate_interrupt_header(values, out / "include/j2_board_irqs.h")
     # Quote scalar strings as Tcl data, independent of the chosen FPGA part.
     write_if_changed(out / "board.tcl",
         f'set board_part {tcl_quote(values["part"])}\n' +
@@ -92,9 +126,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("board", help="directory under fpga/ containing board.properties")
     parser.add_argument("--get", metavar="KEY", help="print a validated setting")
+    parser.add_argument("--irq-header", type=Path, help="generate board interrupt definitions at this path")
     args = parser.parse_args()
     values = load(args.board)
-    if args.get:
+    if args.irq_header:
+        generate_interrupt_header(values, args.irq_header)
+    elif args.get:
         print(values[args.get])
     else:
         generate(values, ROOT / "build" / args.board)

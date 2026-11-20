@@ -1,10 +1,10 @@
 package j2.board.tang_primer
 
-import j2.soc.{J2ResetController, J2Soc, J2SocConfig}
+import j2.soc.{J2ResetController, J2SocConfig}
 import spinal.core._
 
 final class J2TangPrimer(
-    socConfig: J2SocConfig = J2SocConfig(),
+    socConfig: J2SocConfig,
     forFpga: Boolean = false,
     usePll: Boolean = true
 ) extends Component {
@@ -79,7 +79,7 @@ final class J2TangPrimer(
     reset     = resetController.io.reset,
     frequency = FixedFrequency(clockHz Hz)
   )
-  private val soc   = socDomain(new J2Soc(socConfig))
+  private val soc   = socDomain(new J2TangPrimerSoc(socConfig))
   private val sdram = socDomain(new J2Sdram)
   sdram.io.bus <> soc.io.memory
   soc.io.uartRx := io.uartRx

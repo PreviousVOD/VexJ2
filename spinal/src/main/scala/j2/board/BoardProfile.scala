@@ -36,7 +36,12 @@ final case class BoardProfile(values: Map[String, String]) {
     memoryBase  = number("memoryBase"),
     memoryBytes = number("memoryBytes"),
     uartBaud    = number("uartBaud").toInt,
-    sramBytes   = number("sramBytes").toInt
+    sramBytes   = number("sramBytes").toInt,
+    sciBase     = number("sciBase"),
+    cmtBase     = number("cmtBase"),
+    interruptSources =
+      if (text("interruptSources").trim.isEmpty) Seq.empty
+      else text("interruptSources").split(",", -1).toSeq.map(_.trim)
   )
   // Apply the same address/range validation even when only clock settings are used.
   require(number("sramBytes").isValidInt)

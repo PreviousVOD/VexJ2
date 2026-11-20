@@ -8,7 +8,6 @@
 
 /* One producer (the ISR), one consumer (the loader). Leave one slot empty.
  * A complete 256-byte loader page fits while foreground code is busy. */
-_Static_assert(J2_VECTOR_SCI_ERI == 66 && J2_VECTOR_SCI_RXI == 67, "Update BootROM SCI vector table");
 
 #define RX_BYTES 512u
 #define RX_MASK  (RX_BYTES - 1u)
@@ -89,7 +88,8 @@ void uart_rx_irq_stop(void) {
     SCI_REG(SCI_SCSCR) &= (uint8_t)~SCI_SCR_RIE;
     intc_disable(J2_IRQ_SCI_ERI);
     intc_disable(J2_IRQ_SCI_RXI);
-    INTC_ICPR(J2_IRQ_SCI_RXI / 32u) = J2_INTC_IRQ_MASK(J2_IRQ_SCI_ERI) | J2_INTC_IRQ_MASK(J2_IRQ_SCI_RXI);
+    INTC_ICPR(J2_IRQ_SCI_ERI / 32u) = J2_INTC_IRQ_MASK(J2_IRQ_SCI_ERI);
+    INTC_ICPR(J2_IRQ_SCI_RXI / 32u) = J2_INTC_IRQ_MASK(J2_IRQ_SCI_RXI);
     uart_rx_irq_discard();
     /* Leave SR.I=15 while the application installs VBR, stack and .bss. */
 }

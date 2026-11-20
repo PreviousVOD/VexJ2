@@ -10,9 +10,26 @@ final case class J2SocConfig(
     memoryBase: BigInt = 0x80000000L,
     memoryBytes: BigInt = 0x00800000L,
     uartBaud: Int = 19200,
-    sramBytes: Int = 32768
+    sramBytes: Int = 32768,
+    sciBase: BigInt = 0xff001000L,
+    cmtBase: BigInt = 0xff003000L,
+    interruptSources: Seq[String] = Seq.empty
 ) {
+  require(interruptSources.size <= 192, "SH-2 INTC supports at most 192 sources")
+  require(interruptSources.distinct.size == interruptSources.size, "duplicate interrupt source")
+  require(interruptSources.forall(_.matches("[A-Z][A-Z0-9_]*")), "invalid interrupt source name")
   require(clockHz > 0)
+  for (base <- Seq(sciBase, cmtBase)) {
+    require(
+      base >= 0 && base % 4096 == 0 && base + 4096 <= (BigInt(1) << 32),
+      "SCI/CMT windows must be 4 KiB aligned in the 32-bit address space"
+    )
+    require(
+      base + 4096 <= 0xffffe000L || base >= 0xfffff000L,
+      "SCI/CMT must not overlap private PPB"
+    )
+  }
+  require(sciBase != cmtBase, "SCI and CMT windows overlap")
   require(
     sramBytes >= 4096 && (sramBytes & (sramBytes - 1)) == 0,
     "SRAM size must be a power of two, at least 4 KiB"

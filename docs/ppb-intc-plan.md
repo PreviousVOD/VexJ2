@@ -1,11 +1,11 @@
 # Core-private PPB and NVIC-style INTC generator
 
-Status: steps 1–4 and BootROM interrupt-driven reception are implemented.
+Status: steps 1–5 and BootROM interrupt-driven reception are complete.
 Private PPB routing is committed as `eca56d6`, the standalone controller as
 `2738265`, and core/SoC integration plus BootROM RX as `d3d0f3a`. Both boards
-pass application simulation, FPGA timing and upload/reboot validation. Step 5
-still has the targeted coverage and Wukong CoreMark follow-ups listed in
-[Plan review and following steps](#plan-review-and-following-steps).
+pass application simulation, FPGA timing and upload/reboot validation. The
+remaining CPU/ISR coverage and Wukong CoreMark qualification are recorded in
+[Validation closeout](#validation-closeout-2026-11-19).
 APB4 is committed as `b0867a0`; CMT/SCI and their software migration as `cc7dc4a`.
 The CMT and SCI peripherals keep their existing register interfaces.
 
@@ -328,9 +328,12 @@ Generate standalone RTL and a header from `spinal/`:
 The optional ordered source names produce IRQ/vector constants. Register offsets,
 bank capacities and index/mask/priority helpers come from the same constants as
 RTL. The generated header has no fixed peripheral base address.
-`J2SocInterrupts.names` defines the ordered SoC ABI. The checked-in generated
-header `sw/include/j2_intc_regs.h` is checked against that list in the Scala
-suite. `sw/include/intc.h` supplies the private base address and firmware helpers.
+Each board's `interruptSources` property defines its ordered source ABI. Its SoC
+connects those names to physical peripheral requests and sizes the private INTC.
+The build generates `j2_board_irqs.h` for C and assembly; BootROM, application and
+CoreMark vector tables follow that map. The checked-in `sw/include/j2_intc_regs.h`
+contains only generic register definitions, checked against `IntcRegisters` in
+the Scala suite. `sw/include/intc.h` supplies the private base address and helpers.
 
 Standalone validation covers all planned count boundaries, register reset and
 aliases, reserved extension slots, all write strobes, software/hardware pending
@@ -347,8 +350,8 @@ Logs and generated RTL/header are under `build/intc*`, including
 `J2IntcPlugin` owns the controller and provides the core event service. Normal
 cores expose counted held-level `interrupts` and a dedicated `nmi` input instead
 of externally chosen vectors/levels. `J2CoreConfig.eventInjection` defaults to
-false; legacy architectural test fixtures enable it explicitly. The SoC wires
-CMT0/CMT1 then SCI ERI/RXI/TXI/TEI and ties unused NMI high. Sources and priorities
+false; legacy architectural test fixtures enable it explicitly. Each board SoC owns its interrupt connections. Both current profiles order
+CMT0/CMT1 then SCI ERI/RXI/TXI/TEI and tie unused NMI high. Sources and priorities
 reset disabled/zero; firmware must configure both priority and enable.
 
 The sequencer publishes first-selection `eventStart` and `systemStart` signals.
@@ -420,54 +423,67 @@ Logs: `build/intc-final-tests.log`, `build/intc-private-isolation-test.log`,
 `build/intc-wukong-hw/{upload,warm}/`, and `build/coremark/intc-final/`.
 
 
+## Validation closeout (2026-11-19)
+
+`J2IntcBoundarySpec` runs nine assembly scenarios through the real private INTC,
+with legacy event injection disabled, both debug configurations and immediate
+or waited external memory. The SR-raise cases sweep eleven IRQ arrival cycles.
+It checks higher-priority IRQ nesting, NMI during a handler, a held request
+retriggering after RTE, LDC/LDC.L raising and lowering SR.I, a branch delay-slot
+store, and TAS under interrupt pressure. Assertions cover vector order, stacked
+PC/SR, entry masks, final resumption, exactly one delay-slot store, TAS lock and
+write completion before stacking, and preservation of T across IRQ/RTE. The
+LDC sweep verifies acceptance on both sides of the mask change; LDC.L completes
+its mask update before acceptance.
+
+`J2BootUartIrqSpec` links the production ROM startup, UART driver and RX ISR
+unchanged with a test foreground program. Serial-pin stimulus fills all 511
+usable queue entries and sends a 512th byte, forces hardware ORER with service
+masked, and injects incorrect parity. It checks failure reporting, data order,
+source clearing, rejection of errored bytes, successful reception after discard,
+and disabled interrupts at handoff. This test uses the real core/SCI/INTC with a
+test Wishbone/APB adapter; production AHB/APB routing is covered separately by
+the existing board boot/upload simulations. No production RTL or ROM change
+was needed to pass these cases.
+
+CoreMark's build and hardware runner now select board properties, clock, SRAM,
+programming tools and artifacts by `BOARD`. Wukong at 72 MHz passes both
+300-iteration seed sets: **15.720369 s** performance and **15.772302 s** validation,
+with correct CRCs and **33 CMT interrupts** per run. The runner checks the ISR
+count against elapsed timer ticks. The normal XIP validation application was
+restored through the loader and passed its INTC/ISA checks. Downloads were
+volatile; application uploads used the dedicated SF3, with sector backups.
+See [CoreMark](coremark.md) for commands and result details.
+
+The complete Scala regression passes **126 tests**; host-tool checks pass
+**36 tests**. Scala formatting, C formatting against `sw/.clang-format`, and
+`git diff --check` pass.
+
+Evidence: `build/validation-boundary-uart-tests.log`,
+`build/validation-intc-closeout-full.log`, `build/validation-host-tests.log`,
+`build/coremark/wukong-v1/intc-closeout/hardware/` and
+`build/coremark/wukong-v1/intc-closeout/restored/`. The Tang native CoreMark
+smoke regression is under `build/coremark/tang-primer/intc-closeout/simulation/`;
+its one-iteration runs check the updated workflow, not reportable performance.
+Earlier full-duration Tang and both-board timing/boot results remain above.
+
 ## Plan review and following steps
 
-Review of the implementation and recorded results on 2026-11-19:
-
-| Planned step | Status | Evidence / remaining work |
+| Planned step | Status | Evidence |
 | --- | --- | --- |
-| 1. Private PPB routing | Complete | Local data routing, instruction faults, access checks and lock/response isolation tests |
-| 2. Standalone INTC | Complete | Count boundaries, register aliases, priorities, NMI, stale candidates and generated-header checks |
-| 3. CPU acceptance | Implemented and tested | IRQ/NMI wake, entry metadata, fault precedence and waited buses; targeted nesting/boundary tests below remain |
-| 4. SoC and firmware | Complete | Six CMT/SCI sources, application/CoreMark setup and BootROM RXI/ERI queue |
-| 5. System validation | Substantially complete | Both boards pass boot/upload/reboot and timing; Tang CoreMark passes; closeout below remains |
+| 1. Private PPB routing | Complete | Local data routing, instruction faults, access checks and lock/response isolation |
+| 2. Standalone INTC | Complete | Count boundaries, register aliases, priorities, NMI, stale candidates and generated headers |
+| 3. CPU acceptance | Complete | Entry metadata, fault precedence, nesting/NMI, RTE retrigger and SR/delay-slot/TAS boundaries |
+| 4. SoC and firmware | Complete | Six CMT/SCI sources, application/CoreMark setup, BootROM RX queue and error recovery |
+| 5. System validation | Complete | Both-board boot/upload/reboot and timing, both-board full-duration CoreMark, private state isolation |
 
-BootROM RX was an additional completed firmware step. Its framing-error recovery
-and application handoff are tested through the real SCI/INTC/core path; see
-[SCI validation](sci.md#bootrom-rx-interrupt-validation-2026-11-19).
-
-The following are coverage gaps or follow-on proposals, not confirmed hardware
-failures. Complete validation before treating the foundation as qualified for
-a two-core SoC:
-
-1. **Close CPU interrupt boundary coverage.** Extend `J2IntcCoreSpec` with a
-   higher-priority IRQ preempting an ordinary handler, NMI during an ordinary
-   handler, and a held request retriggering after RTE until its peripheral is
-   cleared. Check stacked PC/SR, nesting order and final resumption. Exercise
-   IRQ arrival directly against LDC/LDC.L SR updates, RTE, delay slots and TAS
-   under memory wait states. Existing standalone tests check mask changes and
-   held levels, and architectural tests cover those instructions separately;
-   they do not replace these combined real-INTC boundary cases.
-2. **Stress the BootROM receive queue.** Add explicit software-queue-full and
-   hardware ORER/PER cases while foreground work is busy, then verify failure
-   reporting, source clearing and successful retry. Current tests cover normal
-   queue wrap, FER injection, receive timeout and handoff; they do not directly
-   force all of those error paths.
-3. **Finish Wukong CoreMark qualification.** `sw/coremark/Makefile` and
-   `tools/coremark.py` still select Tang properties/programming paths. Make the
-   benchmark workflow board-aware, then run both seeds on Wukong at 72 MHz,
-   selecting iterations so each measured run exceeds ten seconds. Verify CRCs,
-   clock/timer reporting and repeated CMT interrupts, archive results, and restore
-   the validation application. Tang's 100-iteration duration does not establish
-   Wukong's duration. This also closes the existing first item in
-   [Wukong next steps](wukong-v1.md#next-steps).
-4. **Then review a separate dual-core architecture plan.** Preserve the chosen
-   CPU0-boot/CPU1-worker model. Define CPU1 reset/release and PC/SP/VBR setup,
-   per-core AHB manager IDs and standalone BIU lock/access domains, shared
-   peripheral interrupt ownership, and any mailbox/IPI requirement. Resolve
-   shared-memory/cache visibility and atomic access rules before implementation.
-   The current isolation test instantiates two private PPB/INTC instances; it
-   does not validate two executing CPUs or shared interrupt routing.
+The next step is a **separate dual-core architecture review**. Preserve the chosen
+CPU0-boot/CPU1-worker model. Define CPU1 reset/release and PC/SP/VBR setup,
+per-core AHB manager IDs and standalone BIU lock/access domains, shared
+peripheral interrupt ownership, and any mailbox/IPI requirement. Resolve
+shared-memory/cache visibility and atomic access rules before implementation.
+The current isolation test instantiates two private PPB/INTC instances; it does
+not validate two executing CPUs or shared interrupt routing.
 
 No extra private peripherals, TX interrupt conversion or DMA are needed to
 finish this plan. GPIO/EXTI remains outside scope. The core stays at 8-bit

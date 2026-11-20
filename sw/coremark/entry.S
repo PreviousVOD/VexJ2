@@ -1,4 +1,5 @@
 #include "cmt.h"
+#include "j2_board_irqs.h"
 
 .section .text.start
 .align 2
@@ -72,7 +73,7 @@ overflow_address: .long _cmt_overflows
 cmt_csr_address: .long CMT_CMCSR_ADDRESS(0)
 .align 4
 coremark_vectors:
-  .rept 64
+  .rept J2_VECTOR_CMT0
   .long 5b
   .endr
   .long coremark_cmt_isr

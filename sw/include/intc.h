@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 /* App */
+#include "j2_board_irqs.h"
 #include "j2_intc_regs.h"
 
 #define J2_INTC_BASE     UINT32_C(0xffffe900)

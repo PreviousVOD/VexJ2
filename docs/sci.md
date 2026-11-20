@@ -1,5 +1,9 @@
 # J2SCI asynchronous serial interface
 
+Each board instantiates this peripheral directly. Its base address comes from
+`sciBase` in `board.properties` (currently `0xff001000` on both boards),
+and the same setting is passed to RTL and firmware builds.
+
 `j2.periph.J2SCI` implements one channel using the SH7124/SH7125 SCI register
 layout (hardware manual section 12), at the existing SoC address `0xff001000`.
 It replaces `J2Uart` and its FIFO register interface. Firmware must use the new
@@ -87,7 +91,7 @@ reconfiguration. Both boards retain nominal 19,200 baud: actual baud is about
 simulation uses exactly 1,125,000 baud (BRR=1), within SCI's PCLK/32 limit.
 
 BootROM alone builds the shared UART driver with `J2_UART_RX_IRQ` and links
-`sw/bootrom/uart_irq.c`. ROM vectors 66/67 share an ISR at priority 8. The ISR
+`sw/bootrom/uart_irq.c`. The board-mapped ERI/RXI vectors (currently 66/67) share an ISR at priority 8. The ISR
 reads SCRDR, clears only observed receive/error flags using W0C, and publishes
 valid bytes into a 512-byte single-producer/single-consumer queue (511 usable).
 The loader consumes that queue while retaining CMT-based foreground timeouts.
@@ -146,3 +150,14 @@ Evidence is under `build/uart-irq-*.log` and `build/uart-irq-validation/`.
 `uart-irq-wukong-sim.log` contains the passing cold/warm boot cases;
 `uart-irq-wukong-loader-sim.log` is the loader/error/handoff rerun after
 correcting an immediate sign-extension mistake in the test probe.
+
+`J2BootUartIrqSpec` adds explicit queue overflow, hardware overrun (ORER) and
+parity-error (PER) coverage. A test foreground program links the production ROM
+startup and RX ISR unchanged. It sends 512 back-to-back characters into the
+511-byte queue, verifies the retained byte order and overflow failure, masks
+service to force ORER, and injects incorrect even parity. Each error is cleared
+by the ISR; errored bytes are rejected, discard permits a successful retry, and
+stop disables SCI/INTC reception with SR.I=15. This uses real serial-pin stimulus,
+SCI, INTC and core with a test bus adapter. The production AHB/APB path remains
+covered by the board simulations above. Log:
+`build/validation-boundary-uart-tests.log`.

@@ -46,4 +46,56 @@ class BoardProfileSpec extends munit.FunSuite {
     for (size <- Seq("0", "2048", "49152", "0x10000000", "0x100000000"))
       intercept[IllegalArgumentException](BoardProfile(values.updated("sramBytes", size)))
   }
+  test("boot peripheral addresses reach each SoC configuration") {
+    for (board <- Seq("tang-primer", "wukong-v1")) {
+      val values = BoardProfile.load(board, Map.empty).values
+      val config = BoardProfile(values ++ Map("sciBase" -> "0xff006000", "cmtBase" -> "0xff007000"))
+        .socConfig("")
+      assertEquals(config.sciBase, BigInt(0xff006000L))
+      assertEquals(config.cmtBase, BigInt(0xff007000L))
+      for (
+        (key, value) <- Seq(
+          "sciBase" -> "-4096",
+          "sciBase" -> "0xff006001",
+          "cmtBase" -> "0x100000000",
+          "cmtBase" -> values("sciBase"),
+          "sciBase" -> "0xffffe000"
+        )
+      )
+        intercept[IllegalArgumentException](BoardProfile(values.updated(key, value)))
+    }
+  }
+  test("board interrupt maps preserve order and reject invalid source definitions") {
+    val values  = BoardProfile.load("tang-primer", Map.empty).values
+    val sources = Seq("SCI_RXI", "CMT0", "EXTRA")
+    assertEquals(
+      BoardProfile(values.updated("interruptSources", sources.mkString(",")))
+        .socConfig("")
+        .interruptSources,
+      sources
+    )
+    assertEquals(
+      BoardProfile(values.updated("interruptSources", "")).socConfig("").interruptSources.size,
+      0
+    )
+    assertEquals(
+      BoardProfile(
+        values.updated("interruptSources", (0 until 192).map(i => s"IRQ_$i").mkString(","))
+      )
+        .socConfig("")
+        .interruptSources
+        .size,
+      192
+    )
+    for (
+      sources <- Seq(
+        "CMT0,CMT0",
+        "bad-name",
+        "CMT0,",
+        (0 until 193).map(i => s"IRQ_$i").mkString(",")
+      )
+    )
+      intercept[IllegalArgumentException](BoardProfile(values.updated("interruptSources", sources)))
+  }
+
 }

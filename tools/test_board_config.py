@@ -61,6 +61,52 @@ class BoardConfigTests(unittest.TestCase):
             with self.subTest(size=size), self.assertRaises(ValueError):
                 validate(dict(profile, sramBytes=size))
 
+    def test_boot_peripheral_address_validation(self):
+        profile = load("wukong-v1", {})
+        moved = validate(dict(profile, sciBase="0xff006000", cmtBase="0xff007000"))
+        self.assertEqual(moved["sciBase"], "0xff006000")
+        for key, value in (("sciBase", "-4096"), ("sciBase", "0xff006001"),
+                           ("cmtBase", "0x100000000"), ("cmtBase", profile["sciBase"]),
+                           ("sciBase", "0xffffe000")):
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                validate(dict(profile, **{key: value}))
+
+    def test_interrupt_sources_validate_and_generate_per_board(self):
+        profile = load("tang-primer", {})
+        for sources in ("", ",".join(f"IRQ_{i}" for i in range(192))):
+            validate(dict(profile, interruptSources=sources))
+        for sources in ("CMT0,CMT0", "CMT0,", "bad-name",
+                        ",".join(f"IRQ_{i}" for i in range(193))):
+            with self.subTest(sources=sources), self.assertRaises(ValueError):
+                validate(dict(profile, interruptSources=sources))
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            generate(dict(profile, interruptSources="SCI_RXI,CMT0,EXTRA"), out)
+            header = "\n".join(" ".join(line.split()) for line in (out / "include/j2_board_irqs.h").read_text().splitlines())
+            self.assertIn("#define J2_INTC_SOURCE_COUNT 3\n", header)
+            self.assertIn("#define J2_IRQ_SCI_RXI 0\n", header)
+            self.assertIn("#define J2_VECTOR_CMT0 65\n", header)
+            self.assertNotIn("J2_IRQ_SCI_ERI", header)
+
+    def test_relocated_header_works_in_c_and_assembly(self):
+        import subprocess
+        root = Path(__file__).resolve().parents[1]
+        profile = validate(dict(load("wukong-v1", {}),
+                                sciBase="0xff006000", cmtBase="0xff007000"))
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            generate(profile, out)
+            includes = ['-I', str(out / 'include'), '-include', str(out / 'rom/board.h'), '-I', str(root / 'sw/include')]
+            source = '#include "sci.h"\n#include "cmt.h"\n#include "j2_board_irqs.h"\n'
+            subprocess.run(['cc', *includes, '-x', 'c', '-c', '-o', str(out / 'c.o'), '-'],
+                           input=source + '_Static_assert(SCI_BASE == 0xff006000, "SCI base");\n'
+                           '_Static_assert(CMT_CMCSR_ADDRESS(1) == 0xff007008, "CMT base");\n',
+                           text=True, check=True)
+            subprocess.run(['cc', *includes, '-x', 'assembler-with-cpp', '-c',
+                            '-o', str(out / 'asm.o'), '-'],
+                           input=source + '.long SCI_BASE + SCI_SCTDR\n.long CMT_CMCSR_ADDRESS(0)\n.long J2_VECTOR_SCI_RXI\n',
+                           text=True, check=True)
+
 
 if __name__ == "__main__":
     unittest.main()

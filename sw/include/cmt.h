@@ -5,8 +5,10 @@
 #include <stdint.h>
 #endif
 
-/* SH7124/SH7125 CMT offsets, at the project's shared peripheral address. */
-#define J2_CMT_BASE                0xff003000
+/* SH7124/SH7125 CMT offsets, relative to the board-selected base. */
+#ifndef J2_CMT_BASE
+#define J2_CMT_BASE 0xff003000
+#endif
 #define CMT_CMSTR_ADDRESS          (J2_CMT_BASE + 0x00)
 #define CMT_CMCSR_ADDRESS(channel) (J2_CMT_BASE + 0x02 + 6 * (channel))
 #define CMT_CMCNT_ADDRESS(channel) (J2_CMT_BASE + 0x04 + 6 * (channel))

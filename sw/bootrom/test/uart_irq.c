@@ -1,0 +1,94 @@
+#include <stdint.h>
+
+/* App */
+#include "intc.h"
+#include "sci.h"
+#include "uart.h"
+#include "uart_irq.h"
+
+/* Simulation-only rendezvous registers on the external data bus. No test hooks
+ * are compiled into the production ISR or loader. */
+#define PHASE   (*(volatile uint32_t *)0x40000000)
+#define RELEASE (*(volatile uint32_t *)0x40000004)
+#define RESULT  (*(volatile uint32_t *)0x40000008)
+
+static void mask(unsigned value) {
+    __asm__ volatile("ldc %0, sr" : : "r"(value << 4) : "memory");
+}
+
+static void check(int condition, unsigned code) {
+    if (!condition) {
+        RESULT = code;
+        for (;;) {
+        }
+    }
+}
+
+static void rendezvous(unsigned phase) {
+    PHASE = phase;
+    while (RELEASE != phase) {
+    }
+}
+
+void boot_main(void) {
+    uart_init();
+    uart_rx_irq_start();
+    /* Keep foreground busy while 512 bytes arrive into the 511-byte queue. */
+    rendezvous(1);
+    check(uart_rx_irq_failed(), 1);
+    check(!(SCI_REG(SCI_SCSSR) & SCI_SSR_ERRORS), 2);
+    unsigned count = 0;
+    while (uart_rx_ready()) {
+        check(uart_rx() == (uint8_t)count, 3);
+        ++count;
+    }
+    check(count == 511, 4);
+    uart_rx_irq_discard();
+    check(!uart_rx_irq_failed(), 5);
+
+    /* Suppress service long enough to produce an actual hardware overrun. */
+    mask(15);
+    rendezvous(2);
+    check((SCI_REG(SCI_SCSSR) & (SCI_SSR_ORER | SCI_SSR_RDRF)) == (SCI_SSR_ORER | SCI_SSR_RDRF), 6);
+    mask(0);
+    while (!uart_rx_irq_failed()) {
+    }
+    check(!uart_rx_ready(), 7);
+    check(!(SCI_REG(SCI_SCSSR) & (SCI_SSR_ERRORS | SCI_SSR_RDRF)), 8);
+    uart_rx_irq_discard();
+
+    /* Receive even parity, inject an incorrect parity bit while masked, then
+     * verify that the normal ERI handler clears PER and rejects that byte. */
+    mask(15);
+    SCI_REG(SCI_SCSCR) = 0;
+    SCI_REG(SCI_SCSMR) = 0x20;
+    SCI_REG(SCI_SCSCR) = SCI_SCR_TE | SCI_SCR_RE | SCI_SCR_RIE;
+    rendezvous(3);
+    check((SCI_REG(SCI_SCSSR) & SCI_SSR_PER) != 0, 9);
+    mask(0);
+    while (!uart_rx_irq_failed()) {
+    }
+    check(!uart_rx_ready(), 10);
+    check(!(SCI_REG(SCI_SCSSR) & (SCI_SSR_ERRORS | SCI_SSR_RDRF)), 11);
+    uart_rx_irq_discard();
+
+    SCI_REG(SCI_SCSCR) = 0;
+    SCI_REG(SCI_SCSMR) = 0;
+    SCI_REG(SCI_SCSCR) = SCI_SCR_TE | SCI_SCR_RE | SCI_SCR_RIE;
+    rendezvous(4);
+    check(!uart_rx_irq_failed(), 12);
+    for (unsigned i = 0; i < 8; ++i) {
+        check(uart_rx_ready(), 13);
+        check(uart_rx() == 0xa0u + i, 14);
+    }
+    check(!uart_rx_ready(), 15);
+    uart_rx_irq_stop();
+    uint32_t sr;
+    __asm__ volatile("stc sr, %0" : "=r"(sr));
+    check((sr & 0xf0) == 0xf0, 16);
+    check(!(SCI_REG(SCI_SCSCR) & SCI_SCR_RIE), 17);
+    check(INTC_ISER(0) == 0, 18);
+    RESULT = 0x600d;
+    for (;;) {
+    }
+}

@@ -37,10 +37,10 @@ def check_sources():
     return upstream
 
 
-def environment_hashes():
+def environment_hashes(board="tang-primer"):
     files = list((ROOT / "spinal/src/main/scala/j2/periph").glob("*.scala"))
     files += list((ROOT / "spinal/src/main/scala/j2/board").rglob("*.scala"))
-    files += [ROOT / "fpga/tang-primer/board.properties", ROOT / "tools/board_config.py"]
+    files += [ROOT / f"fpga/{board}/board.properties", ROOT / "tools/board_config.py"]
     files += list((ROOT / "verilog/verif").glob("*_model.v"))
     files += list((ROOT / "third_party/qspiflash/bench/cpp").glob("flashsim.*"))
     files += [ROOT / "sw/bootrom/Makefile", ROOT / "sw/bootrom/uart.c"]
@@ -89,6 +89,21 @@ def parse_result(text, run, iterations, clock_hz, require_duration=True):
                 coremark_per_mhz=(iterations / seconds) / (clock_hz / 1000000))
 
 
+def validate_cmt_interrupts(text, result):
+    counts = re.findall(r"^CMT interrupts:\s*(\d+)\s*$", text.replace("\r", ""), re.M)
+    if len(counts) != 1:
+        raise ValueError("missing/duplicate CMT ISR count")
+    count = int(counts[0])
+    if result["reportable_duration"] and count < 2:
+        raise ValueError("timed run did not service repeated CMT interrupts")
+    # stop_time may account for one final pending wrap without running its ISR.
+    # Allow a one-wrap difference, including microsecond conversion rounding.
+    wraps = result["ticks"] * result["clock_hz"] // (1000000 * 512 * 65536)
+    if abs(count - wraps) > 1:
+        raise ValueError("CMT ISR count disagrees with elapsed timer ticks")
+    return count
+
+
 def program_loader(device, log_path, timeout):
     """Capture boot and enter the loader before the previously installed app runs."""
     fd = os.open(device, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
@@ -132,26 +147,44 @@ def run_suite(args):
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=True)
     (out / "results.json").unlink(missing_ok=True)
-    clock_hz = int(load_board("tang-primer")["clockHz"])
+    board = args.board
+    profile = load_board(board)
+    clock_hz = int(profile["clockHz"])
+    device = args.device or profile["uartDevice"]
+    if args.command == "sim" and board != "tang-primer":
+        raise ValueError("native CoreMark simulation currently supports Tang Primer only")
     report = dict(source_revision=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
                   source_diff_sha256=hashlib.sha256(subprocess.check_output(["git", "diff", "HEAD"], cwd=ROOT)).hexdigest(),
-                  upstream_revision=upstream["revision"], mode=args.command,
+                  upstream_revision=upstream["revision"], mode=args.command, board=board,
                   compiler=subprocess.check_output([os.environ.get("CROSS", "sh-none-elf-") + "gcc", "--version"], text=True).splitlines()[0],
                   clock_hz=clock_hz, memory="code/rodata SPI XIP; data/stack SRAM", results=[])
-    report["memory_environment_sha256"] = environment_hashes()
+    report["memory_environment_sha256"] = environment_hashes(board)
     subprocess.run(["git", "archive", "--format=tar.gz", "--output=" + str(out / "source.tar.gz"), "HEAD"],
                    cwd=ROOT, check=True)
-    rtl = ROOT / "build/spinal" / ("verilog-fpga" if args.command == "hardware" else "verilog")
     if args.command == "hardware":
-        bitstream = ROOT / "build/fpga/tang-primer/j2_tang_primer.bit"
+        from fpga import paths
+        board_paths = paths(board, profile)
+        rtl = board_paths["rtl"]
+        bitstream = board_paths["work"] / (profile["top"] + ".bit")
         report["bitstream_sha256"] = sha(bitstream)
         shutil.copy2(bitstream, out / bitstream.name)
-        timing = ROOT / "build/logs/td_verilog/j2_tang_primer_timing.txt"
-        summaries = re.findall(r"(\d+) errors detected", timing.read_text())
-        if not summaries or any(int(x) for x in summaries):
-            raise ValueError("FPGA timing has not passed")
-        for name in ("j2_tang_primer_timing.txt", "j2_tang_primer_area.txt"):
-            shutil.copy2(timing.parent / name, out / name)
+        if profile["vendor"] == "anlogic":
+            timing = board_paths["reports"] / (profile["top"] + "_timing.txt")
+            summaries = re.findall(r"(\d+) errors detected", timing.read_text())
+            if not summaries or any(int(x) for x in summaries):
+                raise ValueError("FPGA timing has not passed")
+            reports = [timing, board_paths["reports"] / (profile["top"] + "_area.txt")]
+        else:
+            timing = board_paths["work"] / "timing_routed.rpt"
+            if not (board_paths["work"] / "implementation.pass").is_file():
+                raise ValueError("FPGA implementation has not passed")
+            if "All user specified timing constraints are met." not in timing.read_text():
+                raise ValueError("FPGA timing has not passed")
+            reports = [timing]
+        for path in reports:
+            shutil.copy2(path, out / path.name)
+    else:
+        rtl = ROOT / "build/spinal/verilog"
     shutil.copytree(rtl, out / "rtl", dirs_exist_ok=True)
     report["rtl_sha256"] = {p.name: sha(p) for p in sorted(rtl.glob("*")) if p.is_file()}
     (out / "source.patch").write_bytes(subprocess.check_output(["git", "diff", "HEAD"], cwd=ROOT))
@@ -159,7 +192,7 @@ def run_suite(args):
         shutil.copytree(ROOT / directory, out / "source" / directory, dirs_exist_ok=True)
     shutil.copy2(__file__, out / "source/coremark.py")
     for run in ("performance", "validation"):
-        firmware = ROOT / f"build/sw/coremark/{clock_hz}/{run}-{args.iterations}"
+        firmware = ROOT / f"build/sw/coremark/{board}/{clock_hz}/{run}-{args.iterations}"
         shutil.copytree(firmware, out / run, dirs_exist_ok=True)
         log_path = out / (run + ".log")
         print(f"Running {args.command} {run}, {args.iterations} iterations", flush=True)
@@ -169,13 +202,24 @@ def run_suite(args):
                 subprocess.run([str(sim), str(firmware / "flash.bin"), "--cold-boot", "--expect", COMPLETE.decode(),
                                 "--max-cycles", str(args.max_cycles)], cwd=sim.parent,
                                stdout=log, stderr=subprocess.STDOUT, timeout=args.timeout, check=True)
+        elif board == "wukong-v1":
+            if device != profile["uartDevice"]:
+                raise ValueError("Wukong UART device is selected by its board profile")
+            with log_path.open("w") as log:
+                subprocess.run(["python3", str(ROOT / "tools/check_wukong_boot.py"),
+                                "--upload", "--image", str(firmware / "flash.bin"),
+                                "--expect", COMPLETE.decode(), "--timeout", str(args.timeout),
+                                "--output", str(out / (run + "-board"))],
+                               cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True,
+                               timeout=args.timeout + 180)
         else:
-            program_loader(args.device, log_path, 90)
+            program_loader(device, log_path, 90)
             import xip_image
             with log_path.open("w") as log, contextlib.redirect_stdout(log):
-                xip_image.upload(firmware / "flash.bin", args.device, False, COMPLETE, args.timeout)
+                xip_image.upload(firmware / "flash.bin", device, False, COMPLETE, args.timeout)
         result = parse_result(log_path.read_text(), run, args.iterations, clock_hz,
                               not args.allow_short)
+        result["cmt_interrupts"] = validate_cmt_interrupts(log_path.read_text(), result)
         result["firmware_sha256"] = sha(firmware / "flash.bin")
         result["compiler_flags"] = re.search(r"Compiler flags\s*:\s*([^\r\n]+)", log_path.read_text())[1]
         report["results"].append(result)
@@ -187,6 +231,8 @@ def run_suite(args):
 
 def compare(baseline, candidate):
     left, right = [json.loads(p.read_text()) for p in (baseline, candidate)]
+    if left.get("board", "tang-primer") != right.get("board", "tang-primer"):
+        raise ValueError("unmatched board")
     for key in ("upstream_revision", "compiler", "clock_hz", "memory", "mode", "memory_environment_sha256"):
         if left[key] != right[key]:
             raise ValueError("unmatched " + key)
@@ -214,7 +260,8 @@ def main():
         p.add_argument("--timeout", type=int, default=1800 if name == "sim" else 300,
                        help="Wall-clock timeout per seed set (simulated time is checked separately)")
         p.add_argument("--max-cycles", type=int, default=2000000000)
-        p.add_argument("--device", default=load_board("tang-primer")["uartDevice"])
+        p.add_argument("--board", choices=("tang-primer", "wukong-v1"), default="tang-primer")
+        p.add_argument("--device", help="override the Tang UART device")
         p.add_argument("--allow-short", action="store_true", help="Calibration only; not a reportable score")
     p = commands.add_parser("compare")
     p.add_argument("baseline", type=Path)

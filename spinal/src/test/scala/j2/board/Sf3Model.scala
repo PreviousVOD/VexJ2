@@ -1,6 +1,5 @@
 package j2.board
 
-import j2.soc.J2Soc
 import spinal.core._
 import spinal.core.sim._
 import scala.collection.mutable.ArrayBuffer
@@ -17,14 +16,6 @@ final class Sf3Model(
     initiallyQuad: Boolean,
     erased: Boolean = false
 ) {
-  def this(dut: J2Soc, initiallyQuad: Boolean) = this(
-    dut.io.spiCs,
-    dut.io.spiClk,
-    dut.io.spiData.write,
-    dut.io.spiData.writeEnable,
-    dut.io.spiData.read,
-    initiallyQuad
-  )
   var quad          = initiallyQuad
   var evcr          = if (quad) 0x5f else 0xdf
   var vcr           = 0xfb

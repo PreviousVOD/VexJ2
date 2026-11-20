@@ -16,7 +16,13 @@ object IntcRegisters {
   val priorityWords = 32
   val vectorBase    = 64
 
-  def header(config: IntcConfig, names: Seq[String] = Seq.empty): String = {
+  def registerHeader: String = header(IntcConfig(0), includeSources = false)
+
+  def header(
+      config: IntcConfig,
+      names: Seq[String] = Seq.empty,
+      includeSources: Boolean = true
+  ): String = {
     require(names.isEmpty || names.size == config.peripheralCount)
     require(names.distinct.size == names.size)
     require(
@@ -38,8 +44,10 @@ object IntcRegisters {
     ) ++ names.zipWithIndex.flatMap { case (name, index) =>
       Seq(s"J2_IRQ_$name" -> index, s"J2_VECTOR_$name" -> (vectorBase + index))
     }
-    val width = definitions.map(_._1.length).max
-    val constants = definitions
+    val selected =
+      if (includeSources) definitions else definitions.filterNot(_._1 == "J2_INTC_SOURCE_COUNT")
+    val width = selected.map(_._1.length).max
+    val constants = selected
       .map { case (name, value) =>
         s"#define ${name.padTo(width, ' ')} UINT32_C(0x${value.toHexString})"
       }

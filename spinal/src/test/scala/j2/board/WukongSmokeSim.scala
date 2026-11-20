@@ -1,7 +1,7 @@
 package j2.board
 
-import j2.soc.{J2Soc, J2SocConfig}
-import j2.board.wukong_v1.{J2AhbDdrBridge, J2MigPort}
+import j2.soc.J2SocConfig
+import j2.board.wukong_v1.{J2AhbDdrBridge, J2MigPort, J2WukongSoc}
 import spinal.lib._
 import spinal.lib.io.TriStateArray
 import spinal.core._
@@ -15,7 +15,7 @@ final class WukongSocFixture(config: J2SocConfig) extends Component {
   }
   val busDomain    = ClockDomain(io.clock, io.reset, frequency = FixedFrequency(config.clockHz Hz))
   val memoryDomain = ClockDomain(io.memoryClock, io.reset, frequency = FixedFrequency(83333333 Hz))
-  val soc          = busDomain(new J2Soc(config))
+  val soc          = busDomain(new J2WukongSoc(config))
   soc.io.uartRx    := io.uartRx; io.uartTx    := soc.io.uartTx
   soc.io.gpio.read := 0
   io.spiCs         := soc.io.spiCs; io.spiClk := soc.io.spiClk; io.spiData <> soc.io.spiData

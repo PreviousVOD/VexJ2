@@ -5,8 +5,8 @@
 #include "intc.h"
 #include "sci.h"
 
-static volatile uint32_t counts[6];
-static volatile uint32_t levels[6];
+static volatile uint32_t counts[J2_INTC_SOURCE_COUNT];
+static volatile uint32_t levels[J2_INTC_SOURCE_COUNT];
 static volatile uint32_t order[16];
 static volatile uint32_t entries;
 
@@ -68,17 +68,30 @@ static int wait_entries(unsigned wanted) {
     return entries == wanted;
 }
 
+static int pending(void) {
+    for (unsigned word = 0; word < (J2_INTC_SOURCE_COUNT + 31U) / 32U; ++word) {
+        if (INTC_ISPR(word)) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 static void clear_log(void) {
     entries = 0;
-    for (unsigned n = 0; n < 6; ++n) {
+    for (unsigned n = 0; n < J2_INTC_SOURCE_COUNT; ++n) {
         counts[n] = 0;
         levels[n] = 0;
     }
 }
 
 int intc_test(void) {
-    static const unsigned priorities[6] = {0, 3, 5, 5, 2, 6};
-    static const unsigned expected[5]   = {5, 2, 3, 1, 4};
+    static const unsigned priorities[J2_INTC_SOURCE_COUNT] = {
+        [J2_IRQ_CMT1] = 3, [J2_IRQ_SCI_ERI] = 5, [J2_IRQ_SCI_RXI] = 5, [J2_IRQ_SCI_TXI] = 2, [J2_IRQ_SCI_TEI] = 6};
+    static const unsigned expected[5] = {
+        J2_IRQ_SCI_TEI, J2_IRQ_SCI_ERI < J2_IRQ_SCI_RXI ? J2_IRQ_SCI_ERI : J2_IRQ_SCI_RXI,
+        J2_IRQ_SCI_ERI < J2_IRQ_SCI_RXI ? J2_IRQ_SCI_RXI : J2_IRQ_SCI_ERI, J2_IRQ_CMT1, J2_IRQ_SCI_TXI};
     set_mask(15);
     intc_reset();
     clear_log();
@@ -89,8 +102,8 @@ int intc_test(void) {
     }
 
     /* Pending survives disable and priority zero; SR.I equality also masks. */
-    INTC_ISPR(0) = J2_INTC_IRQ_MASK(J2_IRQ_CMT1);
-    if (INTC_ICPR(0) != J2_INTC_IRQ_MASK(J2_IRQ_CMT1)) {
+    INTC_ISPR(J2_IRQ_CMT1 / 32U) = J2_INTC_IRQ_MASK(J2_IRQ_CMT1);
+    if (INTC_ICPR(J2_IRQ_CMT1 / 32U) != J2_INTC_IRQ_MASK(J2_IRQ_CMT1)) {
         return 2;
     }
 
@@ -115,13 +128,13 @@ int intc_test(void) {
         return 5;
     }
 
-    if (levels[J2_IRQ_CMT1] != 4 || INTC_ISPR(0)) {
+    if (levels[J2_IRQ_CMT1] != 4 || pending()) {
         return 6;
     }
 
     set_mask(15);
-    INTC_ISPR(0) = 2;
-    INTC_ICPR(0) = 2;
+    INTC_ISPR(J2_IRQ_CMT1 / 32U) = J2_INTC_IRQ_MASK(J2_IRQ_CMT1);
+    INTC_ICPR(J2_IRQ_CMT1 / 32U) = J2_INTC_IRQ_MASK(J2_IRQ_CMT1);
     intc_enable(J2_IRQ_CMT1);
     set_mask(0);
     for (volatile unsigned spin = 0; spin < 100; ++spin) {
@@ -133,11 +146,12 @@ int intc_test(void) {
     set_mask(15);
     intc_reset();
     clear_log();
-    for (unsigned irq = 1; irq < 6; ++irq) {
+    for (unsigned i = 0; i < 5; ++i) {
+        unsigned irq = expected[i];
         intc_set_priority(irq, priorities[irq]);
+        INTC_ISPR(irq / 32U) = J2_INTC_IRQ_MASK(irq);
+        intc_enable(irq);
     }
-    INTC_ISPR(0) = 0x3e;
-    INTC_ISER(0) = 0x3e;
     set_mask(0);
     if (!wait_entries(5)) {
         return 8;
@@ -154,7 +168,7 @@ int intc_test(void) {
             return 10;
         }
     }
-    if (INTC_ISPR(0)) {
+    if (pending()) {
         return 11;
     }
 
@@ -177,7 +191,7 @@ int intc_test(void) {
         return 13;
     }
 
-    if ((CMT_CMCSR(1) & CMT_CMF) || INTC_ISPR(0)) {
+    if ((CMT_CMCSR(1) & CMT_CMF) || pending()) {
         return 14;
     }
 
@@ -204,7 +218,7 @@ int intc_test(void) {
         return 17;
     }
 
-    if (levels[J2_IRQ_SCI_TEI] != 8 || levels[J2_IRQ_SCI_TXI] != 7 || INTC_ISPR(0)) {
+    if (levels[J2_IRQ_SCI_TEI] != 8 || levels[J2_IRQ_SCI_TXI] != 7 || pending()) {
         return 18;
     }
 

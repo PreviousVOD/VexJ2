@@ -1,6 +1,6 @@
 package j2.board.wukong_v1
 
-import j2.soc.{J2Soc, J2SocConfig}
+import j2.soc.J2SocConfig
 import spinal.core._
 import spinal.lib._
 
@@ -87,7 +87,7 @@ final class J2Wukong(config: J2SocConfig) extends Component {
     resetController.peripheral_reset(0),
     frequency = FixedFrequency(config.clockHz Hz)
   )
-  val soc = domain(new J2Soc(config))
+  val soc = domain(new J2WukongSoc(config))
   soc.io.uartRx := io.uart_rx
   io.uart_tx    := soc.io.uartTx
   val uiClock            = ClockDomain(mig.ui_clk, frequency = FixedFrequency(83333333 Hz))
@@ -111,14 +111,11 @@ final class J2Wukong(config: J2SocConfig) extends Component {
   bridge.io.native.readData := mig.app_rd_data; bridge.io.native.readValid := mig.app_rd_data_valid
   bridge.io.native.readEnd  := mig.app_rd_data_end
 
-  // GPIO 16..23 are reserved for J11; remaining pads retain software numbering.
-  soc.io.gpio.read(23 downto 16) := 0
   for (bit <- 0 until 24) {
-    val socBit = if (bit < 16) bit else bit + 8
-    val pad    = new XilinxIoBuffer
-    pad.I                    := soc.io.gpio.write(socBit)
-    pad.T                    := !soc.io.gpio.writeEnable(socBit)
-    soc.io.gpio.read(socBit) := pad.O
+    val pad = new XilinxIoBuffer
+    pad.I                 := soc.io.gpio.write(bit)
+    pad.T                 := !soc.io.gpio.writeEnable(bit)
+    soc.io.gpio.read(bit) := pad.O
     pad.IO <> io.gpio(bit)
   }
   io.flash_clk  := startup.EOS && soc.io.spiClk

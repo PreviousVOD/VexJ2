@@ -1,13 +1,19 @@
+#include "j2_board_irqs.h"
+
 .section .vect
 .align 2
 .long _start
 .long _stack_top
-.rept 64
+/* Populate all implemented peripheral vectors, leaving unused handlers safe. */
+.set boot_vector, 2
+.rept 62 + J2_INTC_SOURCE_COUNT
+.if (boot_vector == J2_VECTOR_SCI_ERI) || (boot_vector == J2_VECTOR_SCI_RXI)
+.long _boot_uart_rx_isr
+.else
 .long boot_halt
+.endif
+.set boot_vector, boot_vector + 1
 .endr
-/* SCI ERI/RXI: vectors 66/67. Other sources remain disabled in BootROM. */
-.long _boot_uart_rx_isr
-.long _boot_uart_rx_isr
 
 .section .text
 .align 2

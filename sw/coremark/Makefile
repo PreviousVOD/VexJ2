@@ -1,20 +1,23 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)
+BOARD ?= tang-primer
 UPSTREAM := $(ROOT)/third_party/coremark
 CROSS ?= sh-none-elf-
 CC := $(CROSS)gcc
 ifndef J2_CLOCK_HZ
-J2_CLOCK_HZ := $(shell python3 $(ROOT)/tools/board_config.py tang-primer --get clockHz)
+J2_CLOCK_HZ := $(shell python3 $(ROOT)/tools/board_config.py $(BOARD) --get clockHz)
 endif
-J2_SRAM_BYTES := $(shell python3 $(ROOT)/tools/board_config.py tang-primer --get sramBytes)
+J2_SRAM_BYTES := $(shell python3 $(ROOT)/tools/board_config.py $(BOARD) --get sramBytes)
 ITERATIONS ?= 300
 RUN ?= performance
 ifneq ($(filter $(RUN),performance validation),$(RUN))
 $(error RUN must be performance or validation)
 endif
-OUT := $(ROOT)/build/sw/coremark/$(J2_CLOCK_HZ)/$(RUN)-$(ITERATIONS)
-SIM_OUT := $(ROOT)/build/sw/coremark-sim/$(J2_CLOCK_HZ)/$(RUN)-$(ITERATIONS)
+OUT := $(ROOT)/build/sw/coremark/$(BOARD)/$(J2_CLOCK_HZ)/$(RUN)-$(ITERATIONS)
+SIM_OUT := $(ROOT)/build/sw/coremark-sim/$(BOARD)/$(J2_CLOCK_HZ)/$(RUN)-$(ITERATIONS)
 FLAGS := -m2 -mb -O2 -Wall -Wextra -ffreestanding -fno-builtin -fno-lto -nostdlib
-DEFINES := -DJ2_SRAM_BYTES=$(J2_SRAM_BYTES) -DJ2_CLOCK_HZ=$(J2_CLOCK_HZ) -DITERATIONS=$(ITERATIONS) \
+J2_SCI_BASE := $(shell python3 $(ROOT)/tools/board_config.py $(BOARD) --get sciBase)
+J2_CMT_BASE := $(shell python3 $(ROOT)/tools/board_config.py $(BOARD) --get cmtBase)
+DEFINES := -DJ2_SRAM_BYTES=$(J2_SRAM_BYTES) -DJ2_CLOCK_HZ=$(J2_CLOCK_HZ) -DJ2_SCI_BASE=$(J2_SCI_BASE) -DJ2_CMT_BASE=$(J2_CMT_BASE) -DITERATIONS=$(ITERATIONS) \
   -DTOTAL_DATA_SIZE=2000 -D$(shell echo $(RUN) | tr a-z A-Z)_RUN=1
 CFLAGS := $(FLAGS) $(DEFINES) -I. -I$(UPSTREAM) -I$(ROOT)/sw/include -I$(ROOT)/sw/bootrom \
   '-DJ2_COMPILER_FLAGS="$(FLAGS) $(DEFINES)"'
@@ -62,8 +65,10 @@ $(OUT)/flash.bin: $(OUT)/main.bin $(ROOT)/tools/xip_image.py
 $(OUT)/main.lst: $(OUT)/main.elf
 	$(CROSS)objdump -d $< > $@
 
-$(OBJS) $(SIM_OUT)/sim_entry.o: $(ROOT)/fpga/tang-primer/board.properties $(ROOT)/tools/board_config.py
+$(OBJS) $(SIM_OUT)/sim_entry.o: $(ROOT)/fpga/$(BOARD)/board.properties $(ROOT)/tools/board_config.py
 
 $(OBJS): $(ROOT)/sw/include/cmt.h $(ROOT)/sw/include/sci.h
 
 $(OBJS): $(ROOT)/sw/include/intc.h $(ROOT)/sw/include/j2_intc_regs.h
+
+include $(ROOT)/sw/board-irqs.mk

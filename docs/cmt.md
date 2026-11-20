@@ -1,5 +1,9 @@
 # J2CMT compare match timer
 
+Each board instantiates this peripheral directly. Its base address comes from
+`cmtBase` in `board.properties` (currently `0xff003000` on both boards),
+and the same setting is passed to RTL and firmware builds.
+
 `j2.periph.J2CMT` follows the SH7124/SH7125 CMT register layout and counter
 behavior (hardware manual section 14). Its SoC address remains `0xff003000`.
 This replaces J2Timer's incompatible four-register, 32-bit timer interface.
@@ -53,8 +57,8 @@ writes, zero strobes, periodic compare timing, stopped equality, W0C, registered
 IRQs and counter-write collisions. The shared XIP application tests CPU subword
 accesses, CMI0 entry/rearm/SLEEP wake, and channel-1 polling. Boot/loader simulations
 exercise timeout rollover. The reference-core testbench has a matching CMT
-functional model. CMI0/CMI1 connect to private INTC sources 0/1 and vectors
-64/65. Firmware explicitly enables and prioritizes each source; CoreMark and
+functional model. Each board maps CMI0/CMI1 through its `interruptSources`
+property; the current profiles use INTC sources 0/1 and vectors 64/65. Firmware explicitly enables and prioritizes each source; CoreMark and
 the CMT0 test use priority 14. The XIP INTC test also services CMT1. See the
 [PPB/INTC architecture](ppb-intc-plan.md).
 

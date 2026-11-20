@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from coremark import compare, parse_result
+from coremark import compare, parse_result, validate_cmt_interrupts
 
 
 def output(ticks=12000000):
@@ -76,6 +76,30 @@ class ResultValidation(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.parse(output() + "Total ticks : 12000000\n")
 
+    def test_wukong_clock_and_rate(self):
+        text = output().replace("32000000", "72000000")
+        result = parse_result(text, "performance", 10, 72000000)
+        self.assertAlmostEqual(result["coremark_per_mhz"], 10 / 12 / 72)
+        with self.assertRaises(ValueError):
+            self.parse(text)
+
+    def test_cmt_interrupts_match_clock_and_duration(self):
+        for clock, count in ((32000000, 11), (72000000, 25)):
+            with self.subTest(clock=clock):
+                result = parse_result(output().replace("32000000", str(clock)),
+                                      "performance", 10, clock)
+                self.assertEqual(validate_cmt_interrupts(f"CMT interrupts: {count}\r\n", result), count)
+                # A final pending wrap need not have entered its handler.
+                self.assertEqual(validate_cmt_interrupts(f"CMT interrupts: {count - 1}\n", result), count - 1)
+                for text in ("", "CMT interrupts: 0\n", "CMT interrupts: 99\n",
+                             f"CMT interrupts: {count}\nCMT interrupts: {count}\n"):
+                    with self.subTest(text=text), self.assertRaises(ValueError):
+                        validate_cmt_interrupts(text, result)
+
+    def test_short_regression_need_not_wrap(self):
+        result = self.parse(output(100), require_duration=False)
+        self.assertEqual(validate_cmt_interrupts("CMT interrupts: 0\n", result), 0)
+
 
 class MatchedComparison(unittest.TestCase):
     def fixture(self):
@@ -123,6 +147,19 @@ class MatchedComparison(unittest.TestCase):
         b["memory_environment_sha256"] = {"SPI": "different"}
         with self.assertRaises(ValueError):
             self.check(a, b)
+
+    def test_changed_board_is_rejected_even_at_same_clock(self):
+        a = self.fixture()
+        b = copy.deepcopy(a)
+        b["board"] = "wukong-v1"
+        with self.assertRaisesRegex(ValueError, "unmatched board"):
+            self.check(a, b)
+
+    def test_legacy_reports_default_to_tang(self):
+        a = self.fixture()
+        b = copy.deepcopy(a)
+        b["board"] = "tang-primer"
+        self.assertEqual(self.check(a, b)[0]["speedup"], 1)
 
 
 if __name__ == "__main__":

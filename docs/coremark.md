@@ -2,9 +2,9 @@
 
 [Project overview](../README.md) · [Development](development.md)
 
-The commands on this page target Tang Primer at 32 MHz. They use its UART
-loader and FPGA tools; they are not a Wukong hardware workflow. Run commands
-from the repository root. The later hybrid-decoder results are recorded in
+The hardware workflow supports Tang Primer at 32 MHz and Wukong at 72 MHz,
+selected with `BOARD`. Native CoreMark simulation currently supports Tang only.
+Run commands from the repository root. The later hybrid-decoder results are recorded in
 [SH-2 pipeline validation](sh2-pipeline.md#validation).
 
 ## Workload and measurement
@@ -29,17 +29,21 @@ configuration, including flash access latency.
 
 ```sh
 . tools/env.sh
-export J2_CLOCK_HZ=32000000
 make coremark-build             # both standard seed sets; 300 iterations each
 make coremark-sim               # full SoC/XIP simulation; both seed sets
 export TD_HOME=/path/to/TD_4.6.7_Linux
-make coremark-fpga-build        # timer-enabled FPGA, timing and PLL checks
+make coremark-fpga-build        # FPGA build and timing checks
 make coremark-hw                # ttyACM0 at 19200 baud; 300 iterations per seed set
+
+make BOARD=wukong-v1 coremark-fpga-build
+make BOARD=wukong-v1 coremark-hw # ttyUSB0; volatile Vivado programming and SF3 upload
 ```
 
 `coremark-hw` reloads FPGA SRAM and replaces the dedicated application flash
 image through the UART loader for each seed set. It leaves the validation
-workload installed. Configuration flash is untouched. Set `COREMARK_ITERATIONS`
+workload installed. Wukong backs up affected SF3 sectors before each upload.
+Configuration flash is untouched. Clock and SRAM size come from the selected
+board profile; leave `J2_CLOCK_HZ` unset to use that profile. Set `COREMARK_ITERATIONS`
 to override the count. Both simulator and hardware runs must measure at least
 ten seconds per seed set; the default is 300 iterations. Faster configurations may need more
 iterations: the runner rejects results below ten seconds. Simulation allows
@@ -52,14 +56,58 @@ For intentional short CRC regressions, build with a smaller count and invoke
 `--allow-short`. Such runs are not reportable scores, following
 [CoreMark's run rules](https://github.com/eembc/coremark#run-rules).
 
-New results default to `build/coremark/refactored/{simulation,hardware}/`, with
+New results default to `build/coremark/<board>/refactored/{simulation,hardware}/`, with
 logs, firmware binaries, compiler settings, CRCs, raw timer ticks, derived
 iterations/second and CoreMark/MHz, RTL, and hardware bitstream/timing reports.
 Both performance and validation seed sets must pass. The integer-only firmware
 report truncates rates below one iteration/second; use the JSON rate computed
 from the raw timer ticks for comparisons. Completion markers alone do not
 establish a pass: the runner checks expected CRCs, timer readings, iteration
-counts, and upstream error output.
+counts, upstream error output, and CMT ISR counts consistent with elapsed ticks.
+Firmware is built under `build/sw/coremark/<board>/<clock>/<seed>-<iterations>/`.
+
+## INTC validation on Wukong (2026-11-19)
+
+The 72 MHz FPGA passes both seed sets with 300 iterations, cached SPI XIP code
+and internal SRAM data/stack. Both exceed ten measured seconds and pass all
+expected CRCs; each services 33 CMT rollover interrupts.
+
+| Seed set | Time (s) | Iterations/s | CoreMark/MHz |
+| --- | ---: | ---: | ---: |
+| Performance | 15.720369 | 19.083522 | 0.265049 |
+| Validation | 15.772302 | 19.020686 | 0.264176 |
+
+Results, UART logs, firmware, RTL and routed timing reports are archived in
+`build/coremark/wukong-v1/intc-closeout/hardware/`. Per-seed `*-board/` directories
+contain volatile programming logs and SF3 backups. The validation application
+was restored and passed INTC/ISA checks; evidence is in the adjacent `restored/`
+directory. These runs use the existing timing-qualified 72 MHz bitstream.
+
+The updated Tang workflow also passes both one-iteration native simulation
+seeds under `build/coremark/tang-primer/intc-closeout/simulation/`. These are
+short CRC regressions; the prior full-duration Tang qualification is recorded in
+[the PPB/INTC plan](ppb-intc-plan.md#core-and-soc-integration).
+
+## Both-board hardware confirmation (2026-11-19)
+
+Both standard seed sets were rerun on both physical boards with **300 iterations
+per seed** using the existing timing-qualified bitstreams. All four runs pass
+the expected CRCs and exceed ten measured seconds. CMT ISR counts agree with
+the timer readings.
+
+| Board | Clock (MHz) | Seed set | Time (s) | CoreMark/MHz | CMT interrupts |
+| --- | ---: | --- | ---: | ---: | ---: |
+| Tang Primer | 32 | Performance | 34.766304 | 0.269658 | 33 |
+| Tang Primer | 32 | Validation | 34.883072 | 0.268755 | 33 |
+| Wukong | 72 | Performance | 15.720369 | 0.265049 | 33 |
+| Wukong | 72 | Validation | 15.772302 | 0.264176 | 33 |
+
+Results, UART logs, firmware, RTL and timing evidence are in
+`build/coremark/{tang-primer,wukong-v1}/board-confirmation/hardware/`.
+The corresponding top-level logs are `build/coremark-tang-board-hw.log` and
+`build/coremark-wukong-board-hw.log`. Both normal validation applications were
+restored and passed their INTC/ISA checks; Tang also passed a fresh volatile
+reboot. Restore evidence is under each board's `board-confirmation/restored/`.
 
 ## Historical cached-XIP comparison
 
@@ -88,12 +136,13 @@ matching result files with:
 ```sh
 make coremark-compare \
   COREMARK_BASELINE=build/coremark/baseline/hardware/results.json \
-  COREMARK_CANDIDATE=build/coremark/refactored/hardware/results.json
+  COREMARK_CANDIDATE=build/coremark/tang-primer/refactored/hardware/results.json
 python3 -m unittest discover -s tools -p test_coremark.py -v
 ```
 
 Comparison rejects mismatched firmware hashes, compiler settings, seed sets,
-iteration counts, clock frequencies, and execution environments. Reuse the
+iteration counts, boards, clock frequencies, and execution environments. Older
+reports without a board field are treated as Tang Primer. Reuse the
 saved firmware binaries when testing CPU changes.
 
 ## Pre-refactor baseline

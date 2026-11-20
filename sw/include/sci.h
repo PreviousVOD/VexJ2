@@ -1,7 +1,11 @@
 #ifndef J2_SCI_H
 #define J2_SCI_H
 
-#define SCI_BASE       0xff001000
+#ifndef J2_SCI_BASE
+#define J2_SCI_BASE 0xff001000
+#endif
+
+#define SCI_BASE       J2_SCI_BASE
 #define SCI_SCSMR      0x00
 #define SCI_SCBRR      0x02
 #define SCI_SCSCR      0x04

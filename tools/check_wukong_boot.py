@@ -91,7 +91,10 @@ def main():
     parser.add_argument("--upload", action="store_true", help="backup and replace SF3 application sectors")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=180)
+    parser.add_argument("--expect", default="XIP CPU tests passed", help="application completion marker")
     args = parser.parse_args()
+    if not args.expect:
+        parser.error("completion marker must not be empty")
     profile = load("wukong-v1")
     image = args.image.read_bytes()
     info = validate(image, profile)
@@ -135,8 +138,8 @@ def main():
                 serial.until(b"Flash verified\r\n", args.timeout)
             boot = b"Booting XIP image\r\n" if info["load_address"] == int(profile["xipBase"], 0)+32 else b"Booting loaded image\r\n"
             serial.until(boot, args.timeout)
-            serial.until(b"XIP CPU tests passed\r\n", args.timeout)
-            if b"INTC tests passed\r\n" not in serial.transcript:
+            serial.until(args.expect.encode("ascii") + b"\r\n", args.timeout)
+            if args.expect == "XIP CPU tests passed" and b"INTC tests passed\r\n" not in serial.transcript:
                 raise RuntimeError("missing INTC validation marker")
             if proc.wait(timeout=15) != 0 or not (out / "program.pass").is_file():
                 raise RuntimeError("Vivado volatile programming failed")
@@ -147,7 +150,8 @@ def main():
             application_partition_bytes=int(profile["xipBytes"], 0),
             image_sha256=hashlib.sha256(image).hexdigest(),
             bitstream_sha256=hashlib.sha256(bitstream.read_bytes()).hexdigest(),
-            image=info, application_isa_passed=True)
+            image=info, completion_marker=args.expect,
+            application_isa_passed=args.expect == "XIP CPU tests passed")
         if args.upload:
             report["backup_bytes"] = len(backup)
             report["backup_sha256"] = hashlib.sha256(backup).hexdigest()

@@ -35,3 +35,5 @@ $(OUT)/main.lst: $(OUT)/main.elf
 	$(CROSS)objdump -d $< > $@
 
 $(OBJS): $(ROOT)/sw/include/cmt.h $(ROOT)/sw/include/sci.h $(ROOT)/sw/include/intc.h $(ROOT)/sw/include/j2_intc_regs.h
+
+include $(ROOT)/sw/board-irqs.mk
