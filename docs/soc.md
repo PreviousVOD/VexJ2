@@ -66,8 +66,8 @@ order. Its SoC connects these names to its own peripheral request signals and
 sizes the CPU's private INTC accordingly. Elaboration rejects missing, duplicate
 or unknown connections. There is no shared SoC interrupt list.
 
-Both profiles currently use `CMT0,CMT1,SCI_ERI,SCI_RXI,SCI_TXI,SCI_BRI` (sources
-0–5, vectors 64–69), preserving their existing numbering. The firmware build
+Both profiles currently use `CMT0,CMT1,SCI_ERI,SCI_RXI,SCI_TXI,SCI_BRI,PIO` (sources
+0–6, vectors 64–70), preserving their existing numbering. The firmware build
 generates `j2_board_irqs.h` from the selected profile for both C and assembly.
 BootROM, application and CoreMark vector tables use those definitions, while
 `j2_intc_regs.h` contains only the reusable controller's register definitions.
@@ -206,13 +206,23 @@ and SRAM settings. External-memory tests remain in the application.
 
 ## 32-bit GPIO
 
-`J2Pio` uses native APB4 registers with 32 bidirectional pins:
+`J2PIO` uses APB4 at `0xff000000`, with 32 logical pins and one aggregated
+interrupt. All registers are 32-bit and reset to zero.
 
-| Offset | Function |
-|---:|---|
-| `0x00` | Input values |
-| `0x04` | Output values |
-| `0x08` | Output enable, one bit per pin; reset to zero/input |
+| Offset | Register | Function |
+|---:|---|---|
+| `0x00` | CR | Bit 0 IE enables interrupt delivery |
+| `0x04` | DIR | Per pin: 0 input, 1 output |
+| `0x08` | DATA | Read synchronized pin inputs; write output-configured pins only |
+| `0x0c` | ISR | Sticky per-pin pending flags, W1C |
+| `0x10` | ICR0 | Two-bit modes for pins 0–15 |
+| `0x14` | ICR1 | Two-bit modes for pins 16–31 |
+
+Modes are 00 disabled, 01 rising, 10 falling and 11 reserved/disabled.
+Input-only edge detection continues while IE is zero. IE, DIR and ICR gate the
+registered aggregate request; changing them does not clear pending flags.
+New edges win over simultaneous W1C. See [PIO](pio.md) for synchronization,
+byte strobes and firmware migration.
 
 Tang exposes all 32 GPIO bits. Wukong exposes 24 pads corresponding to software
 bits 0–15 and 24–31; inputs 16–23 read zero and their output registers cannot

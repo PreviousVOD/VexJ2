@@ -21,9 +21,11 @@
   means that you can't step code that lives in flash.
 */
 
-#include "gdb.h"
+/* App */
 #include "sh2.h"
 
+#include "gdb.h"
+#include "pio_compat.h"
 
 typedef enum {
   R0 = 0, R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13, R14, R15,
@@ -200,9 +202,9 @@ int gdb_peek_register_file (int id, long* val)
 		}
 
 	return retval;
-	}
+}
 
-#define PORT (*(volatile unsigned long  *)0xff000004)
+#define PORT TESTROM_PIO_DATA
 
 /*
   Stuffs a register value into gdb_register_file.  Returns the size of

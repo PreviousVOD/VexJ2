@@ -173,11 +173,11 @@ $(MICROCODE_MIF): $(REFSRC) tools/gen_microcode_data.py
 microcode-data: $(MICROCODE_HEX) $(MICROCODE_PREDECODE)
 microcode-mif: $(MICROCODE_MIF)
 
-$(TESTROM): $(REFSRC) sw/testrom/Makefile \
+$(TESTROM): $(REFSRC) sw/testrom/Makefile sw/testrom/pio_compat.h sw/include/pio.h \
 		$(wildcard sw/testrom/original/*.c sw/testrom/original/*.h sw/testrom/original/tests/*.s sw/testrom/original/startup/*.x)
 	$(MAKE) -C sw/testrom
 
-$(TESTROM16550): $(REFSRC) sw/testrom/Makefile sw/testrom/uart16550.c sw/bootrom/uart.c sw/include/sci.h \
+$(TESTROM16550): $(REFSRC) sw/testrom/Makefile sw/testrom/pio_compat.h sw/include/pio.h sw/testrom/uart16550.c sw/bootrom/uart.c sw/include/sci.h \
 		$(wildcard sw/testrom/original/*.c sw/testrom/original/*.h sw/testrom/original/tests/*.s sw/testrom/original/startup/*.x)
 	$(MAKE) -C sw/testrom OUT=$(CURDIR)/build/sw/testrom16550 UART=uart16550
 

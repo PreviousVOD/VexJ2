@@ -16,10 +16,12 @@
   Simple GDB ROM for SH J2 archtecture devices
 */
 
+/* App */
 #include "gdb.h"
+#include "pio_compat.h"
 #include "sh2.h"
 
-void uart_tx(unsigned char c);
+void          uart_tx(unsigned char c);
 unsigned char uart_rx();
 void main_sh();
 void alutest();
@@ -250,8 +252,8 @@ __asm__(
 "testdiv_k:    .long _testdiv\n"
 "testmacw_k:   .long _testmacw\n"
 "testmacl_k:   .long _testmacl\n"
-"pio_addr:     .long 0xFF000004\n"
-"pio_direction_addr: .long 0xFF000008\n"
+"pio_addr:     .long " TESTROM_PIO_DATA_ASM "\n"
+"pio_direction_addr: .long " TESTROM_PIO_DIR_ASM "\n"
 "pio_output_enable: .long 0xFFFFFFFF\n"
 "start_leds:   .long 0x000000ff\n"
 "start1_leds:   .long 0x0000004f\n"

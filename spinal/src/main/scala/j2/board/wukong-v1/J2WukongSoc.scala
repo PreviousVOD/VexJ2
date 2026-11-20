@@ -45,7 +45,7 @@ final class J2WukongSoc(config: J2SocConfig) extends Component {
   private val sram = new J2Sram(config.sramBytes)
   private val uart = new J2SCI(config.sciFifoDepth)
   private val cmt  = new J2CMT
-  private val pio  = new J2Pio
+  private val pio  = new J2PIO
   private val flash = new J2CachedSpiFlash(
     J2ReadCacheConfig(
       cacheBytes  = 4096,
@@ -89,7 +89,8 @@ final class J2WukongSoc(config: J2SocConfig) extends Component {
     "SCI_ERI" -> uart.io.interrupt(0),
     "SCI_RXI" -> uart.io.interrupt(1),
     "SCI_TXI" -> uart.io.interrupt(2),
-    "SCI_BRI" -> uart.io.interrupt(3)
+    "SCI_BRI" -> uart.io.interrupt(3),
+    "PIO" -> pio.io.interrupt
   )
   require(
     config.interruptSources.toSet == interruptSignals.keySet,

@@ -90,7 +90,8 @@ GPIO and cached SF3 endpoint. SCI, CMT, SPI control and cache control addresses
 come from `sciBase`, `cmtBase`, `spiControlBase` and `xipCacheControlBase` in the
 board profile; `sciFifoDepth=4` selects four-byte TX/RX FIFOs. The board SoC
 exposes only its 24 available GPIO pads, keeping J11 reserved for SF3 and
-preserving software bit numbering. The FPGA wrapper and boot simulations use
+preserving software bit numbering. [J2PIO](pio.md) supplies input edge interrupts
+through the board INTC map; disconnected bits cannot generate events. The FPGA wrapper and boot simulations use
 this same composition; see [SoC composition](soc.md#board-owned-composition).
 
 ```mermaid

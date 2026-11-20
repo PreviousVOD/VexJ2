@@ -82,7 +82,8 @@ integrations must synchronize asynchronous sources and retain short events.
 ## Firmware
 
 Board SoCs own source wiring and ordering. Both current profiles list CMT0,
-CMT1, SCI_ERI, SCI_RXI, SCI_TXI and SCI_BRI. Generated `j2_board_irqs.h`
+CMT1, SCI_ERI, SCI_RXI, SCI_TXI, SCI_BRI and PIO. PIO uses vector 70 in the
+default maps; its peripheral owns edge sensing and W1C pending flags. Generated `j2_board_irqs.h`
 provides source indices and vector constants; do not hard-code that order in
 portable drivers. `sw/include/intc.h` supplies reset, enable/disable and
 priority helpers, using register definitions generated from `IntcRegisters`.

@@ -20,6 +20,7 @@ class BoardSocSpec extends munit.FunSuite {
       val uartTx         = out Bool ()
       val uartRx         = in Bool ()
       val result, enable = out Bits (8 bits)
+      val gpioInput      = in Bits (32 bits)
     }
     def connect(
         memory: Ahb5,
@@ -29,9 +30,12 @@ class BoardSocSpec extends munit.FunSuite {
         flash: TriStateArray
     ): Unit = {
       io.memory <> memory
-      rx         := io.uartRx
-      io.uartTx  := tx
-      gpio.read  := 0
+      rx        := io.uartRx
+      io.uartTx := tx
+      for (pin <- 0 until gpio.read.getWidth) {
+        val bit = if (gpio.read.getWidth == 24 && pin >= 16) pin + 8 else pin
+        gpio.read(pin) := io.gpioInput(bit)
+      }
       flash.read := 15
       io.result  := gpio.write(7 downto 0)
       io.enable  := gpio.writeEnable(7 downto 0)
@@ -61,7 +65,7 @@ class BoardSocSpec extends munit.FunSuite {
             "xipCacheControlBase" -> "0xff009000",
             "sramBytes" -> "65536",
             "sciFifoDepth" -> "16",
-            "interruptSources" -> "SCI_BRI,SCI_RXI,CMT1,SCI_TXI,CMT0,SCI_ERI"
+            "interruptSources" -> "PIO,SCI_BRI,SCI_RXI,CMT1,SCI_TXI,CMT0,SCI_ERI"
           )
         else values
       )
@@ -122,6 +126,7 @@ class BoardSocSpec extends munit.FunSuite {
         .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(config.clockHz Hz)))
         .compile(new Probe(board, config))
       for (seed <- Seq(1, 2, 3)) compiled.doSim(seed = seed) { dut =>
+        dut.io.gpioInput         #= 0
         dut.io.uartRx            #= true
         dut.io.memory.HREADYOUT  #= true
         dut.io.memory.HRESP      #= false
@@ -161,6 +166,14 @@ class BoardSocSpec extends munit.FunSuite {
           }
           assert(dut.io.uartTx.toBoolean, "SCI stop bit")
           received = value
+        }
+        fork {
+          waitUntil(dut.io.result.toInt == 5)
+          dut.io.gpioInput #= (1L << 8) | (1L << 31) | (if (board == "wukong-v1") 0xff0000L else 0L)
+          waitUntil(dut.io.result.toInt == 6)
+          dut.io.gpioInput #= 0
+          waitUntil(dut.io.result.toInt == 7)
+          dut.io.gpioInput #= (1L << 8) | (1L << 31)
         }
         var cycles = 0
         while (

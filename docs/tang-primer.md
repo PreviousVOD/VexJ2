@@ -91,8 +91,9 @@ The simulation-only model is `verilog/verif/j2_gpio_pad_model.v`.
 
 GPIO 0–2 retain the RGB LED locations R3/J14/P13. GPIO 3–31 use free
 display/camera header pins listed in `fpga/tang-primer/j2_tang_primer.adc`.
-All external pins are LVCMOS33. The legacy validation ROM enables outputs at
-`0xff000008` before writing values at `0xff000004`.
+All external pins are LVCMOS33. The native validation ROM enables outputs through DIR at `0xff000004` before
+writing DATA at `0xff000008`. [J2PIO](pio.md) supplies synchronized pin reads and
+input edge interrupts through the board INTC map.
 
 ## Clock and FPGA build
 

@@ -63,6 +63,7 @@ Wukong v1 / Xilinx XC7A100T with DDR3 and Pmod SF3 application flash.
 | Generic AHB5 interfaces, interconnects and arbiters | [AHB5 IP library](docs/ahb5.md) |
 | APB peripherals, bridge and standalone BIU | [APB subsystem](docs/apb.md) |
 | SH7265-style SCIF and SH7124/SH7125-style CMT | [SCI](docs/sci.md) · [CMT](docs/cmt.md) |
+| GPIO direction, data and edge interrupts | [PIO](docs/pio.md) |
 | Core-private PPB and NVIC-style INTC | [PPB / INTC reference](docs/ppb-intc.md) |
 | Toolchain, source layout and verification commands | [Development](docs/development.md) |
 | Tang Primer clocks, pins, build and programming | [Tang Primer](docs/tang-primer.md) |

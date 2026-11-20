@@ -1,4 +1,7 @@
-#define LEDPORT (*(volatile unsigned long  *)0xff000004)
+/* App */
+#include "pio_compat.h"
+
+#define LEDPORT TESTROM_PIO_DATA
 
 extern char version_string[];
 
