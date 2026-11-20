@@ -10,7 +10,7 @@ class J2CorePluginsSpec extends munit.FunSuite {
     for (debug <- Seq(false, true)) {
       val config = J2CoreConfig(exposeDebug = debug)
       SpinalConfig(targetDirectory = s"simWorkspace/plugin-config-$debug")
-        .generateVerilog(new J2MicrocodedCore(config))
+        .generateVerilog(new J2Core(config))
     }
   }
 
@@ -18,7 +18,7 @@ class J2CorePluginsSpec extends munit.FunSuite {
     for (duplicate <- Seq(false, true)) {
       val error = intercept[Exception] {
         SpinalConfig(targetDirectory = "simWorkspace/plugin-invalid").generateVerilog(
-          new J2MicrocodedCore(
+          new J2Core(
             J2CoreConfig(),
             config => {
               val plugins = J2CorePlugins(config)
@@ -36,7 +36,7 @@ class J2CorePluginsSpec extends munit.FunSuite {
     for (duplicate <- Seq(false, true)) {
       val error = intercept[Exception] {
         SpinalConfig(targetDirectory = "simWorkspace/plugin-invalid-ppb").generateVerilog(
-          new J2MicrocodedCore(
+          new J2Core(
             J2CoreConfig(),
             config => {
               val plugins = J2CorePlugins(config)

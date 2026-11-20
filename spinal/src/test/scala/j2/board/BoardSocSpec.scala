@@ -57,8 +57,11 @@ class BoardSocSpec extends munit.FunSuite {
           values ++ Map(
             "sciBase" -> "0xff006000",
             "cmtBase" -> "0xff007000",
+            "spiControlBase" -> "0xff008000",
+            "xipCacheControlBase" -> "0xff009000",
             "sramBytes" -> "65536",
-            "interruptSources" -> "SCI_TEI,SCI_RXI,CMT1,SCI_TXI,CMT0,SCI_ERI"
+            "sciFifoDepth" -> "16",
+            "interruptSources" -> "SCI_BRI,SCI_RXI,CMT1,SCI_TXI,CMT0,SCI_ERI"
           )
         else values
       )
@@ -68,7 +71,7 @@ class BoardSocSpec extends munit.FunSuite {
         Seq(
           "python3",
           "-c",
-          "import sys; from pathlib import Path; sys.path.insert(0, '../tools'); from board_config import load_file, generate_interrupt_header; generate_interrupt_header(load_file(sys.argv[1], {}), Path(sys.argv[2]))",
+          "import sys; from pathlib import Path; sys.path.insert(0, '../tools'); from board_config import load_file, generate, generate_interrupt_header; p = load_file(sys.argv[1], {}); generate(p, Path(sys.argv[2]).parent); generate_interrupt_header(p, Path(sys.argv[2]))",
           properties.toString,
           out.resolve("j2_board_irqs.h").toString
         ).!,
@@ -93,16 +96,17 @@ class BoardSocSpec extends munit.FunSuite {
           "-I../sw/include",
           s"-I$out",
           "-I../sw/bootrom",
-          s"-DJ2_CLOCK_HZ=${config.clockHz}",
+          s"-I$out/rom",
+          "-include",
+          out.resolve("rom/board.h").toString,
           "-DJ2_UART_BAUD=125000",
-          s"-DJ2_SCI_BASE=${config.sciBase}",
-          s"-DJ2_CMT_BASE=${config.cmtBase}",
           s"-Wl,--defsym=J2_SRAM_BYTES=${config.sramBytes}",
           "-T",
           "../sw/bootrom/boot.x",
-          "../sw/bootrom/entry.S",
+          "../sw/bootrom/test/uart_irq_entry.S",
           "../sw/bootrom/uart.c",
-          "../sw/bootrom/uart_irq.c",
+          "../sw/bootrom/test/irq_driver.c",
+          "../sw/bootrom/flash.c",
           "../sw/bootrom/test/board_peripherals.c",
           "../sw/xipapp/intc.c",
           "-lgcc",

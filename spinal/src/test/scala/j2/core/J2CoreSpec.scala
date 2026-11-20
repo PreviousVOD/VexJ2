@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import scala.collection.mutable
 
-class J2MicrocodedCoreSpec extends munit.FunSuite {
+class J2CoreSpec extends munit.FunSuite {
   test("reset vectors, W alignment, compare forwarding and branch delay slots with bus waits") {
     for (reverse <- Seq(false, true)) {
       val compiled = SimConfig.withVerilator.compile(

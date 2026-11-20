@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.lib.misc.plugin._
 
 /** Stable external CPU interface; all hardware ownership lives in plugins. */
-final class J2MicrocodedCore(
+final class J2Core(
     val config: J2CoreConfig,
     pluginFactory: J2CoreConfig => Seq[FiberPlugin]
 ) extends Component {

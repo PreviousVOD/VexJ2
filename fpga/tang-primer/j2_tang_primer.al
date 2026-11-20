@@ -9,7 +9,7 @@
     </HardWare>
     <Source_Files>
         <Verilog>
-            <File>J2MicrocodedCore.v</File>
+            <File>J2Core.v</File>
             <File>j2_tang_primer.v</File>
         </Verilog>
         <ADC_FILE>j2_tang_primer.adc</ADC_FILE>

@@ -9,7 +9,7 @@ final class J2WukongDdrTest extends Component {
   setDefinitionName("j2_wukong_ddr_test")
   val io = new Bundle {
     val clk50, reset_n                                  = in Bool ()
-    val uart_tx, flash_cs_n, configuration_cs_n         = out Bool ()
+    val uart_tx, flash_cs_n                             = out Bool ()
     val led_n                                           = out Bits (2 bits)
     val ddr3_addr                                       = out Bits (14 bits)
     val ddr3_ba                                         = out Bits (3 bits)
@@ -20,7 +20,7 @@ final class J2WukongDdrTest extends Component {
     val ddr3_dqs_n, ddr3_dqs_p                          = inout(Analog(Bits(2 bits)))
   }
   noIoPrefix()
-  io.flash_cs_n := True; io.configuration_cs_n := True
+  io.flash_cs_n := True
   val clocks                      = new WukongDdrMmcm
   val feedback, system, reference = new XilinxBufg
   clocks.CLKIN1 := io.clk50; clocks.RST            := !io.reset_n; clocks.PWRDWN := False

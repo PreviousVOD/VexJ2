@@ -109,8 +109,8 @@ _xip_vectors:
   .long _xip_sci_rxi_isr
   .elseif xip_vector == J2_VECTOR_SCI_TXI
   .long _xip_sci_txi_isr
-  .elseif xip_vector == J2_VECTOR_SCI_TEI
-  .long _xip_sci_tei_isr
+  .elseif xip_vector == J2_VECTOR_SCI_BRI
+  .long _xip_sci_bri_isr
   .else
   .long xip_halt
   .endif

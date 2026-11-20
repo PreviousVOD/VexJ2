@@ -11,13 +11,11 @@ object Generate {
     SpinalConfig(targetDirectory = targetDirectory, mode = Verilog).withoutEnumString()
 
   def core(config: SpinalConfig, exposeDebug: Boolean): Unit =
-    config.generateVerilog(new J2MicrocodedCore(J2CoreConfig(exposeDebug = exposeDebug)))
+    config.generateVerilog(new J2Core(J2CoreConfig(exposeDebug = exposeDebug)))
 
   def main(args: Array[String]): Unit = {
     require(args.isEmpty, "Generate takes no arguments; use a board generator for board RTL")
     val config = Generate.config(sys.env.getOrElse("J2_SPINAL_OUT", "../build/spinal/verilog"))
-    config.generateVerilog(new J2Alu)
-    config.generateVerilog(new J2Shifter)
     config.generateVerilog(new J2PipelineRegFile)
     core(config, exposeDebug = true)
     config.generateVerilog(new J2MicrocodeRom)

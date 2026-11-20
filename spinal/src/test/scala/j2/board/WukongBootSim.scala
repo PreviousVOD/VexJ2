@@ -76,7 +76,7 @@ object WukongBootSim extends App {
         for (bit <- 0 until 8) { dut.io.uartRx #= ((value >> bit) & 1) != 0; sleep(bitPeriod) }
         dut.io.uartRx #= goodStop; sleep(bitPeriod)
         dut.io.uartRx #= true
-        // Leave IRQ entry/exit time at this accelerated baud. Real board
+        // Leave foreground processing time at this accelerated baud. Real board
         // uploads use continuous 19,200-baud characters without this gap.
         sleep(4000 * busPeriod)
       }
@@ -124,7 +124,7 @@ object WukongBootSim extends App {
           command("J2UP", 0, 64); expect("Send image\r\n", start)
           expect("Receive timeout\r\n", start); expect("J2 loader\r\n", start)
           assert(flash.erases.isEmpty)
-          // A framing error must reach ERI, abort reception and recover for
+          // A framing error must abort polling reception and recover for
           // the next command without erasing or programming application flash.
           start = received.length
           command("J2UP", 0, 64); expect("Send image\r\n", start)

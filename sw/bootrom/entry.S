@@ -1,24 +1,19 @@
-#include "j2_board_irqs.h"
-
 .section .vect
 .align 2
 .long _start
 .long _stack_top
-/* Populate all implemented peripheral vectors, leaving unused handlers safe. */
-.set boot_vector, 2
-.rept 62 + J2_INTC_SOURCE_COUNT
-.if (boot_vector == J2_VECTOR_SCI_ERI) || (boot_vector == J2_VECTOR_SCI_RXI)
-.long _boot_uart_rx_isr
-.else
+/* BootROM polls with interrupts masked; unexpected vectors halt safely. */
+.rept 254
 .long boot_halt
-.endif
-.set boot_vector, boot_vector + 1
 .endr
 
 .section .text
 .align 2
 .global _start
 _start:
+  mov #0xf0, r0
+  extu.b r0, r0
+  ldc r0, sr
   mov #0, r0
   ldc r0, vbr
   mov.l data_source, r0

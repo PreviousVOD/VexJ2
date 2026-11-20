@@ -38,27 +38,28 @@ void __attribute__((interrupt_handler)) xip_cmt1_isr(void) {
 
 void __attribute__((interrupt_handler)) xip_sci_eri_isr(void) {
     record(J2_IRQ_SCI_ERI);
-    SCI_REG(SCI_SCSSR) = (uint8_t)~SCI_SSR_ERRORS;
-    (void)SCI_REG(SCI_SCSSR);
+    SCI_REG16(SCI_SCFSR) = (uint16_t)~SCI_FSR_ER;
+    (void)SCI_REG16(SCI_SCFSR);
 }
 
 void __attribute__((interrupt_handler)) xip_sci_rxi_isr(void) {
     record(J2_IRQ_SCI_RXI);
-    (void)SCI_REG(SCI_SCRDR);
-    SCI_REG(SCI_SCSSR) = (uint8_t)~SCI_SSR_RDRF;
-    (void)SCI_REG(SCI_SCSSR);
+    (void)SCI_REG8(SCI_SCFRDR);
+    SCI_REG16(SCI_SCFSR) = (uint16_t)~(SCI_FSR_RDF | SCI_FSR_DR);
+    (void)SCI_REG16(SCI_SCFSR);
 }
 
 void __attribute__((interrupt_handler)) xip_sci_txi_isr(void) {
     record(J2_IRQ_SCI_TXI);
-    SCI_REG(SCI_SCSCR) &= (uint8_t)~SCI_SCR_TIE;
-    (void)SCI_REG(SCI_SCSCR);
+    SCI_REG16(SCI_SCSCR) &= (uint16_t)~SCI_SCR_TIE;
+    (void)SCI_REG16(SCI_SCSCR);
 }
 
-void __attribute__((interrupt_handler)) xip_sci_tei_isr(void) {
-    record(J2_IRQ_SCI_TEI);
-    SCI_REG(SCI_SCSCR) &= (uint8_t)~SCI_SCR_TEIE;
-    (void)SCI_REG(SCI_SCSCR);
+void __attribute__((interrupt_handler)) xip_sci_bri_isr(void) {
+    record(J2_IRQ_SCI_BRI);
+    SCI_REG16(SCI_SCFSR) = (uint16_t)~SCI_FSR_BRK;
+    SCI_REG16(SCI_SCLSR) = (uint16_t)~SCI_LSR_ORER;
+    (void)SCI_REG16(SCI_SCLSR);
 }
 
 static int wait_entries(unsigned wanted) {
@@ -88,9 +89,9 @@ static void clear_log(void) {
 
 int intc_test(void) {
     static const unsigned priorities[J2_INTC_SOURCE_COUNT] = {
-        [J2_IRQ_CMT1] = 3, [J2_IRQ_SCI_ERI] = 5, [J2_IRQ_SCI_RXI] = 5, [J2_IRQ_SCI_TXI] = 2, [J2_IRQ_SCI_TEI] = 6};
+        [J2_IRQ_CMT1] = 3, [J2_IRQ_SCI_ERI] = 5, [J2_IRQ_SCI_RXI] = 5, [J2_IRQ_SCI_TXI] = 2, [J2_IRQ_SCI_BRI] = 6};
     static const unsigned expected[5] = {
-        J2_IRQ_SCI_TEI, J2_IRQ_SCI_ERI < J2_IRQ_SCI_RXI ? J2_IRQ_SCI_ERI : J2_IRQ_SCI_RXI,
+        J2_IRQ_SCI_BRI, J2_IRQ_SCI_ERI < J2_IRQ_SCI_RXI ? J2_IRQ_SCI_ERI : J2_IRQ_SCI_RXI,
         J2_IRQ_SCI_ERI < J2_IRQ_SCI_RXI ? J2_IRQ_SCI_RXI : J2_IRQ_SCI_ERI, J2_IRQ_CMT1, J2_IRQ_SCI_TXI};
     set_mask(15);
     intc_reset();
@@ -195,30 +196,28 @@ int intc_test(void) {
         return 14;
     }
 
-    /* An idle SCI asserts both TXI and TEI when their local enables are set. */
+    /* SCIF TXI requests service while its transmit FIFO is empty. */
     clear_log();
-    for (volatile unsigned spin = 0; spin < 100000 && !(SCI_REG(SCI_SCSSR) & SCI_SSR_TEND); ++spin) {
+    for (volatile unsigned spin = 0; spin < 100000 && !(SCI_REG16(SCI_SCFSR) & SCI_FSR_TEND); ++spin) {
     }
-    if (!(SCI_REG(SCI_SCSSR) & SCI_SSR_TEND)) {
+    if (!(SCI_REG16(SCI_SCFSR) & SCI_FSR_TEND)) {
         return 15;
     }
 
     intc_set_priority(J2_IRQ_SCI_TXI, 7);
-    intc_set_priority(J2_IRQ_SCI_TEI, 8);
     intc_enable(J2_IRQ_SCI_TXI);
-    intc_enable(J2_IRQ_SCI_TEI);
-    SCI_REG(SCI_SCSCR) |= SCI_SCR_TIE | SCI_SCR_TEIE;
+    SCI_REG16(SCI_SCSCR) |= SCI_SCR_TIE;
     set_mask(0);
-    if (!wait_entries(2)) {
+    if (!wait_entries(1)) {
         return 16;
     }
 
     set_mask(15);
-    if (order[0] != J2_IRQ_SCI_TEI || order[1] != J2_IRQ_SCI_TXI) {
+    if (order[0] != J2_IRQ_SCI_TXI) {
         return 17;
     }
 
-    if (levels[J2_IRQ_SCI_TEI] != 8 || levels[J2_IRQ_SCI_TXI] != 7 || pending()) {
+    if (levels[J2_IRQ_SCI_TXI] != 7 || pending()) {
         return 18;
     }
 

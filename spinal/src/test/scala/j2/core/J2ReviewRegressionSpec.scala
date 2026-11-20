@@ -17,7 +17,7 @@ class J2ReviewRegressionSpec extends munit.FunSuite {
         val instructionPending, dataPending, locked = out Bool ()
         val competitor                              = slave(J2Ahb.manager())
       }
-      val cpu = new J2MicrocodedCore
+      val cpu = new J2Core
       cpu.io.interrupts := 0
       cpu.io.nmi        := True
       val matrix = new Ahb5Interconnect(J2Ahb.config, 3, Seq(SizeMapping(0, 0x1000)))

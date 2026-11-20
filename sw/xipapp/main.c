@@ -7,7 +7,7 @@
 
 #define SDRAM_BASE        0x80000000
 #define SDRAM_EXEC_BASE   0x80700000
-#define XIP_CACHE_CONTROL (*(volatile uint32_t *)0xff004000)
+#define XIP_CACHE_CONTROL (*(volatile uint32_t *)J2_XIP_CACHE_CONTROL_BASE)
 
 extern void sdram_test_function(void);
 extern int  isa_test(void);
@@ -26,7 +26,7 @@ static int cache_test(void) {
              * The invalidate command self-clears; only the busy bit may read as one.
              */
             if (pass & 1) {
-                *(volatile uint8_t *)0xff004003 = 1;
+                *(volatile uint8_t *)(J2_XIP_CACHE_CONTROL_BASE + 3) = 1;
             } else {
                 XIP_CACHE_CONTROL = 1;
             }

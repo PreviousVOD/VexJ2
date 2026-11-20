@@ -6,7 +6,7 @@ import spinal.lib._
 import spinal.lib.misc.plugin.FiberPlugin
 
 // Preserve legacy architectural test drivers while exercising the native AHB CPU through
-// protocol adapters. Production tops instantiate J2MicrocodedCore directly.
+// protocol adapters. Production tops instantiate J2Core directly.
 final class J2WishboneCoreIo(config: J2CoreConfig, exposeInterrupts: Boolean = false)
     extends Bundle {
   val ibus              = master(J2Wishbone())
@@ -37,7 +37,7 @@ final class J2WishboneCoreFixture(
   def this(config: J2CoreConfig) = this(config, J2CorePlugins.apply _, false)
   def this(exposeDebug: Boolean = true) = this(J2CoreConfig(exposeDebug = exposeDebug))
   val io                = new J2WishboneCoreIo(config, exposeInterrupts)
-  val cpu               = new J2MicrocodedCore(config.copy(eventInjection = true), factory)
+  val cpu               = new J2Core(config.copy(eventInjection = true), factory)
   val instruction, data = new J2AhbToWishbone
   J2Ahb.connect(cpu.io.ibus, instruction.io.ahb)
   J2Ahb.connect(cpu.io.dbus, data.io.ahb)

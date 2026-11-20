@@ -218,5 +218,5 @@ using a routing-only matrix, independent memory arbiters and a standalone system
 BIU before the APB bridge. Architectural
 regressions include TAS followed by a conditional branch under competing bus
 traffic and wait states. See [SoC integration](soc.md#bus-matrix) and
-[Tang Primer validation](tang-primer.md#ahb5-migration-validation) for the
+[Tang Primer validation](tang-primer.md#validation) for the
 integration boundary and board results.

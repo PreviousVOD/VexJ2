@@ -6,7 +6,6 @@
 #include "flash.h"
 #include "image.h"
 #include "uart.h"
-#include "uart_irq.h"
 
 #define PAGE_BYTES 256u
 static uint8_t page[PAGE_BYTES];
@@ -19,15 +18,16 @@ static uint8_t header[IMAGE_HEADER_BYTES];
 #endif
 
 /* Convert constant timeouts at compile time. Runtime 64-bit division for every
- * received byte would waste the foreground budget even with an RX queue. */
+ * received byte would waste the FIFO polling budget. */
 #define TIMEOUT_TICKS(us) (((uint64_t)(us) * J2_CLOCK_HZ + 512000000u - 1u) / 512000000u)
 
 static int receive(uint8_t *value, uint32_t remaining) {
     /* Poll often enough to extend the free-running 16-bit PCLK/512 counter. */
     uint16_t previous = CMT_CMCNT(0);
-    while (!uart_rx_ready()) {
-        if (uart_rx_irq_failed()) {
-            return 0;
+    for (;;) {
+        int received = uart_try_rx(value);
+        if (received != 0) {
+            return received > 0;
         }
 
         uint16_t now   = CMT_CMCNT(0);
@@ -39,17 +39,10 @@ static int receive(uint8_t *value, uint32_t remaining) {
 
         remaining -= delta;
     }
-    if (uart_rx_irq_failed()) {
-        return 0;
-    }
-
-    *value = uart_rx();
-
-    return 1;
 }
 
 static void receive_error(void) {
-    uart_puts(uart_rx_irq_failed() ? "Receive error\n" : "Receive timeout\n");
+    uart_puts(uart_rx_failed() ? "Receive error\n" : "Receive timeout\n");
 }
 
 static int receive_word(uint32_t *value) {
@@ -82,7 +75,7 @@ static int boot(void) {
         return 0;
     }
 
-    uart_rx_irq_stop();
+    uart_rx_discard();
     CMT_CMSTR    = 0;
     CMT_CMCSR(0) = 0;
     CMT_CMCNT(0) = 0;
@@ -268,7 +261,7 @@ void application_loader(void) {
     }
 
     for (;;) {
-        uart_rx_irq_discard();
+        uart_rx_discard();
         timeout_start();
         uart_puts("J2 loader\n");
         if (upload()) {

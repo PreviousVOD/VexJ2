@@ -10,6 +10,8 @@ class BoardConfigTests(unittest.TestCase):
         wukong = load("wukong-v1", {})
         self.assertEqual(tang["memoryType"], "sdram")
         self.assertEqual(wukong["memoryType"], "ddr3")
+        for profile in (tang, wukong):
+            self.assertEqual(profile["sciFifoDepth"], "4")
 
     def test_override_isolation_and_bypass(self):
         env = dict(J2_CLOCK_HZ="24000000", J2_USE_PLL="0")
@@ -67,7 +69,10 @@ class BoardConfigTests(unittest.TestCase):
         self.assertEqual(moved["sciBase"], "0xff006000")
         for key, value in (("sciBase", "-4096"), ("sciBase", "0xff006001"),
                            ("cmtBase", "0x100000000"), ("cmtBase", profile["sciBase"]),
-                           ("sciBase", "0xffffe000")):
+                           ("sciBase", "0xffffe000"), ("spiControlBase", "0xff008001"),
+                           ("spiControlBase", profile["sciBase"]),
+                           ("xipCacheControlBase", profile["spiControlBase"]),
+                           ("xipCacheControlBase", "0xffffe000")):
             with self.subTest(key=key, value=value), self.assertRaises(ValueError):
                 validate(dict(profile, **{key: value}))
 
@@ -88,11 +93,20 @@ class BoardConfigTests(unittest.TestCase):
             self.assertIn("#define J2_VECTOR_CMT0 65\n", header)
             self.assertNotIn("J2_IRQ_SCI_ERI", header)
 
+    def test_sci_fifo_depth(self):
+        profile = load("wukong-v1", {})
+        for depth in (0, 1, 3, 4, 16, 255):
+            validate(dict(profile, sciFifoDepth=str(depth)))
+        for depth in (-1, 256, 1 << 32):
+            with self.subTest(depth=depth), self.assertRaises(ValueError):
+                validate(dict(profile, sciFifoDepth=str(depth)))
+
     def test_relocated_header_works_in_c_and_assembly(self):
         import subprocess
         root = Path(__file__).resolve().parents[1]
         profile = validate(dict(load("wukong-v1", {}),
-                                sciBase="0xff006000", cmtBase="0xff007000"))
+                                sciBase="0xff006000", cmtBase="0xff007000",
+                                spiControlBase="0xff008000", xipCacheControlBase="0xff009000"))
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
             generate(profile, out)
@@ -100,11 +114,13 @@ class BoardConfigTests(unittest.TestCase):
             source = '#include "sci.h"\n#include "cmt.h"\n#include "j2_board_irqs.h"\n'
             subprocess.run(['cc', *includes, '-x', 'c', '-c', '-o', str(out / 'c.o'), '-'],
                            input=source + '_Static_assert(SCI_BASE == 0xff006000, "SCI base");\n'
-                           '_Static_assert(CMT_CMCSR_ADDRESS(1) == 0xff007008, "CMT base");\n',
+                           '_Static_assert(CMT_CMCSR_ADDRESS(1) == 0xff007008, "CMT base");\n'
+                           '_Static_assert(J2_SPI_CONTROL_BASE == 0xff008000, "SPI control");\n'
+                           '_Static_assert(J2_XIP_CACHE_CONTROL_BASE == 0xff009000, "cache control");\n',
                            text=True, check=True)
             subprocess.run(['cc', *includes, '-x', 'assembler-with-cpp', '-c',
                             '-o', str(out / 'asm.o'), '-'],
-                           input=source + '.long SCI_BASE + SCI_SCTDR\n.long CMT_CMCSR_ADDRESS(0)\n.long J2_VECTOR_SCI_RXI\n',
+                           input=source + '.long SCI_BASE + SCI_SCFTDR\n.long CMT_CMCSR_ADDRESS(0)\n.long J2_VECTOR_SCI_RXI\n.long J2_SPI_CONTROL_BASE\n.long J2_XIP_CACHE_CONTROL_BASE\n',
                            text=True, check=True)
 
 

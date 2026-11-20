@@ -13,7 +13,7 @@ final class J2Wukong(config: J2SocConfig) extends Component {
     val uart_tx                                         = out Bool ()
     val led_n                                           = out Bits (2 bits)
     val gpio                                            = inout(Analog(Bits(24 bits)))
-    val flash_cs_n, flash_clk, configuration_cs_n       = out Bool ()
+    val flash_cs_n, flash_clk                           = out Bool ()
     val flash_dq                                        = inout(Analog(Bits(4 bits)))
     val ddr3_addr                                       = out Bits (14 bits)
     val ddr3_ba                                         = out Bits (3 bits)
@@ -42,9 +42,8 @@ final class J2Wukong(config: J2SocConfig) extends Component {
   startup.USRDONEO  := True
   startup.USRDONETS := True
   // Configuration flash is never driven by the application SPI controller.
-  startup.USRCCLKTS     := True
-  startup.USRCCLKO      := False
-  io.configuration_cs_n := True
+  startup.USRCCLKTS := True
+  startup.USRCCLKO  := False
 
   val ddrClocks                            = new WukongDdrMmcm
   val ddrFeedback, ddrSystem, ddrReference = new XilinxBufg

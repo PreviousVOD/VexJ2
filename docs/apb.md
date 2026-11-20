@@ -91,8 +91,8 @@ For the 32-bit SH-2 profile:
 
 **APB has no read size or read strobes.** A byte or halfword read fetches the
 complete aligned APB word; the AHB manager selects its lane afterward. Read-pop
-or read-clear side effects therefore apply to that word. Future private INTC/PPB
-registers must account for this when packing adjacent registers.
+or read-clear side effects therefore apply to that word. The private [INTC](ppb-intc.md) has side-effect-free reads and requires
+aligned word accesses.
 
 PPROT[0] receives HPROT[1] (privileged), PPROT[1] receives HNONSEC (or zero when
 AHB security signals are absent), and PPROT[2] receives !HPROT[0] (instruction).
@@ -112,15 +112,11 @@ Callbacks for address-wide commands must explicitly account for payload lanes.
 Custom `readError`/`writeError` report errors with the usual BusSlaveFactory
 semantics; they do not roll back side effects.
 
-`J2SCI` implements native byte registers at even offsets, with each register
-qualified by its own PSTRB bit. Odd bytes are reserved, reads have no side effects,
-and SCSSR flags use ordinary W0C. Unsupported mode bits are fixed; serial framing,
-errors and four interrupt levels follow the asynchronous SCI subset. See [SCI](sci.md).
-SPI maps `SpiXdrMasterCtrl.driveFrom` directly through APB4.
-Its command at offset 0 requires PSTRB[1:0], and large commands at 0x50/0x54
-require all four lanes. Nonempty writes missing required payload lanes report
-PSLVERR and enqueue nothing. Configuration fields support ordinary masked writes;
-there is no read-modify-write emulation of FIFOs.
+`J2SCI` uses the SCIF register map at every FIFO depth, with byte data/baud
+registers and halfword control/status registers on separate APB words. Read
+completion at SCFRDR pops one byte; reads of adjacent status words have no FIFO
+side effects. Writes honor BE32 PSTRB lanes, and flags use ordinary W0C. See
+[SCI/SCIF](sci.md) for supported features and buffering.
 
 `J2CMT` uses a native APB4 register map with two halfword-register channels.
 Its counters use PCLK/8, /32, /128 or /512; CMF is W0C and interrupt levels are
@@ -157,15 +153,4 @@ python3 tools/isa_validation.py sim --output build/apb4-validation --timeout 300
 make wukong-boot-sim
 ```
 
-The initial APB4 migration on 2026-11-19 passed all **94 Scala tests**, all **three Tang boot
-scenarios**, all **four Wukong boot scenarios**, and hardware RTL generation for
-both boards. Scala formatting and the unchanged C formatting configuration also
-pass. FPGA synthesis, timing and hardware execution have not been rerun for APB4.
-Logs are under `build/apb4-validation/`.
-
-Earlier APB3 hardware timing and boot evidence remains in `build/apb-migration/`; it is not
-an APB4 hardware result. INTC and the core-private PPB are subsequent work.
-
-The subsequent CMT/SCI migration passes **102 Scala tests** and uses the new
-register interfaces described above. See [CMT validation notes](cmt.md#validation-notes)
-and [SCI](sci.md) for its separate evidence and compatibility scope.
+See [SCI/SCIF](sci.md) for current board validation and FIFO/error tests.

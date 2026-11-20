@@ -36,47 +36,96 @@ static void wait_bit(uint32_t clocks) {
 }
 
 void uart_init(void) {
-    if (SCI_REG(SCI_SCSCR) & SCI_SCR_TE) {
-        while (!(SCI_REG(SCI_SCSSR) & SCI_SSR_TEND)) {
+    if (SCI_REG16(SCI_SCSCR) & SCI_SCR_TE) {
+        while (!(SCI_REG16(SCI_SCFSR) & SCI_FSR_TEND)) {
         }
-        uint32_t clocks = (32u << (2 * (SCI_REG(SCI_SCSMR) & 3))) * (SCI_REG(SCI_SCBRR) + 1u);
+        uint32_t clocks = (32u << (2 * (SCI_REG16(SCI_SCSMR) & 3))) * (SCI_REG8(SCI_SCBRR) + 1u);
         wait_bit(clocks);
     }
 
-    SCI_REG(SCI_SCSCR)  = 0;
-    SCI_REG(SCI_SCSMR)  = SCI_CKS;
-    SCI_REG(SCI_SCBRR)  = SCI_RATE - 1;
-    SCI_REG(SCI_SCSDCR) = 0xf2;
-    SCI_REG(SCI_SCSPTR) = 1;
-    SCI_REG(SCI_SCSSR)  = (uint8_t)~(SCI_SSR_RDRF | SCI_SSR_ERRORS);
+    SCI_REG16(SCI_SCSCR)  = 0;
+    SCI_REG16(SCI_SCSMR)  = SCI_CKS;
+    SCI_REG8(SCI_SCBRR)   = SCI_RATE - 1;
+    SCI_REG16(SCI_SCEMR)  = 0;
+    SCI_REG16(SCI_SCFCR)  = SCI_FCR_TFRST | SCI_FCR_RFRST;
+    SCI_REG16(SCI_SCFCR)  = SCI_FCR_TX_ZERO;
+    SCI_REG16(SCI_SCSPTR) = 0;
+    SCI_REG16(SCI_SCFSR)  = (uint16_t)~(SCI_FSR_RDF | SCI_FSR_DR | SCI_FSR_ERRORS);
+    SCI_REG16(SCI_SCLSR)  = 0;
     wait_bit(SCI_SCALE * SCI_RATE);
-    SCI_REG(SCI_SCSCR) = SCI_SCR_TE | SCI_SCR_RE;
+    SCI_REG16(SCI_SCSCR) = SCI_SCR_TE | SCI_SCR_RE;
 }
 
 void uart_tx(uint8_t data) {
-    while (!(SCI_REG(SCI_SCSSR) & SCI_SSR_TDRE)) {
+    while (!(SCI_REG16(SCI_SCFSR) & SCI_FSR_TDFE)) {
     }
-    SCI_REG(SCI_SCTDR) = data;
-    SCI_REG(SCI_SCSSR) = (uint8_t)~SCI_SSR_TDRE;
+    SCI_REG8(SCI_SCFTDR) = data;
+    SCI_REG16(SCI_SCFSR) = (uint16_t)~(SCI_FSR_TDFE | SCI_FSR_TEND);
 }
 
 #ifndef J2_UART_RX_IRQ
-int uart_rx_ready(void) {
-    uint8_t status = SCI_REG(SCI_SCSSR);
-    if (status & SCI_SSR_ERRORS) {
-        /* Resume reception after an invalid/lost character. The loader's
-         * checksum and timeout handle the incomplete packet. Preserve RDRF. */
-        SCI_REG(SCI_SCSSR) = (uint8_t)~(status & SCI_SSR_ERRORS);
+int uart_rx_failed(void) {
+    if (SCI_REG16(SCI_SCFSR) & SCI_FSR_ERRORS) {
+        return 1;
     }
 
-    return (status & SCI_SSR_RDRF) != 0;
+    return (SCI_REG16(SCI_SCLSR) & SCI_LSR_ORER) != 0;
+}
+
+int uart_try_rx(uint8_t *data) {
+    if (uart_rx_failed()) {
+        return -1;
+    }
+
+    if (!(SCI_REG16(SCI_SCFDR) & 255u)) {
+        return 0;
+    }
+
+    *data                = SCI_REG8(SCI_SCFRDR);
+    SCI_REG16(SCI_SCFSR) = (uint16_t)~(SCI_FSR_RDF | SCI_FSR_DR);
+    /* ER/BRK/ORER survive the pop, including errors arriving during it. */
+    if (uart_rx_failed()) {
+        return -1;
+    }
+
+    return 1;
+}
+
+void uart_rx_discard(void) {
+    uint16_t control     = SCI_REG16(SCI_SCFCR);
+    SCI_REG16(SCI_SCFCR) = control | SCI_FCR_RFRST;
+    SCI_REG16(SCI_SCFCR) = control & (uint16_t)~SCI_FCR_RFRST;
+    SCI_REG16(SCI_SCFSR) = (uint16_t)~(SCI_FSR_RDF | SCI_FSR_DR | SCI_FSR_ER | SCI_FSR_BRK);
+    SCI_REG16(SCI_SCLSR) = (uint16_t)~SCI_LSR_ORER;
+}
+
+int uart_rx_ready(void) {
+    uint16_t status = SCI_REG16(SCI_SCFSR);
+    if (status & SCI_FSR_ERRORS) {
+        /* Resume reception after an invalid/lost character. The loader's
+         * checksum and timeout handle the incomplete packet. Preserve queued receive data. */
+        SCI_REG16(SCI_SCFSR) = (uint16_t)~(status & SCI_FSR_ERRORS);
+    }
+
+    SCI_REG16(SCI_SCLSR) = 0;
+
+    while (SCI_REG16(SCI_SCFDR) & 255u) {
+        if (!(SCI_REG16(SCI_SCFSR) & (SCI_FSR_FER | SCI_FSR_PER))) {
+            return 1;
+        }
+
+        (void)SCI_REG8(SCI_SCFRDR);
+        SCI_REG16(SCI_SCFSR) = (uint16_t)~(SCI_FSR_RDF | SCI_FSR_DR);
+    }
+
+    return 0;
 }
 
 uint8_t uart_rx(void) {
     while (!uart_rx_ready()) {
     }
-    uint8_t data       = SCI_REG(SCI_SCRDR);
-    SCI_REG(SCI_SCSSR) = (uint8_t)~SCI_SSR_RDRF;
+    uint8_t data         = SCI_REG8(SCI_SCFRDR);
+    SCI_REG16(SCI_SCFSR) = (uint16_t)~(SCI_FSR_RDF | SCI_FSR_DR);
 
     return data;
 }

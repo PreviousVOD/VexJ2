@@ -47,9 +47,9 @@ flowchart LR
   APB --> IO["SCI UART / GPIO / CMT<br/>SPI and cache control"]
 ```
 
-Applications can execute from cached SPI flash or be loaded into external RAM.
+Applications execute from cached SPI flash and can relocate their own code into RAM.
 A resident ROM validates application images and provides a UART loader.
-The shared SoC supports Tang Primer / Anlogic EG4S20 with SiP SDRAM and
+Board-specific SoCs support Tang Primer / Anlogic EG4S20 with SiP SDRAM and
 Wukong v1 / Xilinx XC7A100T with DDR3 and Pmod SF3 application flash.
 
 ## Documentation
@@ -59,13 +59,13 @@ Wukong v1 / Xilinx XC7A100T with DDR3 and Pmod SF3 application flash.
 | CPU ownership, services and timing contracts | [CPU architecture](docs/cpu-architecture.md) |
 | SH-2 stages, instruction issue, MUL/MAC and fetch | [SH-2 pipeline](docs/sh2-pipeline.md) |
 | Bus matrix, memory map, cache, boot images and registers | [SoC reference](docs/soc.md) |
+| Cache geometry, refill and invalidation | [Read cache](docs/cache.md) |
 | Generic AHB5 interfaces, interconnects and arbiters | [AHB5 IP library](docs/ahb5.md) |
 | APB peripherals, bridge and standalone BIU | [APB subsystem](docs/apb.md) |
-| SH7124/SH7125-style serial and timer registers | [SCI](docs/sci.md) · [CMT](docs/cmt.md) |
-| Core-private PPB and NVIC-style INTC | [PPB / INTC plan](docs/ppb-intc-plan.md) |
+| SH7265-style SCIF and SH7124/SH7125-style CMT | [SCI](docs/sci.md) · [CMT](docs/cmt.md) |
+| Core-private PPB and NVIC-style INTC | [PPB / INTC reference](docs/ppb-intc.md) |
 | Toolchain, source layout and verification commands | [Development](docs/development.md) |
 | Tang Primer clocks, pins, build and programming | [Tang Primer](docs/tang-primer.md) |
 | Wukong clocks, SF3, DDR3, build and programming | [Wukong v1](docs/wukong-v1.md) |
 | Benchmark procedure, comparisons and recorded results | [CoreMark](docs/coremark.md) |
-| Bring-up failures and fixes | [Integration notes](docs/microcoded-core-debug.md) |
-| Original migration review | [Historical project review](docs/PROJECT_REVIEW.md) |
+| Bring-up failures and fixes | [Integration notes](docs/integration.md) |

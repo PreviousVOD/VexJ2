@@ -40,7 +40,7 @@ The Wukong flow uses Vivado through `tools/run_vivado.sh`; see its
 - `spinal/src/main/scala/j2/memory/`: generic generation-time memory backends and vendor mapping.
 - `spinal/src/main/scala/j2/bus/`: generic AHB5/APB IP, standalone system BIU, native AHB memory endpoints and cache.
 - `spinal/src/main/scala/j2/periph/`: ROM/SRAM, GPIO and SPI/XIP peripherals.
-- `spinal/src/main/scala/j2/soc/`: board-independent SoC, interconnect and reset control.
+- `spinal/src/main/scala/j2/soc/`: shared SoC configuration and reset utilities.
 - `spinal/src/main/scala/j2/board/tang-primer/`: Tang Primer top, EG4 PLL/pads, SDRAM controller and PHY.
 - `spinal/src/main/scala/j2/board/wukong-v1/`: Wukong top, Xilinx primitives, AHB DDR bridge, MIG backend and integration.
 - `sw/bootrom/`: common boot ROM, profile-selected flash setup and UART loader for both boards.
@@ -107,7 +107,7 @@ Sizes must be powers of two, at least 4 KiB, and must not overlap other windows.
 FPGA BRAM capacity still limits what can be implemented. The supplied ISA app
 uses fixed scratch addresses through `0x0000b000`, so it needs at least 16 KiB;
 the legacy ROM regressions retain their original 32 KiB SRAM assumption.
-The board wrappers own SDRAM/DDR controllers; the common SoC routes a generic AHB
+The board wrappers own SDRAM/DDR controllers; each board SoC routes a generic AHB
 memory window and the core has no knowledge of physical memory technology.
 Run `python3 tools/board_config.py tang-primer` or `... wukong-v1` to generate
 `build/<board>/rom/board.h` and `build/<board>/board.tcl`.
@@ -144,7 +144,7 @@ programs volatile FPGA configuration SRAM and replaces the dedicated application
 flash image. Set `TD_HOME` or `TD_BIN` as for the existing FPGA targets.
 Logs and image/source hashes are recorded under `build/isa-validation/`.
 A timeout without expected UART output fails. Integration pitfalls and their
-fixes are recorded in [the integration notes](microcoded-core-debug.md).
+fixes are recorded in [the integration notes](integration.md).
 
 For benchmark builds, duration requirements and result comparisons, see
 [CoreMark](coremark.md). Recorded test counts and timing figures in the

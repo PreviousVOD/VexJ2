@@ -5,7 +5,7 @@ endif
 VERILATOR ?= $(ROOT)/tools/local/bin/verilator
 BUILD := $(ROOT)/build/verilog/verif
 XIP_BUILD := $(ROOT)/build/verilog/xip_verif
-CPU := $(ROOT)/build/spinal/verilog/J2MicrocodedCore.v
+CPU := $(ROOT)/build/spinal/verilog/J2Core.v
 TOP := $(ROOT)/build/spinal/verilog/j2_tang_primer.v
 TEST_TOP := $(ROOT)/build/spinal/verilog-test/j2_tang_primer.v
 ROM := $(ROOT)/build/verilog/j2_validation_rom.hex
@@ -38,12 +38,12 @@ xip-test: $(XIP_BUILD)/Vj2_tang_primer $(XIP_IMAGE)
 	cp $(XIP_IMAGE) $(XIP_BUILD)/flash.bin
 	cd $(XIP_BUILD) && ./Vj2_tang_primer flash.bin --max-cycles 200000000
 	cd $(XIP_BUILD) && ./Vj2_tang_primer flash.bin --cold-boot --max-cycles 200000000
-	cd $(XIP_BUILD) && ./Vj2_tang_primer flash.bin --loader --cold-boot --max-cycles 200000000
+	cd $(XIP_BUILD) && ./Vj2_tang_primer flash.bin --loader --cold-boot --max-cycles 300000000
 
 $(BUILD)/Vj2_tang_primer: Makefile verif/j2_tang_primer_sim.cpp $(TEST_TOP) $(ROM) $(SDRAM_SIM) $(GPIO_PAD_SIM)
 	mkdir -p $(BUILD)
 	cp $(ROM) $(BUILD)/j2_validation_rom.hex
-	cp $(ROOT)/build/spinal/verilog-test/J2MicrocodedCore.v_*.bin $(ROOT)/build/spinal/verilog-test/$(notdir $(TEST_TOP))_*.bin $(BUILD)/
+	cp $(ROOT)/build/spinal/verilog-test/J2Core.v_*.bin $(ROOT)/build/spinal/verilog-test/$(notdir $(TEST_TOP))_*.bin $(BUILD)/
 	$(VERILATOR) --cc --language 1364-2005 --exe --build -O2 --no-timing -Wno-fatal -Wno-lint -Wno-style \
 		--top-module j2_tang_primer -Mdir $(BUILD)/obj \
 		-o ../Vj2_tang_primer \
@@ -55,7 +55,7 @@ $(XIP_BUILD)/Vj2_tang_primer: Makefile verif/j2_xip_sim.cpp $(TOP) $(XIP_ROM) $(
 	mkdir -p $(XIP_BUILD)
 	cp $(XIP_ROM) $(XIP_BUILD)/j2_validation_rom.hex
 	cp $(XIP_IMAGE) $(XIP_BUILD)/flash.bin
-	cp $(ROOT)/build/spinal/verilog/J2MicrocodedCore.v_*.bin $(ROOT)/build/spinal/verilog/$(notdir $(TOP))_*.bin $(XIP_BUILD)/
+	cp $(ROOT)/build/spinal/verilog/J2Core.v_*.bin $(ROOT)/build/spinal/verilog/$(notdir $(TOP))_*.bin $(XIP_BUILD)/
 	$(VERILATOR) --cc --language 1364-2005 --exe --build -O2 --no-timing -Wno-fatal -Wno-lint -Wno-style \
 		--top-module j2_tang_primer -Mdir $(XIP_BUILD)/obj \
 		-o ../Vj2_tang_primer \

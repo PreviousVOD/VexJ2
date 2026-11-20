@@ -3,7 +3,7 @@
 /* App */
 #include "board.h"
 
-#define SPI_REG(index) (*(volatile uint32_t *)(0xff002000u + (index) * 4u))
+#define SPI_REG(index) (*(volatile uint32_t *)(J2_SPI_CONTROL_BASE + (index) * 4u))
 #define SF3_ID         0x20ba19u
 
 static int array_ready(void);
@@ -279,7 +279,7 @@ int flash_init_and_test(void) {
 /* ROM runs outside XIP throughout updates. Offsets are relative to the
  * application partition; neither bulk erase nor config-flash access exists. */
 void flash_refresh_cache(void) {
-    volatile uint32_t *cache = (volatile uint32_t *)0xff004000u;
+    volatile uint32_t *cache = (volatile uint32_t *)J2_XIP_CACHE_CONTROL_BASE;
     *cache                   = 1;
     while (*cache & 2) {
     }

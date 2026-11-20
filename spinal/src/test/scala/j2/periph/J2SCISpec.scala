@@ -34,23 +34,19 @@ class J2SCISpec extends munit.FunSuite {
       result
     }
     def write(offset: Int, value: Int): Unit = {
-      val shift = if ((offset & 2) == 0) 24 else 8
-      access(offset & ~3, value.toLong << shift, 1 << (shift / 8))
+      val byte = offset == 4 || offset == 12 || offset == 20
+      access(offset, value.toLong << (if (byte) 24 else 16), if (byte) 8 else 12)
     }
     def read(offset: Int): Int = {
-      val shift = if ((offset & 2) == 0) 24 else 8
-      ((access(offset & ~3, write = false) >> shift) & 255).toInt
+      val byte = offset == 4 || offset == 12 || offset == 20
+      ((access(offset, write = false) >> (if (byte) 24 else 16)) & (if (byte) 255 else 65535)).toInt
     }
-    def configure(
-        mode: Int = 0,
-        rate: Int = 0,
-        control: Int = 0x30,
-        reverse: Boolean = false
-    ): Unit = {
-      write(4, 0); write(0, mode); write(2, rate); write(12, if (reverse) 0xfa else 0xf2)
-      write(8, 0xff); write(4, control); tick()
+    def configure(mode: Int = 0, rate: Int = 0, control: Int = 0x30, triggers: Int = 0): Unit = {
+      write(8, 0); write(0, mode); write(4, rate)
+      write(24, triggers | 6); write(24, triggers)
+      write(16, 0); write(36, 0); write(8, control); tick()
     }
-    def queue(value: Int): Unit = { assert((read(8) & 128) != 0); write(6, value); write(8, 0x7f) }
+    def queue(value: Int): Unit = { write(12, value); write(16, 0xff9f) }
     def receive(
         value: Int,
         period: Int = 32,
@@ -88,89 +84,186 @@ class J2SCISpec extends munit.FunSuite {
         assertEquals(tx(start + i * period + period / 2), bit, s"wire bit $i")
     }
   }
-  private def run(body: Rig => Unit): Unit =
-    SimConfig.withVerilator.compile(new J2SCI).doSim(d => body(new Rig(d)))
-  test("SCI reset, packed byte registers, hard-wired modes, no-op strobes and errors") {
-    run { r =>
-      assertEquals(r.read(0), 0); assertEquals(r.read(2), 255); assertEquals(r.read(4), 0)
-      assertEquals(r.read(8), 0x84); assertEquals(r.read(12), 0xf2)
-      r.write(0, 255); assertEquals(r.read(0), 0x7b)
-      r.write(4, 0xff); assertEquals(r.read(4), 0xf4)
-      r.write(4, 0x0b); assertEquals(r.read(4), 0)
-      r.write(12, 255); assertEquals(r.read(12), 0xfa)
-      r.write(12, 0); assertEquals(r.read(12), 0xf2)
-      r.write(10, 255); assertEquals(r.read(10), 0)
-      r.write(14, 255); assertEquals(r.read(14), 0x80)
+  private def run(depth: Int = 0)(body: Rig => Unit): Unit =
+    SimConfig.withVerilator.compile(new J2SCI(depth)).doSim(d => body(new Rig(d)))
+
+  test("SCIF register layout at depth zero, strobes and hard-wired modes") {
+    run() { r =>
+      assertEquals(r.read(0), 0); assertEquals(r.read(4), 255); assertEquals(r.read(8), 0)
+      assertEquals(r.read(16), 0x60); assertEquals(r.read(24), 0); assertEquals(r.read(28), 0)
+      assertEquals(r.read(32), 0x51); assertEquals(r.read(36), 0); assertEquals(r.read(40), 0)
+      r.write(0, 65535); assertEquals(r.read(0), 0x7b)
+      r.write(8, 65535); assertEquals(r.read(8), 0xf8)
+      r.write(8, 0)
+      r.write(24, 65535); assertEquals(r.read(24), 0xf6)
+      r.write(40, 65535); assertEquals(r.read(40), 0)
+      r.write(16, 65535); assertEquals(r.read(16), 0x60)
+      r.access(0, 0, 3); assertEquals(r.read(0), 0x7b)
+      r.access(0, 0, 8); assertEquals(r.read(0), 0x7b)
       r.access(0, 0, 0); assertEquals(r.read(0), 0x7b)
-      r.access(0, 0, 5); assertEquals(r.read(0), 0x7b); assertEquals(r.read(2), 255)
-      r.write(8, 0xff); assertEquals(r.read(8), 0x84)
-      r.access(16, error = true); r.access(1, write = false, error = true)
-      r.write(14, 0); assert(!r.dut.io.uart.txd.toBoolean)
-      r.write(14, 1); assert(r.dut.io.uart.txd.toBoolean)
+      r.access(4, 0, 4); assertEquals(r.read(4), 255)
+      r.access(44, error = true); r.access(1, write = false, error = true)
+      r.write(32, 2); assert(!r.dut.io.uart.txd.toBoolean)
+      r.write(32, 3); assert(r.dut.io.uart.txd.toBoolean)
     }
   }
-  test("SCI TDR requires TDRE clear, double buffering, TEND and TX interrupt sources") {
-    run { r =>
-      r.configure(control = 0xa4)
-      assertEquals(r.dut.io.interrupt.toInt, 12)
-      r.write(6, 0x41); r.tick(40); assert(r.dut.io.uart.txd.toBoolean)
-      val first = r.tx.size
-      r.write(8, 0x7f); r.tick(8)
-      val start = r.tx.indexWhere(v => !v, first)
-      assert(start >= 0); assertEquals(r.read(8) & 0x84, 128)
-      r.queue(0x96); assertEquals(r.read(8) & 0x84, 0)
-      r.tick(700)
-      r.checkFrame(start, 0x41, 32)
-      r.checkFrame(start + 320, 0x96, 32)
-      assertEquals(r.read(8) & 0x84, 0x84)
-      r.tick(); assertEquals(r.dut.io.interrupt.toInt, 12)
-      r.write(4, 0); r.tick(); assertEquals(r.dut.io.interrupt.toInt, 0)
+
+  for (depth <- Seq(0, 1, 3, 4, 16, 255))
+    test(s"SCIF depth $depth: capacity, full writes, automatic TX, flush and wrap") {
+      run(depth) { r =>
+        val capacity = depth.max(1)
+        r.configure(control = 0, triggers = 0x30)
+        val values   = (0 until capacity).map(i => (i * 37 + 0x41) & 255)
+        for (value <- values) r.write(12, value)
+        assertEquals(r.read(28), capacity << 8)
+        r.write(12, 0xee); assertEquals(r.read(28), capacity << 8)
+        r.write(16, 0xff9f); assertEquals(r.read(16) & 0x60, 0x40)
+        val before = r.tx.size
+        r.write(8, 0xa0); r.write(16, 0xff9f)
+        r.tick(320 * capacity + 40)
+        val first = r.tx.indexWhere(v => !v, before)
+        assert(first >= 0)
+        for ((value, index) <- values.zipWithIndex) r.checkFrame(first + index * 320, value, 32)
+        assertEquals(r.read(28), 0); assertEquals(r.read(16) & 0x60, 0x60)
+        assertEquals(r.dut.io.interrupt.toInt, 4)
+        r.write(8, 0); r.write(12, 0x55); r.write(24, 4)
+        assertEquals(r.read(28), 0)
+        r.write(12, 0xaa); assertEquals(r.read(28), 0)
+        r.write(24, 0); r.write(8, 0x30)
+        for (i <- 0 until capacity + 3) {
+          r.receive(i & 255); assertEquals(r.read(28) & 255, 1)
+          assertEquals(r.read(20), i & 255)
+          assertEquals(r.read(28) & 255, 0)
+        }
+      }
     }
-  }
-  test("SCI asynchronous formats, MSB direction and PCLK baud divisors") {
-    run { r =>
+
+  test("SCIF asynchronous formats and PCLK baud divisors") {
+    run(16) { r =>
       for (
-        (mode, rate, value, bits, parity, stops, reverse) <- Seq(
-          (0x68, 0, 0x55, 7, 0, 2, false),
-          (0x30, 1, 0xa6, 8, 1, 1, false),
-          (0x00, 0, 0x96, 8, -1, 1, true),
-          (0x01, 0, 0xa5, 8, -1, 1, false),
-          (0x02, 0, 0x35, 8, -1, 1, false),
-          (0x03, 0, 0x63, 8, -1, 1, false)
+        (mode, rate, value, bits, parity, stops) <- Seq(
+          (0x68, 0, 0x55, 7, 0, 2),
+          (0x30, 1, 0xa6, 8, 1, 1),
+          (0x00, 0, 0x96, 8, -1, 1),
+          (0x01, 0, 0xa5, 8, -1, 1),
+          (0x02, 0, 0x35, 8, -1, 1),
+          (0x03, 0, 0x63, 8, -1, 1)
         )
       ) {
-        r.configure(mode, rate, reverse = reverse)
+        r.configure(mode, rate)
         val period = 32 * (rate + 1) * (1 << (2 * (mode & 3)))
         val before = r.tx.size
         r.queue(value); r.tick(period * (bits + stops + 3))
-        val start = r.tx.indexWhere(v => !v, before)
-        assert(start >= 0); r.checkFrame(start, value, period, bits, parity, stops, reverse)
-        r.receive(value, period, bits == 7, parity, reverse)
-        assertEquals(r.read(8) & 0x78, 0x40); assertEquals(r.read(10), value)
-        assertEquals(r.read(8) & 0x40, 0x40) // RDR reads do not pop data.
-        r.write(8, 0xbf)
+        val first = r.tx.indexWhere(v => !v, before)
+        r.checkFrame(first, value, period, bits, parity, stops)
+        r.receive(value, period, bits == 7, parity)
+        assertEquals(r.read(16) & 0x8f, 2)
+        assertEquals(r.read(20), value); assertEquals(r.read(20), 0)
+        r.write(16, 0xfffc); assertEquals(r.read(16) & 3, 0)
       }
     }
   }
-  test("SCI receive overrun, parity/framing errors, W0C, EIO and receive disable") {
-    run { r =>
-      r.configure(control = 0x50)
-      r.receive(0xa5)
-      assertEquals(r.read(10), 0xa5); assertEquals(r.dut.io.interrupt.toInt, 2)
-      r.write(14, 0x81); r.tick(); assertEquals(r.dut.io.interrupt.toInt, 0)
-      r.receive(0x5a); assertEquals(r.read(10), 0xa5)
-      assertEquals(r.read(8) & 0x60, 0x60); assertEquals(r.dut.io.interrupt.toInt, 1)
-      r.write(4, 0); assertEquals(r.read(8) & 0x60, 0x60)
-      r.write(8, 0x9f); assertEquals(r.read(8) & 0x78, 0)
-      r.configure(mode       = 0x20, control = 0x50)
+
+  test("SCIF RX threshold, short-packet timeout, sticky W0C and error-only IRQ enable") {
+    run(16) { r =>
+      r.configure(control = 0x50, triggers = 0x40)
+      r.receive(0x11); r.tick(200)
+      assertEquals(r.read(16) & 3, 0); assertEquals(r.dut.io.interrupt.toInt, 0)
+      r.tick(400); assertEquals(r.read(16) & 3, 1); assertEquals(r.dut.io.interrupt.toInt, 2)
+      assertEquals(r.read(20), 0x11)
+      r.write(16, 0xffff); assertEquals(r.read(16) & 1, 1)
+      r.write(16, 0xfffe); assertEquals(r.read(16) & 1, 0)
+      for (i <- 0 until 4) r.receive(0x20 + i)
+      assertEquals(r.read(16) & 2, 2)
+      r.write(16, 0xfffd); assertEquals(r.read(16) & 2, 2)
+      assertEquals(r.read(20), 0x20); r.write(16, 0xfffd)
+      assertEquals(r.read(16) & 2, 0)
+      r.configure(mode       = 0x20, control = 0x18)
       r.receive(0x35, parity = 0, badParity  = true)
-      assertEquals(r.read(8) & 0x78, 8); assertEquals(r.read(10), 0x35)
-      r.receive(0x42, parity = 0); assertEquals(r.read(10), 0x35) // Error blocks RX.
-      r.write(8, 0xf7); assertEquals(r.read(8) & 8, 0)
-      r.receive(0x69, parity = 0, badStop = true)
-      assertEquals(r.read(8) & 0x78, 16); assertEquals(r.read(10), 0x69)
-      r.write(8, 0xef); r.receive(0x42, parity = 0)
-      assertEquals(r.read(8) & 0x78, 0x40); assertEquals(r.read(10), 0x42)
+      assertEquals(r.dut.io.interrupt.toInt, 1)
+      r.receive(0x42, parity = 0)
+      assertEquals(r.read(28) & 255, 2); assertEquals(r.read(16) & 0xf00c, 0x1004)
+      assertEquals(r.read(20), 0x35); assertEquals(r.read(16) & 0xf00c, 0)
+      assertEquals(r.read(20), 0x42)
+      r.write(16, 0xff7c); r.tick(); assertEquals(r.dut.io.interrupt.toInt, 0)
     }
   }
+
+  test("SCIF overrun preserves FIFO, BRI, framing metadata, break suppression and recovery") {
+    run(3) { r =>
+      r.configure(control = 0x50)
+      for (value <- Seq(1, 2, 3, 4)) r.receive(value)
+      assertEquals(r.read(36), 1); assertEquals(r.dut.io.interrupt.toInt & 8, 8)
+      for (value <- Seq(1, 2, 3)) assertEquals(r.read(20), value)
+      r.receive(5); assertEquals(r.read(28) & 255, 0)
+      r.write(36, 0xffff); assertEquals(r.read(36), 1)
+      r.write(36, 0); r.receive(6); assertEquals(r.read(20), 6)
+      r.write(16, 0)
+      r.receive(0x45, badStop = true)
+      assertEquals(r.read(16) & 0x0f8c, 0x0188)
+      assertEquals(r.read(20), 0x45); assertEquals(r.read(16) & 0x0f0c, 0)
+      r.write(16, 0)
+      r.dut.io.uart.rxd #= false; r.tick(1000)
+      assertEquals(r.read(16) & 0x10, 0x10)
+      val count = r.read(28) & 255
+      r.tick(640); assertEquals(r.read(28) & 255, count)
+      r.dut.io.uart.rxd #= true; r.tick(64)
+      r.write(24, 2); r.write(24, 0); r.write(16, 0); r.write(36, 0)
+      r.receive(0x77); assertEquals(r.read(20), 0x77)
+    }
+  }
+  test("SCIF threshold choices and per-entry error counters survive FIFO reset") {
+    run(16) { r =>
+      for ((trigger, code) <- Seq(8, 4, 2, 0).zipWithIndex) {
+        r.configure(control = 0, triggers = code << 4)
+        for (count <- 1 to 16) {
+          r.write(12, count); r.write(16, 0xffdf)
+          assertEquals((r.read(16) & 0x20) != 0, count <= trigger)
+        }
+      }
+      for ((trigger, code) <- Seq(1, 4, 8, 14).zipWithIndex) {
+        r.configure(control = 0x10, triggers = code << 6)
+        for (count <- 1 to trigger) {
+          r.receive(count)
+          assertEquals((r.read(16) & 2) != 0, count >= trigger)
+        }
+      }
+      r.configure(mode = 0x20, control = 0x10)
+      for (i <- 0 until 16) r.receive(i, parity = 0, badParity = true)
+      assertEquals(r.read(28) & 255, 16)
+      assertEquals(r.read(16) & 0xf084, 0x84) // modulo-16 count, head still invalid
+      assertEquals(r.read(20), 0)
+      assertEquals(r.read(16) & 0xf004, 0xf004)
+      r.write(24, 2)
+      assertEquals(r.read(28), 0); assertEquals(r.read(16) & 0xff0c, 0)
+      assertEquals(r.read(16) & 0x80, 0x80) // buffer reset does not acknowledge ER
+    }
+  }
+
+  for (depth <- Seq(0, 3))
+    test(s"SCIF depth $depth full receive/pop collision and APB setup isolation") {
+      run(depth) { r =>
+        var accepted = 0
+        var overrun  = 0
+        for (phase <- 0 until 32) {
+          r.configure(control = 0x10)
+          for (i <- 0 until depth.max(1)) r.receive(0x40 + i)
+          r.b.PSEL            #= 1; r.b.PENABLE #= false; r.b.PWRITE #= false; r.b.PADDR #= 20
+          r.tick(3); r.b.PSEL #= 0
+          assertEquals(r.read(28) & 255, depth.max(1))
+          r.dut.io.uart.rxd #= false; r.tick(32)
+          for (bit <- 0 until 8) { r.dut.io.uart.rxd #= ((0xa5 >> bit) & 1) != 0; r.tick(32) }
+          r.dut.io.uart.rxd #= true; r.tick(phase)
+          assertEquals(r.read(20), 0x40)
+          r.tick(64)
+          val lost = r.read(36) != 0
+          if (lost) overrun += 1 else accepted += 1
+          for (i <- 1 until depth.max(1)) assertEquals(r.read(20), 0x40 + i)
+          assertEquals(r.read(28) & 255, if (lost) 0 else 1)
+          if (!lost) assertEquals(r.read(20), 0xa5)
+        }
+        assert(accepted > 0 && overrun > 0)
+      }
+    }
+
 }

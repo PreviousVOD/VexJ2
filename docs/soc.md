@@ -45,14 +45,17 @@ BIU domains, peripheral instances and interrupt wiring. Changes to one board's
 memory or peripheral architecture do not require changing another board's SoC.
 `J2SocConfig` is configuration data, not a hardware composition.
 
-The `sciBase` and `cmtBase` entries in each `board.properties` select the boot
-peripheral addresses. Both current profiles retain `0xff001000` and `0xff003000`.
+The `sciBase`, `cmtBase`, `spiControlBase` and `xipCacheControlBase` entries in
+each `board.properties` select the boot peripheral addresses. Both current
+profiles retain `0xff001000`, `0xff003000`, `0xff002000` and `0xff004000`,
+respectively.
 The current peripheral IP uses aligned 4 KiB windows. Overlapping board APB
-mappings are rejected, and SCI/CMT cannot overlap private PPB. Each board's
+mappings are rejected, and these control windows cannot overlap private PPB. Each board's
 BIU window encloses its APB targets; unmapped addresses return bus errors.
 
 `BoardProfile` passes the addresses to RTL. The firmware property loader emits
-assembly-safe `J2_SCI_BASE` and `J2_CMT_BASE` definitions for BootROM; application
+assembly-safe `J2_SCI_BASE`, `J2_CMT_BASE`, `J2_SPI_CONTROL_BASE` and
+`J2_XIP_CACHE_CONTROL_BASE` definitions for BootROM; application
 and CoreMark builds read the same properties. C and assembly drivers use these
 macros. Standalone architectural fixtures retain legacy default addresses when
 no board settings are supplied. Rebuild both RTL and firmware after changing
@@ -63,7 +66,7 @@ order. Its SoC connects these names to its own peripheral request signals and
 sizes the CPU's private INTC accordingly. Elaboration rejects missing, duplicate
 or unknown connections. There is no shared SoC interrupt list.
 
-Both profiles currently use `CMT0,CMT1,SCI_ERI,SCI_RXI,SCI_TXI,SCI_TEI` (sources
+Both profiles currently use `CMT0,CMT1,SCI_ERI,SCI_RXI,SCI_TXI,SCI_BRI` (sources
 0–5, vectors 64–69), preserving their existing numbering. The firmware build
 generates `j2_board_irqs.h` from the selected profile for both C and assembly.
 BootROM, application and CoreMark vector tables use those definitions, while
@@ -115,8 +118,8 @@ Peripheral registers support naturally aligned byte, halfword and word AHB
 accesses. The bridge aligns the APB address and generates `PSTRB` for writes;
 the CPU selects read lanes from the returned word. The SoC uses word-invariant
 big-endian lanes: within a 32-bit register, its low byte is at base + 3 and low
-halfword at base + 2. CMT packs 16-bit registers and SCI packs 8-bit registers at
-their documented offsets. Both have side-effect-free reads. SPI command writes
+halfword at base + 2. CMT packs 16-bit registers. SCIF byte and halfword
+registers occupy separate APB words; reading SCFRDR pops one received byte. SPI command writes
 require their complete payload lanes; see the [APB4 contract](apb.md).
 
 The peripheral base addresses and flash image format are unchanged, but the
@@ -138,9 +141,9 @@ The two external-memory entries below are alternatives selected by the board.
 | Wukong DDR3, 256 MiB | `0x80000000`–`0x8fffffff` |
 | GPIO | `0xff000000` |
 | Boot SCI | `sciBase` (currently `0xff001000`) |
-| SPI flash control | `0xff002000` |
+| SPI flash control | `spiControlBase` (currently `0xff002000`) |
 | CMT | `cmtBase` (currently `0xff003000`) |
-| XIP cache control | `0xff004000` |
+| XIP cache control | `xipCacheControlBase` (currently `0xff004000`) |
 
 ROM and SRAM describe native Spinal `Mem` with synchronous one-cycle reads.
 Board generation selects [memory backends](memory-inference.md) independently
@@ -167,9 +170,9 @@ board uses its profile's XIP base/range for both the AHB mapping and cache confi
 complete line in one quad-SPI transaction; hits serve both instruction and data
 reads from synchronous RAM. Reset and accepted
 flash-control writes invalidate all lines. Control accesses wait for an active
-refill and CS release. Writing `1` to `0xff004000` explicitly invalidates both
+refill and CS release. Writing `1` to `xipCacheControlBase` explicitly invalidates both
 ways; reads return busy in bit 1 and zero in other bits. See the
-[cache architecture and validation](cpu-architecture.md#two-way-xip-read-cache-2026-11-17).
+[cache architecture and validation](cache.md).
 
 ## Application image and boot modes
 
@@ -194,7 +197,7 @@ Both boards use the same ROM and UART protocol. Uploads use a 256-byte buffer
 in internal SRAM: validate the header, erase affected sectors, program and
 verify payload chunks, check the checksum, and commit the header last. The
 `Received <offset>` response acknowledges each programmed chunk. See the
-[loader guide](wukong-v1.md#sf3-application-loading-and-boot).
+[loader guide](wukong-v1.md#application-upload).
 
 ROM and application startup copy `.data` from their image to internal SRAM and
 clear `.bss` before entering C. CoreMark already follows this convention.
@@ -248,39 +251,22 @@ bits; both reset disabled. The validation application and CoreMark use priority
 
 ## Serial interface
 
-`J2SCI` at the board's `sciBase` (currently `0xff001000`) follows the SH7124/SH7125 SCI byte-register layout.
+`J2SCI` at the board's `sciBase` (currently `0xff001000`) always uses the SH7265 SCIF register layout.
+`sciFifoDepth` selects per-direction buffering: zero keeps one holding register;
+positive values specify 1–255 FIFO entries. Both board defaults are four.
 It supports asynchronous 7/8-bit UART framing, parity, stop bits, errors and four
 registered interrupt sources. Unsupported mode bits are hard-wired. The shared
-application driver polls TDRE/RDRF; BootROM receives through an ERI/RXI ISR
-and a 512-byte SRAM queue. ERI/RXI/TXI/TEI connect through the board interrupt map, currently sources
+application driver polls TDFE and the receive count; BootROM polls the hardware
+RX FIFO with errors latched until retry, without an RX ISR or software ring. ERI/RXI/TXI/BRI connect through the board interrupt map, currently sources
 2–5 (vectors 66–69), independently enabled and prioritized. See the
 [SCI register and timing reference](sci.md).
 
+## Board integration validation
 
-## Direct SoC validation (2026-11-20)
-
-The direct implementations pass 128 Scala tests and 38 host-tool tests.
-`BoardSocSpec` runs both actual SoCs with their default properties and with SCI
-at `0xff006000`, CMT at `0xff007000`, and SRAM enlarged to 64 KiB. Across three
-reset seeds per configuration, firmware using the production ROM startup and
-UART driver transmits the expected character and services CMT0 through the
-private INTC. The test requires no external memory. Host checks also compile
-generated address definitions in both C and assembly.
-
-Both FPGA RTL generators, both BootROM builds, both CoreMark seed builds for
-each board, and application/probe builds succeed. Tang reset, cold boot and
-full UART-upload simulations pass all application checks. Wukong cold boot
-also passes the complete cache, DDR, CMT, INTC and ISA application.
-
-Evidence: `build/direct-soc-{full-tests,host-tests,relocation-seeds,generate,tang-sim,wukong-boot}.log`.
-Post-route timing and hardware downloads have not been rerun for this change.
-
-The subsequent board interrupt-map change passes 132 Scala tests and 39 host
-checks (`build/board-irqs-{full-tests,all-host}.log`). Each real board SoC runs
-three reset seeds with both its default map and a reordered map
-(`SCI_TEI,SCI_RXI,CMT1,SCI_TXI,CMT0,SCI_ERI`). Firmware exercises the production
-BootROM RX ISR, CMT0, and the application's six-source INTC test, including
-priority/tie arbitration, software pending, CMT1 and SCI TXI/TEI. Reordered
-configurations also relocate SCI/CMT and use 64 KiB SRAM. BootROM, XIP application
-and CoreMark build for both boards. These checks do not include a new hardware
-download or post-route timing run.
+`BoardSocSpec` runs both actual SoCs with default profiles and configurations
+that relocate SCI/CMT/SPI/cache control, enlarge SRAM and reorder interrupt
+sources. Firmware exercises UART reception, CMT0 and INTC priority/pending
+behavior over multiple reset seeds. BootROM polling and optional ISR receive
+paths also have dedicated simulations. The board boot tests run the shared
+XIP application, including external-memory, ISA and peripheral checks.
+See [SCI/SCIF](sci.md) for current boot/upload and physical-board evidence.

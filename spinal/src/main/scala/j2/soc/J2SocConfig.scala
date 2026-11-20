@@ -13,23 +13,28 @@ final case class J2SocConfig(
     sramBytes: Int = 32768,
     sciBase: BigInt = 0xff001000L,
     cmtBase: BigInt = 0xff003000L,
-    interruptSources: Seq[String] = Seq.empty
+    interruptSources: Seq[String] = Seq.empty,
+    sciFifoDepth: Int = 0,
+    spiControlBase: BigInt = 0xff002000L,
+    xipCacheControlBase: BigInt = 0xff004000L
 ) {
   require(interruptSources.size <= 192, "SH-2 INTC supports at most 192 sources")
   require(interruptSources.distinct.size == interruptSources.size, "duplicate interrupt source")
   require(interruptSources.forall(_.matches("[A-Z][A-Z0-9_]*")), "invalid interrupt source name")
+  require(sciFifoDepth >= 0 && sciFifoDepth <= 255, "SCI FIFO depth must be 0–255")
   require(clockHz > 0)
-  for (base <- Seq(sciBase, cmtBase)) {
+  private val controlBases = Seq(sciBase, cmtBase, spiControlBase, xipCacheControlBase)
+  for (base <- controlBases) {
     require(
       base >= 0 && base % 4096 == 0 && base + 4096 <= (BigInt(1) << 32),
-      "SCI/CMT windows must be 4 KiB aligned in the 32-bit address space"
+      "Peripheral control windows must be 4 KiB aligned in the 32-bit address space"
     )
     require(
       base + 4096 <= 0xffffe000L || base >= 0xfffff000L,
-      "SCI/CMT must not overlap private PPB"
+      "Peripheral controls must not overlap private PPB"
     )
   }
-  require(sciBase != cmtBase, "SCI and CMT windows overlap")
+  require(controlBases.distinct.size == controlBases.size, "peripheral control windows overlap")
   require(
     sramBytes >= 4096 && (sramBytes & (sramBytes - 1)) == 0,
     "SRAM size must be a power of two, at least 4 KiB"

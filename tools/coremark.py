@@ -115,7 +115,7 @@ def program_loader(device, log_path, timeout):
         termios.tcsetattr(fd, termios.TCSANOW, attrs)
         termios.tcflush(fd, termios.TCIFLUSH)
         with log_path.with_suffix(".program.log").open("w") as log:
-            proc = subprocess.Popen([str(ROOT / "tools/program_tang_primer_verilog_td.sh")],
+            proc = subprocess.Popen(["python3", str(ROOT / "tools/fpga.py"), "--board", "tang-primer", "program"],
                                     cwd=ROOT, stdout=log, stderr=subprocess.STDOUT)
             try:
                 deadline = time.monotonic() + timeout

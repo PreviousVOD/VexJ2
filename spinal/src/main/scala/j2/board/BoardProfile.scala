@@ -27,23 +27,27 @@ final case class BoardProfile(values: Map[String, String]) {
   require(number("xipBase") >= 0 && number("xipBase") + number("xipBytes") <= (BigInt(1) << 32))
   require(number("memoryBase") % 16 == 0)
   def socConfig(romHex: String): J2SocConfig = J2SocConfig(
-    clockHz     = clockHz,
-    romHex      = romHex,
-    xipBase     = number("xipBase"),
-    xipBytes    = number("xipBytes"),
-    flashOffset = number("flashOffset"),
-    flashBytes  = number("flashBytes"),
-    memoryBase  = number("memoryBase"),
-    memoryBytes = number("memoryBytes"),
-    uartBaud    = number("uartBaud").toInt,
-    sramBytes   = number("sramBytes").toInt,
-    sciBase     = number("sciBase"),
-    cmtBase     = number("cmtBase"),
+    clockHz             = clockHz,
+    romHex              = romHex,
+    xipBase             = number("xipBase"),
+    xipBytes            = number("xipBytes"),
+    flashOffset         = number("flashOffset"),
+    flashBytes          = number("flashBytes"),
+    memoryBase          = number("memoryBase"),
+    memoryBytes         = number("memoryBytes"),
+    uartBaud            = number("uartBaud").toInt,
+    sramBytes           = number("sramBytes").toInt,
+    sciBase             = number("sciBase"),
+    cmtBase             = number("cmtBase"),
+    sciFifoDepth        = number("sciFifoDepth").toInt,
+    spiControlBase      = number("spiControlBase"),
+    xipCacheControlBase = number("xipCacheControlBase"),
     interruptSources =
       if (text("interruptSources").trim.isEmpty) Seq.empty
       else text("interruptSources").split(",", -1).toSeq.map(_.trim)
   )
   // Apply the same address/range validation even when only clock settings are used.
+  require(number("sciFifoDepth").isValidInt)
   require(number("sramBytes").isValidInt)
   socConfig("")
 }

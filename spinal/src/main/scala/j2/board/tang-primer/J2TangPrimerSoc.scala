@@ -3,7 +3,7 @@ package j2.board.tang_primer
 import j2.bus.{J2Ahb, J2Apb, J2Biu, J2ReadCacheConfig}
 import j2.bus.ahb5._
 import j2.bus.apb.Apb4Matrix
-import j2.core.{J2CoreConfig, J2MicrocodedCore}
+import j2.core.{J2CoreConfig, J2Core}
 import j2.periph._
 import j2.soc.J2SocConfig
 import spinal.core._
@@ -28,9 +28,9 @@ final class J2TangPrimerSoc(config: J2SocConfig) extends Component {
   private val apbMappings = Seq(
     SizeMapping(0xff000000L, 0x1000), // GPIO
     SizeMapping(config.sciBase, 0x1000),
-    SizeMapping(0xff002000L, 0x1000), // Application flash control
+    SizeMapping(config.spiControlBase, 0x1000), // Application flash control
     SizeMapping(config.cmtBase, 0x1000),
-    SizeMapping(0xff004000L, 0x1000) // XIP cache control
+    SizeMapping(config.xipCacheControlBase, 0x1000) // XIP cache control
   )
   require(!SizeMapping.verifyOverlapping(apbMappings), "board peripheral windows overlap")
   // One BIU owns this board's peripheral domain; unmapped APB addresses fault.
@@ -38,12 +38,12 @@ final class J2TangPrimerSoc(config: J2SocConfig) extends Component {
   private val peripheralEnd     = apbMappings.map(m => m.base + m.size).max
   private val peripheralMapping = SizeMapping(peripheralStart, peripheralEnd - peripheralStart)
 
-  private val cpu = new J2MicrocodedCore(
+  private val cpu = new J2Core(
     J2CoreConfig(exposeDebug = false, interruptCount = config.interruptSources.size)
   )
   private val rom  = new J2Rom(config.romHex)
   private val sram = new J2Sram(config.sramBytes)
-  private val uart = new J2SCI
+  private val uart = new J2SCI(config.sciFifoDepth)
   private val cmt  = new J2CMT
   private val pio  = new J2Pio
   private val flash = new J2CachedSpiFlash(
@@ -89,7 +89,7 @@ final class J2TangPrimerSoc(config: J2SocConfig) extends Component {
     "SCI_ERI" -> uart.io.interrupt(0),
     "SCI_RXI" -> uart.io.interrupt(1),
     "SCI_TXI" -> uart.io.interrupt(2),
-    "SCI_TEI" -> uart.io.interrupt(3)
+    "SCI_BRI" -> uart.io.interrupt(3)
   )
   require(
     config.interruptSources.toSet == interruptSignals.keySet,
@@ -97,9 +97,9 @@ final class J2TangPrimerSoc(config: J2SocConfig) extends Component {
   )
   for ((name, index) <- config.interruptSources.zipWithIndex)
     cpu.io.interrupts(index) := interruptSignals(name)
-  cpu.io.nmi       := True
-  uart.io.uart.rxd := io.uartRx
-  io.uartTx        := uart.io.uart.txd
+  cpu.io.nmi                 := True
+  uart.io.uart.rxd           := io.uartRx
+  io.uartTx                  := uart.io.uart.txd
   io.gpio <> pio.io.gpio
   io.spiCs  := flash.io.spi.cs
   io.spiClk := flash.io.spi.clk

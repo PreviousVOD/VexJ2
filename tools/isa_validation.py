@@ -50,7 +50,7 @@ def reboot(device, log_path, timeout):
         termios.tcsetattr(fd, termios.TCSANOW, attrs)
         termios.tcflush(fd, termios.TCIFLUSH)
         with log_path.with_suffix(".program.log").open("w") as program_log:
-            proc = subprocess.Popen([str(ROOT / "tools/program_tang_primer_verilog_td.sh")],
+            proc = subprocess.Popen(["python3", str(ROOT / "tools/fpga.py"), "--board", "tang-primer", "program"],
                                     cwd=ROOT, stdout=program_log, stderr=subprocess.STDOUT)
             try:
                 with log_path.open("w") as log, contextlib.redirect_stdout(log):
@@ -89,7 +89,8 @@ def main():
                             ("loader", ["--loader", "--cold-boot"])):
             log = out / (name + ".log")
             with log.open("w") as stream:
-                subprocess.run([str(sim), str(image), *flags, "--max-cycles", "200000000"],
+                cycles = "300000000" if "--loader" in flags else "200000000"
+                subprocess.run([str(sim), str(image), *flags, "--max-cycles", cycles],
                                cwd=sim.parent, stdout=stream, stderr=subprocess.STDOUT,
                                timeout=args.timeout, check=True)
             validate(log.read_text())

@@ -2,10 +2,11 @@
 
 /* App */
 #include "cmt.h"
+#include "flash.h"
 #include "intc.h"
+#include "irq_driver.h"
 #include "sci.h"
 #include "uart.h"
-#include "uart_irq.h"
 
 #define RESULT (*(volatile uint32_t *)0xff000004)
 #define ENABLE (*(volatile uint32_t *)0xff000008)
@@ -24,17 +25,29 @@ extern void xip_cmt1_isr(void);
 extern void xip_sci_eri_isr(void);
 extern void xip_sci_rxi_isr(void);
 extern void xip_sci_txi_isr(void);
-extern void xip_sci_tei_isr(void);
+extern void xip_sci_bri_isr(void);
 
 static const uintptr_t vectors[64 + J2_INTC_SOURCE_COUNT] __attribute__((aligned(256))) = {
     [J2_VECTOR_CMT0] = (uintptr_t)timer_isr,          [J2_VECTOR_CMT1] = (uintptr_t)xip_cmt1_isr,
     [J2_VECTOR_SCI_ERI] = (uintptr_t)xip_sci_eri_isr, [J2_VECTOR_SCI_RXI] = (uintptr_t)xip_sci_rxi_isr,
-    [J2_VECTOR_SCI_TXI] = (uintptr_t)xip_sci_txi_isr, [J2_VECTOR_SCI_TEI] = (uintptr_t)xip_sci_tei_isr};
+    [J2_VECTOR_SCI_TXI] = (uintptr_t)xip_sci_txi_isr, [J2_VECTOR_SCI_BRI] = (uintptr_t)xip_sci_bri_isr};
 
 /* Linked with the production ROM startup and UART driver. */
 void boot_main(void) {
     ENABLE = 0xff;
     RESULT = 1;
+    /* Exercise the real flash driver's cache invalidation at the profile's
+     * address, and SPI control readback without requiring a flash model. */
+    flash_refresh_cache();
+    volatile uint32_t *spi_interrupt = (volatile uint32_t *)(J2_SPI_CONTROL_BASE + 0x0c);
+    *spi_interrupt                   = 1;
+    if ((*spi_interrupt & 3) != 1) {
+        RESULT = 0x55;
+        for (;;) {
+        }
+    }
+
+    *spi_interrupt = 0;
     uart_init();
     uart_rx_irq_start();
     RESULT = 2;
@@ -61,7 +74,7 @@ void boot_main(void) {
     RESULT               = 4;
     int interrupt_result = intc_test();
     uart_tx('R');
-    while (!(SCI_REG(SCI_SCSSR) & SCI_SSR_TEND)) {
+    while (!(SCI_REG16(SCI_SCFSR) & SCI_FSR_TEND)) {
     }
     RESULT = timer_count == 1 && interrupt_result == 0 ? 0x77 : 0x55;
     for (;;) {

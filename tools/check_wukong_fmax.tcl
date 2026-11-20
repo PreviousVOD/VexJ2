@@ -41,7 +41,7 @@ if {abs([get_property PERIOD [get_clocks clk_pll_i]] - 12.0) > 0.001} {
     error "DDR UI frequency changed"
 }
 # Match the bundled response payload bound to its new receiving period.
-source [file join $root tools wukong_bridge_paths.tcl]
+source [file join $root fpga wukong-v1 bridge_paths.tcl]
 set bridge_root [wukong_bridge_root]
 set source_regs [get_cells -hier -filter "NAME =~ $bridge_root/responses/pushArea_data*_reg*"]
 set target_regs [get_cells -hier -filter "NAME =~ $bridge_root/responses/popArea_stream_rData*_reg*"]

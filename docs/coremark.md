@@ -86,7 +86,7 @@ directory. These runs use the existing timing-qualified 72 MHz bitstream.
 The updated Tang workflow also passes both one-iteration native simulation
 seeds under `build/coremark/tang-primer/intc-closeout/simulation/`. These are
 short CRC regressions; the prior full-duration Tang qualification is recorded in
-[the PPB/INTC plan](ppb-intc-plan.md#core-and-soc-integration).
+[the PPB/INTC reference](ppb-intc.md#firmware).
 
 ## Both-board hardware confirmation (2026-11-19)
 

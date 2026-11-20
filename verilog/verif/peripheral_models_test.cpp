@@ -8,20 +8,23 @@ int main() {
     j2sim::SysBus bus;
     bus.echo_uart  = false;
     auto sci_write = [&](unsigned offset, uint8_t value) {
-        unsigned shift = (offset & 2) ? 8 : 24;
-        bus.access(0xff001000 + offset, true, 1u << (shift / 8), uint32_t(value) << shift);
+        bool byte = offset == 4 || offset == 12;
+        bus.access(0xff001000 + offset, true, byte ? 8 : 12, uint32_t(value) << (byte ? 24 : 16));
     };
-    assert(bus.access(0xff001008, false, 0, 0) == 0x84000000);
+    assert(bus.access(0xff001010, false, 0, 0) == 0x00600000);
     sci_write(0, 0xff);
-    assert(bus.access(0xff001000, false, 0, 0) == 0x7b00ff00);
-    sci_write(4, 0x2b);
-    sci_write(6, 'A');
-    assert(bus.uart_out.empty());
-    sci_write(8, 0xff);
-    assert(bus.uart_out.empty());
-    sci_write(8, 0x7f);
+    assert(bus.access(0xff001000, false, 0, 0) == 0x007b0000);
+    assert(bus.access(0xff001004, false, 0, 0) == 0xff000000);
+    sci_write(8, 0x2b);
+    assert(bus.access(0xff001008, false, 0, 0) == 0x00280000);
+    sci_write(12, 'A');
     assert(bus.uart_out == "A");
-    bus.access(0xff001008, true, 0, 0);
+    sci_write(16, 0x9f);
+    assert(bus.uart_out == "A");
+    bus.access(0xff00100c, true, 0, 0);
+    assert(bus.uart_out == "A");
+    sci_write(24, 4);
+    sci_write(12, 'B');
     assert(bus.uart_out == "A");
 
     auto &cmt = bus.cmt;

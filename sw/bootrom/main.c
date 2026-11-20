@@ -2,13 +2,11 @@
 #include "board.h"
 #include "flash.h"
 #include "uart.h"
-#include "uart_irq.h"
 
 void application_loader(void);
 
 void boot_main(void) {
     uart_init();
-    uart_rx_irq_start();
     uart_puts(J2_BOARD_NAME " platform ROM\n");
     uart_puts("Application flash offset: ");
     uart_hex(J2_FLASH_OFFSET, 8);
