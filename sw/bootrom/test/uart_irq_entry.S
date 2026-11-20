@@ -7,7 +7,7 @@
 /* Optional UART interrupt regression fixture. */
 .set boot_vector, 2
 .rept 62 + J2_INTC_SOURCE_COUNT
-.if (boot_vector == J2_VECTOR_SCI_ERI) || (boot_vector == J2_VECTOR_SCI_RXI) || (boot_vector == J2_VECTOR_SCI_BRI)
+.if (boot_vector == J2_VECTOR_SCIF_ERI) || (boot_vector == J2_VECTOR_SCIF_RXI) || (boot_vector == J2_VECTOR_SCIF_BRI)
 .long _boot_uart_rx_isr
 .else
 .long boot_halt

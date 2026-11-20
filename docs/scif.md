@@ -1,18 +1,18 @@
-# J2SCI: SCIF registers with configurable buffering
+# J2SCIF: SCIF registers with configurable buffering
 
-Each board instantiates `j2.periph.J2SCI(fifoDepth)` directly. `sciBase` and
-`sciFifoDepth` in `board.properties` select its address and buffering. Both
+Each board instantiates `j2.periph.J2SCIF(fifoDepth)` directly. `scifBase` and
+`scifFifoDepth` in `board.properties` select its address and buffering. Both
 current boards use base `0xff001000` and depth `4`.
 
 The register interface always follows the asynchronous SCIF in the
 [SH7265 hardware manual, section 16](https://www.renesas.com/en/document/mah/sh7265-group-users-manual-hardware?r=1054971).
 The local reference is `../REN_r01uh0472ej0300_sh7265_MAH_20140327_1.pdf`.
-The module keeps its `J2SCI` name. Depth zero means a single transmit holding
+Depth zero means a single transmit holding
 register and a single receive holding register, excluding the transmit shift
 register. It does **not** select the old SH7124 SCI register layout or flags.
 Old SCI firmware must be rebuilt against the SCIF driver.
 
-For example, `new J2SCI(fifoDepth = 16)` instantiates the reference FIFO capacity.
+For example, `new J2SCIF(fifoDepth = 16)` instantiates the reference FIFO capacity.
 Positive depths specify the capacity in bytes of **each** FIFO; supported values
 are 1–255, including non-powers of two. Depth 1 and depth 0 have equal storage
 capacity. The software interface is identical at every depth.
@@ -113,12 +113,12 @@ The four outputs are registered by one PCLK:
 | 3 | BRI | (RIE or REIE) and (BRK or ORER) |
 
 Each board owns the source-to-INTC mapping. Current profiles use
-`CMT0,CMT1,SCI_ERI,SCI_RXI,SCI_TXI,SCI_BRI`; BRI replaces the former SCI TEI
+`CMT0,CMT1,SCIF_ERI,SCIF_RXI,SCIF_TXI,SCIF_BRI,PIO`; BRI replaces the former SCI TEI
 source at index 5. There is no fixed priority imposed by this output ordering.
 
 ## Firmware and validation
 
-`sw/include/sci.h` defines the SCIF offsets and explicit byte/halfword accessors.
+`sw/include/scif.h` defines the SCIF offsets and explicit byte/halfword accessors.
 The shared UART initializer resets both FIFOs, selects RX threshold 1 and TX
 threshold 0, and polls TDFE for transmission. It works without knowing FIFO
 depth. Polling reception uses SCFDR and discards error-marked bytes.
@@ -138,10 +138,14 @@ page and validates its header before erasing; it commits the header last.
 Application interrupt handling and the optional ISR regression fixtures remain
 available. Their vector definitions use the board interrupt map.
 
-`J2SCISpec` covers depths 0, 1, 3, 4, 16 and 255, register widths/strobes, automatic
+`J2SCIFSpec` covers depths 0, 1, 3, 4, 16 and 255, register widths/strobes, automatic
 TX, full/drop/reset/wrap behavior, framing and baud divisors, trigger levels,
 short-packet timeout, per-byte error counts, overrun, break/recovery and
-receive/pop collisions. `BoardSocSpec` boots both real SoCs with their default depth four and
+receive/pop collisions. The format matrix tests all 12 combinations of 7/8 data bits,
+none/even/odd parity and 1/2 stop bits at depths 0, 4 and 16. They check
+seven-bit masking with bit 7 set, both parity values, bad-parity reporting and
+recovery, exact spacing of consecutive TX frames, contiguous RX frames and
+first-stop-only framing checks. `BoardSocSpec` boots both real SoCs with their default depth four and
 with depth 16 plus relocated registers and reordered IRQs. `J2BootUartIrqSpec`
 tests the optional ISR at depths 0/16 and the production polling driver at
 depth 4, including hardware overrun, parity errors, retry and a continuous
@@ -184,7 +188,7 @@ python3 tools/scif_validation.py --board tang-primer --fifo-depth 4 \
 
 For Wukong, select `--board wukong-v1` and
 `build/wukong-v1/vivado/j2_wukong_v1.bit`. A nonzero test depth must match the
-bitstream's `sciFifoDepth`; the application checks the actual storage capacity.
+bitstream's `scifFifoDepth`; the application checks the actual storage capacity.
 Omitting `--fifo-depth` uses the board property. The usual `TD_HOME` or `VIVADO_HOME` build environment also selects the
 programmer. Wukong uses the Xilinx hardware manager.
 
@@ -240,18 +244,18 @@ as the standard Tang flow does. No RTL change was needed for hardware validation
 
 ## Current default: four-byte FIFO and polling BootROM
 
-Both board profiles now select `sciFifoDepth=4`. They also define
+Both board profiles now select `scifFifoDepth=4`. They also define
 `spiControlBase=0xff002000` and `xipCacheControlBase=0xff004000`; those values
 configure the board APB mappings and the generated BootROM definitions.
 The XIP application's word/byte cache-invalidation test uses the same property.
 Relocation tests move both controls to `0xff008000`/`0xff009000`, execute the
 production cache-invalidation function, and verify SPI control access on both
-SoCs, alongside relocated SCI/CMT and reordered interrupts.
+SoCs, alongside relocated SCIF/CMT and reordered interrupts.
 
 BootROM now uses polling only. Its link map contains no receive ISR or software
 ring. Optional ISR fixtures remain for interrupt regression coverage; production
 ROM vectors halt safely and startup explicitly sets SR.I=15. The normal
-application retains its INTC/SCI interrupt tests.
+application retains its INTC/SCIF interrupt tests.
 
 Validation on 2026-11-20:
 

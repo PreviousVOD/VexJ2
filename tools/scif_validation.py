@@ -51,7 +51,7 @@ def build_test(profile, depth, out):
                     "-ffreestanding", "-fno-builtin", "-nostdlib", "-I" + str(out),
                     "-I" + str(ROOT / "sw/include"), "-I" + str(ROOT / "sw/bootrom"),
                     "-DJ2_CLOCK_HZ=" + profile["clockHz"], "-DJ2_UART_BAUD=" + profile["uartBaud"],
-                    "-DJ2_SCI_BASE=" + profile["sciBase"], "-DJ2_CMT_BASE=" + profile["cmtBase"],
+                    "-DJ2_SCIF_BASE=" + profile["scifBase"], "-DJ2_CMT_BASE=" + profile["cmtBase"],
                     "-DJ2_SRAM_BYTES=" + profile["sramBytes"],
                     "-DJ2_SCIF_CAPACITY=" + str(max(1, depth)),
                     "-Wl,--defsym=J2_SRAM_BYTES=" + profile["sramBytes"],
@@ -96,7 +96,7 @@ def main():
     args = parser.parse_args()
     profile = load(args.board)
     if args.fifo_depth is None:
-        args.fifo_depth = int(profile["sciFifoDepth"], 0)
+        args.fifo_depth = int(profile["scifFifoDepth"], 0)
     if not 0 <= args.fifo_depth <= 255:
         parser.error("FIFO depth must be 0–255")
     out = args.output.resolve()
@@ -119,7 +119,7 @@ def main():
                   image_sha256=digest(image_path), bitstream_sha256=digest(bitstream),
                   programming="volatile JTAG", configuration_flash_written=False,
                   test="fifo" if args.image is None else "isa", uploaded=upload,
-                  profile=dict(profile, sciFifoDepth=str(args.fifo_depth)))
+                  profile=dict(profile, scifFifoDepth=str(args.fifo_depth)))
     try:
         tty.setraw(fd)
         attrs = termios.tcgetattr(fd)

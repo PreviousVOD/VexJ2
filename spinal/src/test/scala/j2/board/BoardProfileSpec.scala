@@ -8,8 +8,8 @@ class BoardProfileSpec extends munit.FunSuite {
     assertEquals(wukong.socConfig("rom.hex").memoryBytes, BigInt(0x10000000))
     assertEquals(tang.clockHz, 32000000)
     assertEquals(wukong.clockHz, 72000000)
-    assertEquals(tang.socConfig("").sciFifoDepth, 4)
-    assertEquals(wukong.socConfig("").sciFifoDepth, 4)
+    assertEquals(tang.socConfig("").scifFifoDepth, 4)
+    assertEquals(wukong.socConfig("").scifFifoDepth, 4)
   }
   test("Tang diagnostic clock overrides cannot leak into Wukong") {
     val env = Map("J2_CLOCK_HZ" -> "24000000", "J2_USE_PLL" -> "0")
@@ -53,26 +53,26 @@ class BoardProfileSpec extends munit.FunSuite {
       val values = BoardProfile.load(board, Map.empty).values
       val config = BoardProfile(
         values ++ Map(
-          "sciBase" -> "0xff006000",
+          "scifBase" -> "0xff006000",
           "cmtBase" -> "0xff007000",
           "spiControlBase" -> "0xff008000",
           "xipCacheControlBase" -> "0xff009000"
         )
       )
         .socConfig("")
-      assertEquals(config.sciBase, BigInt(0xff006000L))
+      assertEquals(config.scifBase, BigInt(0xff006000L))
       assertEquals(config.cmtBase, BigInt(0xff007000L))
       assertEquals(config.spiControlBase, BigInt(0xff008000L))
       assertEquals(config.xipCacheControlBase, BigInt(0xff009000L))
       for (
         (key, value) <- Seq(
-          "sciBase" -> "-4096",
-          "sciBase" -> "0xff006001",
+          "scifBase" -> "-4096",
+          "scifBase" -> "0xff006001",
           "cmtBase" -> "0x100000000",
-          "cmtBase" -> values("sciBase"),
-          "sciBase" -> "0xffffe000",
+          "cmtBase" -> values("scifBase"),
+          "scifBase" -> "0xffffe000",
           "spiControlBase" -> "0xff008001",
-          "spiControlBase" -> values("sciBase"),
+          "spiControlBase" -> values("scifBase"),
           "xipCacheControlBase" -> values("spiControlBase"),
           "xipCacheControlBase" -> "0xffffe000"
         )
@@ -82,7 +82,7 @@ class BoardProfileSpec extends munit.FunSuite {
   }
   test("board interrupt maps preserve order and reject invalid source definitions") {
     val values  = BoardProfile.load("tang-primer", Map.empty).values
-    val sources = Seq("SCI_RXI", "CMT0", "EXTRA")
+    val sources = Seq("SCIF_RXI", "CMT0", "EXTRA")
     assertEquals(
       BoardProfile(values.updated("interruptSources", sources.mkString(",")))
         .socConfig("")
@@ -113,15 +113,15 @@ class BoardProfileSpec extends munit.FunSuite {
       intercept[IllegalArgumentException](BoardProfile(values.updated("interruptSources", sources)))
   }
 
-  test("SCI FIFO depth is configurable, including holding-register mode") {
+  test("SCIF FIFO depth is configurable, including holding-register mode") {
     val values = BoardProfile.load("tang-primer", Map.empty).values
     for (depth <- Seq(0, 1, 3, 4, 16, 255))
       assertEquals(
-        BoardProfile(values.updated("sciFifoDepth", depth.toString)).socConfig("").sciFifoDepth,
+        BoardProfile(values.updated("scifFifoDepth", depth.toString)).socConfig("").scifFifoDepth,
         depth
       )
     for (depth <- Seq("-1", "256", "0x100000000"))
-      intercept[IllegalArgumentException](BoardProfile(values.updated("sciFifoDepth", depth)))
+      intercept[IllegalArgumentException](BoardProfile(values.updated("scifFifoDepth", depth)))
   }
 
 }

@@ -79,7 +79,7 @@ struct SysBus {
     unsigned event_req = 7, event_info = 0;
     Cmt      cmt;
     // Functional SCIF console: transmit completion is immediate, no RX source.
-    std::array<uint16_t, 11> sci{0, 0xff, 0, 0, 0x60, 0, 0, 0, 0x51, 0, 0};
+    std::array<uint16_t, 11> scif{0, 0xff, 0, 0, 0x60, 0, 0, 0, 0x51, 0, 0};
 
     void timer_tick() {
         cmt.tick();
@@ -156,19 +156,19 @@ struct SysBus {
                 uint8_t value = d >> shift;
                 switch (index) {
                     case 0:
-                        sci[index] = value & 0x7b;
+                        scif[index] = value & 0x7b;
                         break;
 
                     case 1:
-                        sci[index] = value;
+                        scif[index] = value;
                         break;
 
                     case 2:
-                        sci[index] = value & 0xf8;
+                        scif[index] = value & 0xf8;
                         break;
 
                     case 3:
-                        if ((sci[2] & 0x20) && !(sci[6] & 4)) {
+                        if ((scif[2] & 0x20) && !(scif[6] & 4)) {
                             char c = value;
                             uart_out.push_back(c);
                             if (echo_uart) {
@@ -180,11 +180,11 @@ struct SysBus {
                         break;
 
                     case 6:
-                        sci[index] = value & 0xf6;
+                        scif[index] = value & 0xf6;
                         break;
 
                     case 8:
-                        sci[index] = 0x51 | (value & 2);
+                        scif[index] = 0x51 | (value & 2);
                         break;
 
                     default:
@@ -192,7 +192,7 @@ struct SysBus {
                 }
             }
 
-            return uint32_t(sci[index]) << shift;
+            return uint32_t(scif[index]) << shift;
         }
 
         if ((a & 0xfffff000u) == 0xff003000u) {

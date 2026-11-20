@@ -103,14 +103,14 @@ _xip_vectors:
   .long _xip_timer_isr
   .elseif xip_vector == J2_VECTOR_CMT1
   .long _xip_cmt1_isr
-  .elseif xip_vector == J2_VECTOR_SCI_ERI
-  .long _xip_sci_eri_isr
-  .elseif xip_vector == J2_VECTOR_SCI_RXI
-  .long _xip_sci_rxi_isr
-  .elseif xip_vector == J2_VECTOR_SCI_TXI
-  .long _xip_sci_txi_isr
-  .elseif xip_vector == J2_VECTOR_SCI_BRI
-  .long _xip_sci_bri_isr
+  .elseif xip_vector == J2_VECTOR_SCIF_ERI
+  .long _xip_scif_eri_isr
+  .elseif xip_vector == J2_VECTOR_SCIF_RXI
+  .long _xip_scif_rxi_isr
+  .elseif xip_vector == J2_VECTOR_SCIF_TXI
+  .long _xip_scif_txi_isr
+  .elseif xip_vector == J2_VECTOR_SCIF_BRI
+  .long _xip_scif_bri_isr
   .else
   .long xip_halt
   .endif

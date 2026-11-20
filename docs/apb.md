@@ -2,7 +2,7 @@
 
 [SoC reference](soc.md) · [AHB5 library](ahb5.md) · [Tang Primer](tang-primer.md)
 
-The CPU and memory subsystem use AHB5. GPIO, SCI, CMT, SPI control and cache
+The CPU and memory subsystem use AHB5. GPIO, SCIF, CMT, SPI control and cache
 control use 32-bit APB4. ROM, SRAM, SDRAM/DDR and XIP data use
 [native AHB memory paths](ahb-memory.md). The peripheral address map is unchanged.
 
@@ -16,7 +16,7 @@ flowchart LR
   BIU --> BRIDGE[AHB5-to-APB4 bridge]
   BRIDGE --> MATRIX[APB matrix]
   MATRIX --> GPIO[GPIO]
-  MATRIX --> UART[J2SCI]
+  MATRIX --> UART[J2SCIF]
   MATRIX --> TIMER[J2CMT]
   MATRIX --> SPI[SPI control]
   MATRIX --> CACHE[Cache control]
@@ -112,11 +112,11 @@ Callbacks for address-wide commands must explicitly account for payload lanes.
 Custom `readError`/`writeError` report errors with the usual BusSlaveFactory
 semantics; they do not roll back side effects.
 
-`J2SCI` uses the SCIF register map at every FIFO depth, with byte data/baud
+`J2SCIF` uses the SCIF register map at every FIFO depth, with byte data/baud
 registers and halfword control/status registers on separate APB words. Read
 completion at SCFRDR pops one byte; reads of adjacent status words have no FIFO
 side effects. Writes honor BE32 PSTRB lanes, and flags use ordinary W0C. See
-[SCI/SCIF](sci.md) for supported features and buffering.
+[SCIF](scif.md) for supported features and buffering.
 
 `J2CMT` uses a native APB4 register map with two halfword-register channels.
 Its counters use PCLK/8, /32, /128 or /512; CMF is W0C and interrupt levels are
@@ -140,7 +140,7 @@ stability, packed register updates, flag helpers and command side effects.
 matrix with three managers: waits, errors, subword accesses, back-to-back AHB
 addresses, whole-domain locks and independent AHB-domain progress.
 
-Peripheral tests cover SCI byte lanes, flags, framing and IRQs, SPI command lanes and refill/control
+Peripheral tests cover SCIF byte lanes, flags, framing and IRQs, SPI command lanes and refill/control
 serialization, CMT compare/write collisions and IRQ behavior, and cache invalidation strobes.
 `sw/xipapp` tests actual SH-2 byte/halfword loads and stores against CMT registers
 and byte writes to cache invalidation. The shared Tang simulator/FPGA validator
@@ -153,4 +153,4 @@ python3 tools/isa_validation.py sim --output build/apb4-validation --timeout 300
 make wukong-boot-sim
 ```
 
-See [SCI/SCIF](sci.md) for current board validation and FIFO/error tests.
+See [SCIF](scif.md) for current board validation and FIFO/error tests.

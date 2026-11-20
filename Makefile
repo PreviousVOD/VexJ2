@@ -177,7 +177,7 @@ $(TESTROM): $(REFSRC) sw/testrom/Makefile sw/testrom/pio_compat.h sw/include/pio
 		$(wildcard sw/testrom/original/*.c sw/testrom/original/*.h sw/testrom/original/tests/*.s sw/testrom/original/startup/*.x)
 	$(MAKE) -C sw/testrom
 
-$(TESTROM16550): $(REFSRC) sw/testrom/Makefile sw/testrom/pio_compat.h sw/include/pio.h sw/testrom/uart16550.c sw/bootrom/uart.c sw/include/sci.h \
+$(TESTROM16550): $(REFSRC) sw/testrom/Makefile sw/testrom/pio_compat.h sw/include/pio.h sw/testrom/uart16550.c sw/bootrom/uart.c sw/include/scif.h \
 		$(wildcard sw/testrom/original/*.c sw/testrom/original/*.h sw/testrom/original/tests/*.s sw/testrom/original/startup/*.x)
 	$(MAKE) -C sw/testrom OUT=$(CURDIR)/build/sw/testrom16550 UART=uart16550
 
@@ -291,7 +291,7 @@ wukong-image-test: wukong-rom
 .PHONY: wukong-probes
 wukong-probes: $(TOOL_SH_GCC)
 	mkdir -p build/wukong-v1/probe-xip
-	sh-none-elf-gcc -m2 -mb -nostdlib -Isw/include -DJ2_SCI_BASE=$(shell python3 tools/board_config.py wukong-v1 --get sciBase) -T sw/xipapp/app.x sw/bootrom/test/probe.S -o build/wukong-v1/probe-xip/main.elf
+	sh-none-elf-gcc -m2 -mb -nostdlib -Isw/include -DJ2_SCIF_BASE=$(shell python3 tools/board_config.py wukong-v1 --get scifBase) -T sw/xipapp/app.x sw/bootrom/test/probe.S -o build/wukong-v1/probe-xip/main.elf
 	sh-none-elf-objcopy -O binary build/wukong-v1/probe-xip/main.elf build/wukong-v1/probe-xip/main.bin
 	python3 tools/xip_image.py pack build/wukong-v1/probe-xip/main.bin build/wukong-v1/probe-xip/flash.bin
 

@@ -82,7 +82,7 @@ integrations must synchronize asynchronous sources and retain short events.
 ## Firmware
 
 Board SoCs own source wiring and ordering. Both current profiles list CMT0,
-CMT1, SCI_ERI, SCI_RXI, SCI_TXI, SCI_BRI and PIO. PIO uses vector 70 in the
+CMT1, SCIF_ERI, SCIF_RXI, SCIF_TXI, SCIF_BRI and PIO. PIO uses vector 70 in the
 default maps; its peripheral owns edge sensing and W1C pending flags. Generated `j2_board_irqs.h`
 provides source indices and vector constants; do not hard-code that order in
 portable drivers. `sw/include/intc.h` supplies reset, enable/disable and
@@ -98,7 +98,7 @@ startup live under `sw/bootrom/test/` for interrupt regressions.
 Standalone generation, from `spinal/`:
 
 ```sh
-../tools/local/bin/sbt -batch 'runMain j2.Generate_Intc 6 ../build/intc CMT0 CMT1 SCI_ERI SCI_RXI SCI_TXI SCI_BRI'
+../tools/local/bin/sbt -batch 'runMain j2.Generate_Intc 6 ../build/intc CMT0 CMT1 SCIF_ERI SCIF_RXI SCIF_TXI SCIF_BRI'
 ```
 
 ## Validation
@@ -111,5 +111,5 @@ and reordered sources and relocated peripherals. `J2BootUartIrqSpec` retains
 optional ISR tests alongside the production polling driver test.
 
 The shared XIP application checks INTC and instruction boundaries on simulator
-and FPGA. See [SCI validation](sci.md) for FIFO, UART stress and current board
+and FPGA. See [SCIF validation](scif.md) for FIFO, UART stress and current board
 runs, and [CoreMark](coremark.md) for timer-interrupt benchmarking.

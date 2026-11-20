@@ -85,10 +85,10 @@ loader's Winbond-specific QE/status initialization.
 
 ## Integration boundary
 
-`J2WukongSoc` directly instantiates its CPU, ROM/SRAM, buses, boot SCI, CMT,
-GPIO and cached SF3 endpoint. SCI, CMT, SPI control and cache control addresses
-come from `sciBase`, `cmtBase`, `spiControlBase` and `xipCacheControlBase` in the
-board profile; `sciFifoDepth=4` selects four-byte TX/RX FIFOs. The board SoC
+`J2WukongSoc` directly instantiates its CPU, ROM/SRAM, buses, boot SCIF, CMT,
+GPIO and cached SF3 endpoint. SCIF, CMT, SPI control and cache control addresses
+come from `scifBase`, `cmtBase`, `spiControlBase` and `xipCacheControlBase` in the
+board profile; `scifFifoDepth=4` selects four-byte TX/RX FIFOs. The board SoC
 exposes only its 24 available GPIO pads, keeping J11 reserved for SF3 and
 preserving software bit numbering. [J2PIO](pio.md) supplies input edge interrupts
 through the board INTC map; disconnected bits cannot generate events. The FPGA wrapper and boot simulations use
@@ -227,7 +227,7 @@ release with the documented UNISIM primitive propagation delays.
 `make wukong-sim` uses isolated 1.125 Mbaud firmware and checks XIP, warm-XIP,
 UART-upload and bad-checksum recovery scenarios. Production UART stays at
 19,200 baud. Current SCIF FIFO and boot/upload hardware results are recorded
-in [SCI/SCIF](sci.md); those results identify the tested images and profiles.
+in [SCIF](scif.md); those results identify the tested images and profiles.
 
 ## Application upload
 

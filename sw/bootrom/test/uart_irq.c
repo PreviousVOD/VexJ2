@@ -3,7 +3,7 @@
 /* App */
 #include "intc.h"
 #include "irq_driver.h"
-#include "sci.h"
+#include "scif.h"
 #include "uart.h"
 
 /* Simulation-only rendezvous registers on the external data bus. No test hooks
@@ -36,7 +36,7 @@ void boot_main(void) {
     /* Keep foreground busy while 512 bytes arrive into the 511-byte queue. */
     rendezvous(1);
     check(uart_rx_irq_failed(), 1);
-    check(!(SCI_REG16(SCI_SCFSR) & SCI_FSR_ERRORS), 2);
+    check(!(SCIF_REG16(SCIF_SCFSR) & SCIF_FSR_ERRORS), 2);
     unsigned count = 0;
     while (uart_rx_ready()) {
         check(uart_rx() == (uint8_t)count, 3);
@@ -49,33 +49,33 @@ void boot_main(void) {
     /* Suppress service long enough to produce an actual hardware overrun. */
     mask(15);
     rendezvous(2);
-    check((SCI_REG16(SCI_SCLSR) & SCI_LSR_ORER) != 0, 6);
+    check((SCIF_REG16(SCIF_SCLSR) & SCIF_LSR_ORER) != 0, 6);
     mask(0);
     while (!uart_rx_irq_failed()) {
     }
     check(!uart_rx_ready(), 7);
-    check(!(SCI_REG16(SCI_SCFSR) & (SCI_FSR_ERRORS | SCI_FSR_RDF)), 8);
-    check(!(SCI_REG16(SCI_SCLSR) & SCI_LSR_ORER), 19);
+    check(!(SCIF_REG16(SCIF_SCFSR) & (SCIF_FSR_ERRORS | SCIF_FSR_RDF)), 8);
+    check(!(SCIF_REG16(SCIF_SCLSR) & SCIF_LSR_ORER), 19);
     uart_rx_irq_discard();
 
     /* Receive even parity, inject an incorrect parity bit while masked, then
      * verify that the normal ERI handler clears PER and rejects that byte. */
     mask(15);
-    SCI_REG16(SCI_SCSCR) = 0;
-    SCI_REG16(SCI_SCSMR) = 0x20;
-    SCI_REG16(SCI_SCSCR) = SCI_SCR_TE | SCI_SCR_RE | SCI_SCR_RIE;
+    SCIF_REG16(SCIF_SCSCR) = 0;
+    SCIF_REG16(SCIF_SCSMR) = 0x20;
+    SCIF_REG16(SCIF_SCSCR) = SCIF_SCR_TE | SCIF_SCR_RE | SCIF_SCR_RIE;
     rendezvous(3);
-    check((SCI_REG16(SCI_SCFSR) & SCI_FSR_PER) != 0, 9);
+    check((SCIF_REG16(SCIF_SCFSR) & SCIF_FSR_PER) != 0, 9);
     mask(0);
     while (!uart_rx_irq_failed()) {
     }
     check(!uart_rx_ready(), 10);
-    check(!(SCI_REG16(SCI_SCFSR) & (SCI_FSR_ERRORS | SCI_FSR_RDF)), 11);
+    check(!(SCIF_REG16(SCIF_SCFSR) & (SCIF_FSR_ERRORS | SCIF_FSR_RDF)), 11);
     uart_rx_irq_discard();
 
-    SCI_REG16(SCI_SCSCR) = 0;
-    SCI_REG16(SCI_SCSMR) = 0;
-    SCI_REG16(SCI_SCSCR) = SCI_SCR_TE | SCI_SCR_RE | SCI_SCR_RIE;
+    SCIF_REG16(SCIF_SCSCR) = 0;
+    SCIF_REG16(SCIF_SCSMR) = 0;
+    SCIF_REG16(SCIF_SCSCR) = SCIF_SCR_TE | SCIF_SCR_RE | SCIF_SCR_RIE;
     rendezvous(4);
     check(!uart_rx_irq_failed(), 12);
     for (unsigned i = 0; i < 8; ++i) {
@@ -87,7 +87,7 @@ void boot_main(void) {
     uint32_t sr;
     __asm__ volatile("stc sr, %0" : "=r"(sr));
     check((sr & 0xf0) == 0xf0, 16);
-    check(!(SCI_REG16(SCI_SCSCR) & SCI_SCR_RIE), 17);
+    check(!(SCIF_REG16(SCIF_SCSCR) & SCIF_SCR_RIE), 17);
     check(INTC_ISER(0) == 0, 18);
     RESULT = 0x600d;
     for (;;) {

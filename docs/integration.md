@@ -56,5 +56,5 @@ report together so an old bitstream is not mistaken for the current build.
 The boot tests cover preloaded flash, warm protocol recovery and blank-flash
 upload. The application owns external-memory, ISA, cache, CMT and INTC tests.
 Production BootROM polls the four-byte SCIF RX FIFO; it has no RX ISR or
-software ring. [SCI/SCIF](sci.md) records register, FIFO, error and hardware
+software ring. [SCIF](scif.md) records register, FIFO, error and hardware
 validation. [CoreMark](coremark.md) retains benchmark comparisons and durations.

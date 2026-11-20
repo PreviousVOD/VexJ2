@@ -2,7 +2,7 @@
 
 /* App */
 #include "intc.h"
-#include "sci.h"
+#include "scif.h"
 #include "uart.h"
 
 /* Simulation-only rendezvous registers; production polling has no hooks. */
@@ -31,7 +31,7 @@ void boot_main(void) {
     __asm__ volatile("stc sr, %0" : "=r"(sr));
     check((sr & 0xf0) == 0xf0, 1);
     check(INTC_ISER(0) == 0, 2);
-    check(!(SCI_REG16(SCI_SCSCR) & (SCI_SCR_RIE | SCI_SCR_REIE | SCI_SCR_TIE)), 3);
+    check(!(SCIF_REG16(SCIF_SCSCR) & (SCIF_SCR_RIE | SCIF_SCR_REIE | SCIF_SCR_TIE)), 3);
     check(uart_try_rx(&data) == 0, 4);
     /* Leave RX unserviced until the host overflows the four-byte FIFO. */
     rendezvous(1);
@@ -41,17 +41,17 @@ void boot_main(void) {
     check(!uart_rx_failed(), 7);
     check(uart_try_rx(&data) == 0, 8);
 
-    SCI_REG16(SCI_SCSCR) = 0;
-    SCI_REG16(SCI_SCSMR) = 0x20;
-    SCI_REG16(SCI_SCSCR) = SCI_SCR_TE | SCI_SCR_RE;
+    SCIF_REG16(SCIF_SCSCR) = 0;
+    SCIF_REG16(SCIF_SCSMR) = 0x20;
+    SCIF_REG16(SCIF_SCSCR) = SCIF_SCR_TE | SCIF_SCR_RE;
     rendezvous(2);
     check(uart_try_rx(&data) == -1, 9);
     check(uart_rx_failed(), 10);
     uart_rx_discard();
     check(!uart_rx_failed(), 11);
-    SCI_REG16(SCI_SCSCR) = 0;
-    SCI_REG16(SCI_SCSMR) = 0;
-    SCI_REG16(SCI_SCSCR) = SCI_SCR_TE | SCI_SCR_RE;
+    SCIF_REG16(SCIF_SCSCR) = 0;
+    SCIF_REG16(SCIF_SCSMR) = 0;
+    SCIF_REG16(SCIF_SCSCR) = SCIF_SCR_TE | SCIF_SCR_RE;
 
     /* A full loader page arrives continuously while foreground code polls. */
     PHASE = 3;
@@ -66,7 +66,7 @@ void boot_main(void) {
     check(!uart_rx_failed(), 14);
     check(uart_try_rx(&data) == 0, 15);
     check(INTC_ISER(0) == 0, 16);
-    check(!(SCI_REG16(SCI_SCSCR) & (SCI_SCR_RIE | SCI_SCR_REIE | SCI_SCR_TIE)), 17);
+    check(!(SCIF_REG16(SCIF_SCSCR) & (SCIF_SCR_RIE | SCIF_SCR_REIE | SCIF_SCR_TIE)), 17);
     RESULT = 0x600d;
     for (;;) {
     }

@@ -48,7 +48,7 @@ to override the count. Both simulator and hardware runs must measure at least
 ten seconds per seed set; the default is 300 iterations. Faster configurations may need more
 iterations: the runner rejects results below ten seconds. Simulation allows
 1,800 seconds of host time per seed set and two billion simulated clocks.
-The CMT/SCI regression measured 34.747184 seconds for 300 performance iterations;
+The CMT/SCIF regression measured 34.747184 seconds for 300 performance iterations;
 its 100-iteration validation-seed check measured 11.621744 seconds. Both passed
 CRCs. These checks used different iteration counts; see [CMT validation notes](cmt.md#validation-notes).
 For intentional short CRC regressions, build with a smaller count and invoke

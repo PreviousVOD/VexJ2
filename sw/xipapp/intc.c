@@ -3,7 +3,7 @@
 /* App */
 #include "cmt.h"
 #include "intc.h"
-#include "sci.h"
+#include "scif.h"
 
 static volatile uint32_t counts[J2_INTC_SOURCE_COUNT];
 static volatile uint32_t levels[J2_INTC_SOURCE_COUNT];
@@ -36,30 +36,30 @@ void __attribute__((interrupt_handler)) xip_cmt1_isr(void) {
     (void)CMT_CMCSR(1);
 }
 
-void __attribute__((interrupt_handler)) xip_sci_eri_isr(void) {
-    record(J2_IRQ_SCI_ERI);
-    SCI_REG16(SCI_SCFSR) = (uint16_t)~SCI_FSR_ER;
-    (void)SCI_REG16(SCI_SCFSR);
+void __attribute__((interrupt_handler)) xip_scif_eri_isr(void) {
+    record(J2_IRQ_SCIF_ERI);
+    SCIF_REG16(SCIF_SCFSR) = (uint16_t)~SCIF_FSR_ER;
+    (void)SCIF_REG16(SCIF_SCFSR);
 }
 
-void __attribute__((interrupt_handler)) xip_sci_rxi_isr(void) {
-    record(J2_IRQ_SCI_RXI);
-    (void)SCI_REG8(SCI_SCFRDR);
-    SCI_REG16(SCI_SCFSR) = (uint16_t)~(SCI_FSR_RDF | SCI_FSR_DR);
-    (void)SCI_REG16(SCI_SCFSR);
+void __attribute__((interrupt_handler)) xip_scif_rxi_isr(void) {
+    record(J2_IRQ_SCIF_RXI);
+    (void)SCIF_REG8(SCIF_SCFRDR);
+    SCIF_REG16(SCIF_SCFSR) = (uint16_t)~(SCIF_FSR_RDF | SCIF_FSR_DR);
+    (void)SCIF_REG16(SCIF_SCFSR);
 }
 
-void __attribute__((interrupt_handler)) xip_sci_txi_isr(void) {
-    record(J2_IRQ_SCI_TXI);
-    SCI_REG16(SCI_SCSCR) &= (uint16_t)~SCI_SCR_TIE;
-    (void)SCI_REG16(SCI_SCSCR);
+void __attribute__((interrupt_handler)) xip_scif_txi_isr(void) {
+    record(J2_IRQ_SCIF_TXI);
+    SCIF_REG16(SCIF_SCSCR) &= (uint16_t)~SCIF_SCR_TIE;
+    (void)SCIF_REG16(SCIF_SCSCR);
 }
 
-void __attribute__((interrupt_handler)) xip_sci_bri_isr(void) {
-    record(J2_IRQ_SCI_BRI);
-    SCI_REG16(SCI_SCFSR) = (uint16_t)~SCI_FSR_BRK;
-    SCI_REG16(SCI_SCLSR) = (uint16_t)~SCI_LSR_ORER;
-    (void)SCI_REG16(SCI_SCLSR);
+void __attribute__((interrupt_handler)) xip_scif_bri_isr(void) {
+    record(J2_IRQ_SCIF_BRI);
+    SCIF_REG16(SCIF_SCFSR) = (uint16_t)~SCIF_FSR_BRK;
+    SCIF_REG16(SCIF_SCLSR) = (uint16_t)~SCIF_LSR_ORER;
+    (void)SCIF_REG16(SCIF_SCLSR);
 }
 
 static int wait_entries(unsigned wanted) {
@@ -89,10 +89,10 @@ static void clear_log(void) {
 
 int intc_test(void) {
     static const unsigned priorities[J2_INTC_SOURCE_COUNT] = {
-        [J2_IRQ_CMT1] = 3, [J2_IRQ_SCI_ERI] = 5, [J2_IRQ_SCI_RXI] = 5, [J2_IRQ_SCI_TXI] = 2, [J2_IRQ_SCI_BRI] = 6};
+        [J2_IRQ_CMT1] = 3, [J2_IRQ_SCIF_ERI] = 5, [J2_IRQ_SCIF_RXI] = 5, [J2_IRQ_SCIF_TXI] = 2, [J2_IRQ_SCIF_BRI] = 6};
     static const unsigned expected[5] = {
-        J2_IRQ_SCI_BRI, J2_IRQ_SCI_ERI < J2_IRQ_SCI_RXI ? J2_IRQ_SCI_ERI : J2_IRQ_SCI_RXI,
-        J2_IRQ_SCI_ERI < J2_IRQ_SCI_RXI ? J2_IRQ_SCI_RXI : J2_IRQ_SCI_ERI, J2_IRQ_CMT1, J2_IRQ_SCI_TXI};
+        J2_IRQ_SCIF_BRI, J2_IRQ_SCIF_ERI < J2_IRQ_SCIF_RXI ? J2_IRQ_SCIF_ERI : J2_IRQ_SCIF_RXI,
+        J2_IRQ_SCIF_ERI < J2_IRQ_SCIF_RXI ? J2_IRQ_SCIF_RXI : J2_IRQ_SCIF_ERI, J2_IRQ_CMT1, J2_IRQ_SCIF_TXI};
     set_mask(15);
     intc_reset();
     clear_log();
@@ -198,26 +198,26 @@ int intc_test(void) {
 
     /* SCIF TXI requests service while its transmit FIFO is empty. */
     clear_log();
-    for (volatile unsigned spin = 0; spin < 100000 && !(SCI_REG16(SCI_SCFSR) & SCI_FSR_TEND); ++spin) {
+    for (volatile unsigned spin = 0; spin < 100000 && !(SCIF_REG16(SCIF_SCFSR) & SCIF_FSR_TEND); ++spin) {
     }
-    if (!(SCI_REG16(SCI_SCFSR) & SCI_FSR_TEND)) {
+    if (!(SCIF_REG16(SCIF_SCFSR) & SCIF_FSR_TEND)) {
         return 15;
     }
 
-    intc_set_priority(J2_IRQ_SCI_TXI, 7);
-    intc_enable(J2_IRQ_SCI_TXI);
-    SCI_REG16(SCI_SCSCR) |= SCI_SCR_TIE;
+    intc_set_priority(J2_IRQ_SCIF_TXI, 7);
+    intc_enable(J2_IRQ_SCIF_TXI);
+    SCIF_REG16(SCIF_SCSCR) |= SCIF_SCR_TIE;
     set_mask(0);
     if (!wait_entries(1)) {
         return 16;
     }
 
     set_mask(15);
-    if (order[0] != J2_IRQ_SCI_TXI) {
+    if (order[0] != J2_IRQ_SCIF_TXI) {
         return 17;
     }
 
-    if (levels[J2_IRQ_SCI_TXI] != 7 || pending()) {
+    if (levels[J2_IRQ_SCIF_TXI] != 7 || pending()) {
         return 18;
     }
 

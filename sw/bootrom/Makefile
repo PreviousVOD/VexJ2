@@ -34,4 +34,4 @@ $(OUT)/boot.hex: $(OUT)/main.bin $(ROOT)/tools/gen_verilog_rom.py
 $(OUT)/main.lst: $(OUT)/main.elf
 	$(CROSS)objdump -d $< > $@
 
-$(OBJS): $(ROOT)/sw/include/cmt.h $(ROOT)/sw/include/sci.h
+$(OBJS): $(ROOT)/sw/include/cmt.h $(ROOT)/sw/include/scif.h

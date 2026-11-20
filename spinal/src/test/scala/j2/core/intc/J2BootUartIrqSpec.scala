@@ -2,7 +2,7 @@ package j2.core.intc
 
 import j2.core._
 import j2.bus._
-import j2.periph.{J2SCI, J2WishboneToApb}
+import j2.periph.{J2SCIF, J2WishboneToApb}
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
@@ -21,12 +21,12 @@ class J2BootUartIrqSpec extends munit.FunSuite {
     }
     val core =
       new J2WishboneCoreFixture(J2CoreConfig(exposeDebug = false), J2CorePlugins.apply _, true)
-    val sci    = new J2SCI(depth)
+    val scif   = new J2SCIF(depth)
     val bridge = new J2WishboneToApb(J2Apb.config)
     io.instruction <> core.io.ibus
-    sci.io.bus <> bridge.io.output
-    sci.io.uart.rxd     := io.rx
-    core.io.interrupts  := sci.io.interrupt ## B(0, 2 bits)
+    scif.io.bus <> bridge.io.output
+    scif.io.uart.rxd    := io.rx
+    core.io.interrupts  := scif.io.interrupt ## B(0, 2 bits)
     core.io.nmi         := True
     core.io.event.valid := False
     core.io.event.payload.assignFromBits(B(0, core.io.event.payload.getBitsWidth bits))
@@ -54,7 +54,7 @@ class J2BootUartIrqSpec extends munit.FunSuite {
       Files.createDirectories(out)
       Files.writeString(
         out.resolve("j2_board_irqs.h"),
-        "#define J2_INTC_SOURCE_COUNT 6\n#define J2_IRQ_SCI_ERI 2\n#define J2_IRQ_SCI_RXI 3\n#define J2_VECTOR_SCI_ERI 66\n#define J2_VECTOR_SCI_RXI 67\n#define J2_IRQ_SCI_BRI 5\n#define J2_VECTOR_SCI_BRI 69\n"
+        "#define J2_INTC_SOURCE_COUNT 6\n#define J2_IRQ_SCIF_ERI 2\n#define J2_IRQ_SCIF_RXI 3\n#define J2_VECTOR_SCIF_ERI 66\n#define J2_VECTOR_SCIF_RXI 67\n#define J2_IRQ_SCIF_BRI 5\n#define J2_VECTOR_SCIF_BRI 69\n"
       )
       val prefix = Paths.get("../tools/local/sh-none-elf/bin/sh-none-elf-").toAbsolutePath.toString
       val elf    = out.resolve("main.elf").toString

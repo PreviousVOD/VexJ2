@@ -31,10 +31,10 @@ launcher `tools/fpga.py` builds the ROM and invokes the configured Scala generat
 then runs that board's Tcl script using the selected vendor executable.
 
 Each Scala board SoC directly instantiates its CPU, memories, buses and
-peripherals. `sciBase`, `cmtBase`, `spiControlBase` and `xipCacheControlBase`
-configure the boot SCI, CMT, SPI controller and XIP cache control addresses in
+peripherals. `scifBase`, `cmtBase`, `spiControlBase` and `xipCacheControlBase`
+configure the boot SCIF, CMT, SPI controller and XIP cache control addresses in
 both RTL and firmware. Current boards use `0xff001000`, `0xff003000`,
-`0xff002000` and `0xff004000`, respectively. `sciFifoDepth=4` selects four-byte
+`0xff002000` and `0xff004000`, respectively. `scifFifoDepth=4` selects four-byte
 TX/RX FIFOs on both boards. These peripherals occupy aligned 4 KiB windows. Rebuild RTL and
 firmware together after relocating them. Memory sizes and windows continue to
 come from the board profile, while the board SoC owns the actual memory and
@@ -119,7 +119,7 @@ emits `j2_board_irqs.h` into its output directory. A board interrupt-map change
 requires rebuilding both RTL and firmware. Generic INTC register offsets stay
 in `sw/include/j2_intc_regs.h`.
 
-`sciFifoDepth` selects SCI buffering per board (0–255). Zero retains one holding
+`scifFifoDepth` selects SCIF buffering per board (0–255). Zero retains one holding
 register per direction; positive values specify FIFO capacity. All depths use
 the SCIF register layout and the same firmware driver. The current boards use
 four; changing depth requires regenerating RTL, without a firmware ABI change.

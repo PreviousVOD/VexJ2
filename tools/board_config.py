@@ -34,8 +34,8 @@ def generate_interrupt_header(values, path):
 def validate(values):
     interrupt_sources(values)
     number = lambda key: int(values[key], 0)
-    if not 0 <= number("sciFifoDepth") <= 255:
-        raise ValueError("SCI FIFO depth must be 0–255")
+    if not 0 <= number("scifFifoDepth") <= 255:
+        raise ValueError("SCIF FIFO depth must be 0–255")
     clock = number("clockHz")
     pll = number("usePll")
     if not 0 < clock < (1 << 31) or pll not in (0, 1):
@@ -54,7 +54,7 @@ def validate(values):
             raise ValueError("invalid address window")
     if number("memoryBase") % 16:
         raise ValueError("memory base must be 16-byte aligned")
-    control_keys = ("sciBase", "cmtBase", "spiControlBase", "xipCacheControlBase")
+    control_keys = ("scifBase", "cmtBase", "spiControlBase", "xipCacheControlBase")
     for key in control_keys:
         base = number(key)
         if base < 0 or base % 4096 or base + 4096 > (1 << 32):
@@ -111,13 +111,13 @@ def generate(values, out):
                    "J2_FLASH_BYTES": "flashBytes", "J2_XIP_BASE": "xipBase",
                    "J2_XIP_BYTES": "xipBytes", "J2_MEMORY_BASE": "memoryBase",
                    "J2_MEMORY_BYTES": "memoryBytes", "J2_SRAM_BYTES": "sramBytes",
-                   "J2_SCI_BASE": "sciBase", "J2_CMT_BASE": "cmtBase",
+                   "J2_SCIF_BASE": "scifBase", "J2_CMT_BASE": "cmtBase",
                    "J2_SPI_CONTROL_BASE": "spiControlBase",
                    "J2_XIP_CACHE_CONTROL_BASE": "xipCacheControlBase"}
     write_if_changed(out / "rom/board.h", "/* Generated from board.properties. */\n" +
                      f'#define J2_BOARD_NAME {json.dumps(values["name"])}\n' +
                      f'#define J2_FLASH_MICRON {int(values["flashType"] == "micron")}\n' +
-                     "".join(f"#define {name} {int(values[key], 0)}{'' if name in ('J2_SRAM_BYTES', 'J2_SCI_BASE', 'J2_CMT_BASE', 'J2_SPI_CONTROL_BASE', 'J2_XIP_CACHE_CONTROL_BASE') else 'u'}\n" for name, key in definitions.items()))
+                     "".join(f"#define {name} {int(values[key], 0)}{'' if name in ('J2_SRAM_BYTES', 'J2_SCIF_BASE', 'J2_CMT_BASE', 'J2_SPI_CONTROL_BASE', 'J2_XIP_CACHE_CONTROL_BASE') else 'u'}\n" for name, key in definitions.items()))
     generate_interrupt_header(values, out / "include/j2_board_irqs.h")
     # Quote scalar strings as Tcl data, independent of the chosen FPGA part.
     write_if_changed(out / "board.tcl",

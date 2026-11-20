@@ -30,7 +30,7 @@ Separate AHB5 instruction and data buses connect through a routing matrix.
 Memory domains use independent arbiters. A standalone system BIU precedes the
 AHB-to-APB bridge and peripheral matrix; it is separate from the AMBA library.
 A shared, configurable set-associative read cache serves the SPI XIP region.
-The SoC includes boot ROM, SRAM, SCI UART, GPIO and CMT timers; board wrappers supply
+The SoC includes boot ROM, SRAM, SCIF UART, GPIO and CMT timers; board wrappers supply
 external memory, clocks, reset and pins.
 
 ```mermaid
@@ -44,7 +44,7 @@ flowchart LR
   BUS --> BIU["Standalone system BIU"]
   BIU --> BRIDGE["AHB5 to APB4"]
   BRIDGE --> APB["APB matrix"]
-  APB --> IO["SCI UART / GPIO / CMT<br/>SPI and cache control"]
+  APB --> IO["SCIF UART / GPIO / CMT<br/>SPI and cache control"]
 ```
 
 Applications execute from cached SPI flash and can relocate their own code into RAM.
@@ -62,7 +62,7 @@ Wukong v1 / Xilinx XC7A100T with DDR3 and Pmod SF3 application flash.
 | Cache geometry, refill and invalidation | [Read cache](docs/cache.md) |
 | Generic AHB5 interfaces, interconnects and arbiters | [AHB5 IP library](docs/ahb5.md) |
 | APB peripherals, bridge and standalone BIU | [APB subsystem](docs/apb.md) |
-| SH7265-style SCIF and SH7124/SH7125-style CMT | [SCI](docs/sci.md) · [CMT](docs/cmt.md) |
+| SH7265-style SCIF and SH7124/SH7125-style CMT | [SCIF](docs/scif.md) · [CMT](docs/cmt.md) |
 | GPIO direction, data and edge interrupts | [PIO](docs/pio.md) |
 | Core-private PPB and NVIC-style INTC | [PPB / INTC reference](docs/ppb-intc.md) |
 | Toolchain, source layout and verification commands | [Development](docs/development.md) |

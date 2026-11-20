@@ -8,8 +8,8 @@ import spinal.lib.com.uart.Uart
 /** Asynchronous SH7265 SCIF register interface. Zero depth uses one holding register per direction;
   * positive depth specifies FIFO capacity, excluding the transmit shift register.
   */
-final class J2SCI(val fifoDepth: Int = 0) extends Component {
-  require(fifoDepth >= 0 && fifoDepth <= 255, "SCI FIFO depth must be 0–255")
+final class J2SCIF(val fifoDepth: Int = 0) extends Component {
+  require(fifoDepth >= 0 && fifoDepth <= 255, "SCIF FIFO depth must be 0–255")
   val capacity = fifoDepth.max(1)
   val io = new Bundle {
     val bus  = slave(J2Apb())

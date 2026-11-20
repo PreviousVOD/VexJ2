@@ -15,9 +15,9 @@ endif
 OUT := $(ROOT)/build/sw/coremark/$(BOARD)/$(J2_CLOCK_HZ)/$(RUN)-$(ITERATIONS)
 SIM_OUT := $(ROOT)/build/sw/coremark-sim/$(BOARD)/$(J2_CLOCK_HZ)/$(RUN)-$(ITERATIONS)
 FLAGS := -m2 -mb -O2 -Wall -Wextra -ffreestanding -fno-builtin -fno-lto -nostdlib
-J2_SCI_BASE := $(shell python3 $(ROOT)/tools/board_config.py $(BOARD) --get sciBase)
+J2_SCIF_BASE := $(shell python3 $(ROOT)/tools/board_config.py $(BOARD) --get scifBase)
 J2_CMT_BASE := $(shell python3 $(ROOT)/tools/board_config.py $(BOARD) --get cmtBase)
-DEFINES := -DJ2_SRAM_BYTES=$(J2_SRAM_BYTES) -DJ2_CLOCK_HZ=$(J2_CLOCK_HZ) -DJ2_SCI_BASE=$(J2_SCI_BASE) -DJ2_CMT_BASE=$(J2_CMT_BASE) -DITERATIONS=$(ITERATIONS) \
+DEFINES := -DJ2_SRAM_BYTES=$(J2_SRAM_BYTES) -DJ2_CLOCK_HZ=$(J2_CLOCK_HZ) -DJ2_SCIF_BASE=$(J2_SCIF_BASE) -DJ2_CMT_BASE=$(J2_CMT_BASE) -DITERATIONS=$(ITERATIONS) \
   -DTOTAL_DATA_SIZE=2000 -D$(shell echo $(RUN) | tr a-z A-Z)_RUN=1
 CFLAGS := $(FLAGS) $(DEFINES) -I. -I$(UPSTREAM) -I$(ROOT)/sw/include -I$(ROOT)/sw/bootrom \
   '-DJ2_COMPILER_FLAGS="$(FLAGS) $(DEFINES)"'
@@ -67,7 +67,7 @@ $(OUT)/main.lst: $(OUT)/main.elf
 
 $(OBJS) $(SIM_OUT)/sim_entry.o: $(ROOT)/fpga/$(BOARD)/board.properties $(ROOT)/tools/board_config.py
 
-$(OBJS): $(ROOT)/sw/include/cmt.h $(ROOT)/sw/include/sci.h
+$(OBJS): $(ROOT)/sw/include/cmt.h $(ROOT)/sw/include/scif.h
 
 $(OBJS): $(ROOT)/sw/include/intc.h $(ROOT)/sw/include/j2_intc_regs.h
 

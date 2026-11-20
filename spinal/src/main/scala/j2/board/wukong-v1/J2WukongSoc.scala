@@ -27,7 +27,7 @@ final class J2WukongSoc(config: J2SocConfig) extends Component {
   private val memoryMapping = SizeMapping(config.memoryBase, config.memoryBytes)
   private val apbMappings = Seq(
     SizeMapping(0xff000000L, 0x1000), // GPIO
-    SizeMapping(config.sciBase, 0x1000),
+    SizeMapping(config.scifBase, 0x1000),
     SizeMapping(config.spiControlBase, 0x1000), // Application flash control
     SizeMapping(config.cmtBase, 0x1000),
     SizeMapping(config.xipCacheControlBase, 0x1000) // XIP cache control
@@ -43,7 +43,7 @@ final class J2WukongSoc(config: J2SocConfig) extends Component {
   )
   private val rom  = new J2Rom(config.romHex)
   private val sram = new J2Sram(config.sramBytes)
-  private val uart = new J2SCI(config.sciFifoDepth)
+  private val uart = new J2SCIF(config.scifFifoDepth)
   private val cmt  = new J2CMT
   private val pio  = new J2PIO
   private val flash = new J2CachedSpiFlash(
@@ -86,10 +86,10 @@ final class J2WukongSoc(config: J2SocConfig) extends Component {
   private val interruptSignals = Map(
     "CMT0" -> cmt.io.interrupt(0),
     "CMT1" -> cmt.io.interrupt(1),
-    "SCI_ERI" -> uart.io.interrupt(0),
-    "SCI_RXI" -> uart.io.interrupt(1),
-    "SCI_TXI" -> uart.io.interrupt(2),
-    "SCI_BRI" -> uart.io.interrupt(3),
+    "SCIF_ERI" -> uart.io.interrupt(0),
+    "SCIF_RXI" -> uart.io.interrupt(1),
+    "SCIF_TXI" -> uart.io.interrupt(2),
+    "SCIF_BRI" -> uart.io.interrupt(3),
     "PIO" -> pio.io.interrupt
   )
   require(

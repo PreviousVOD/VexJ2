@@ -59,13 +59,13 @@ class BoardSocSpec extends munit.FunSuite {
       val profile = BoardProfile(
         if (relocate)
           values ++ Map(
-            "sciBase" -> "0xff006000",
+            "scifBase" -> "0xff006000",
             "cmtBase" -> "0xff007000",
             "spiControlBase" -> "0xff008000",
             "xipCacheControlBase" -> "0xff009000",
             "sramBytes" -> "65536",
-            "sciFifoDepth" -> "16",
-            "interruptSources" -> "PIO,SCI_BRI,SCI_RXI,CMT1,SCI_TXI,CMT0,SCI_ERI"
+            "scifFifoDepth" -> "16",
+            "interruptSources" -> "PIO,SCIF_BRI,SCIF_RXI,CMT1,SCIF_TXI,CMT0,SCIF_ERI"
           )
         else values
       )
@@ -164,7 +164,7 @@ class BoardSocSpec extends munit.FunSuite {
             if (dut.io.uartTx.toBoolean) value |= 1 << bit
             sleep(bitCycles * 10L)
           }
-          assert(dut.io.uartTx.toBoolean, "SCI stop bit")
+          assert(dut.io.uartTx.toBoolean, "SCIF stop bit")
           received = value
         }
         fork {

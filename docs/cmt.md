@@ -66,5 +66,5 @@ the CMT0 test use priority 14. The XIP INTC test also services CMT1. See the
 `make peripheral-model-test` checks the reference testbench's CMT/SCIF model.
 Both board boot simulations and the XIP application exercise timeout rollover,
 CMT interrupt entry and peripheral flag clearing. Current physical-board runs
-are recorded in [SCI/SCIF](sci.md); timer-based benchmark validation and the
+are recorded in [SCIF](scif.md); timer-based benchmark validation and the
 minimum ten-second duration are documented in [CoreMark](coremark.md).

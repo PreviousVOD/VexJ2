@@ -4,8 +4,8 @@ import spinal.core.sim._
 import scala.collection.mutable.ArrayBuffer
 import scala.language.reflectiveCalls
 
-class J2SCISpec extends munit.FunSuite {
-  class Rig(val dut: J2SCI) {
+class J2SCIFSpec extends munit.FunSuite {
+  class Rig(val dut: J2SCIF) {
     val b      = dut.io.bus
     var cycles = 0
     val tx     = ArrayBuffer[Boolean]()
@@ -54,7 +54,10 @@ class J2SCISpec extends munit.FunSuite {
         parity: Int = -1,
         reverse: Boolean = false,
         badParity: Boolean = false,
-        badStop: Boolean = false
+        badStop: Boolean = false,
+        stops: Int = 1,
+        idleBits: Int = 1,
+        badSecondStop: Boolean = false
     ): Unit = {
       def bit(value: Boolean): Unit = { dut.io.uart.rxd #= value; tick(period) }
       bit(false)
@@ -63,7 +66,10 @@ class J2SCISpec extends munit.FunSuite {
       if (parity >= 0)
         bit(((Integer.bitCount(value & ((1 << bits) - 1)) + parity) & 1) != 0 ^ badParity)
       bit(!badStop)
-      dut.io.uart.rxd #= true; tick(period)
+      if (stops == 2) {
+        bit(!badSecondStop)
+      }
+      dut.io.uart.rxd #= true; tick(period * idleBits)
     }
     def checkFrame(
         start: Int,
@@ -85,7 +91,7 @@ class J2SCISpec extends munit.FunSuite {
     }
   }
   private def run(depth: Int = 0)(body: Rig => Unit): Unit =
-    SimConfig.withVerilator.compile(new J2SCI(depth)).doSim(d => body(new Rig(d)))
+    SimConfig.withVerilator.compile(new J2SCIF(depth)).doSim(d => body(new Rig(d)))
 
   test("SCIF register layout at depth zero, strobes and hard-wired modes") {
     run() { r =>
@@ -160,6 +166,97 @@ class J2SCISpec extends munit.FunSuite {
         assertEquals(r.read(16) & 0x8f, 2)
         assertEquals(r.read(20), value); assertEquals(r.read(20), 0)
         r.write(16, 0xfffc); assertEquals(r.read(16) & 3, 0)
+      }
+    }
+  }
+
+  // Exercise each format independently of the RTL's parity and bit-count logic.
+  private val formats = for {
+    bits <- Seq(7, 8)
+    parity <- Seq(-1, 0, 1) // none, even, odd
+    stops <- Seq(1, 2)
+  } yield (bits, parity, stops)
+
+  private def frameMode(bits: Int, parity: Int, stops: Int): Int =
+    (if (bits == 7) 0x40 else 0) |
+      (if (parity >= 0) 0x20 else 0) |
+      (if (parity == 1) 0x10 else 0) |
+      (if (stops == 2) 8 else 0)
+
+  for (depth <- Seq(0, 4, 16))
+    test(s"SCIF depth $depth: all 12 formats, seven-bit masking and parity errors") {
+      run(depth) { r =>
+        for ((bits, parity, stops) <- formats) {
+          val mode       = frameMode(bits, parity, stops)
+          val mask       = (1 << bits) - 1
+          val frameTicks = 32 * (1 + bits + (if (parity >= 0) 1 else 0) + stops)
+          // Both parity values, asymmetric patterns, and bit 7 set in seven-bit mode.
+          for (value <- Seq(0x00, 0x01, 0x55, 0x7f, 0x80, 0xa6, 0xff)) {
+            r.configure(mode, control = 0x38)
+            val before = r.tx.size
+            r.queue(value)
+            r.queue(value ^ 0xff)
+            r.tick(2 * frameTicks + 32)
+            val first = r.tx.indexWhere(v => !v, before)
+            assert(first >= 0)
+            r.checkFrame(first, value, 32, bits, parity, stops)
+            r.checkFrame(first + frameTicks, value ^ 0xff, 32, bits, parity, stops)
+            // A following start proves the configured stop length, unlike idle-high TX.
+            assert(r.tx(first + frameTicks - 1))
+            assert(!r.tx(first + frameTicks))
+            assertEquals(r.read(28), 0)
+
+            r.receive(value, seven = bits == 7, parity = parity, stops = stops)
+            assertEquals(r.read(28) & 255, 1)
+            assertEquals(r.read(16) & 0xff9f, 2)
+            assertEquals(r.dut.io.interrupt.toInt, 0)
+            assertEquals(r.read(20), value & mask)
+
+            if (parity >= 0) {
+              r.receive(value, seven = bits == 7, parity = parity, badParity = true, stops = stops)
+              assertEquals(r.read(16) & 0xff8c, 0x1084)
+              assertEquals(r.dut.io.interrupt.toInt, 1)
+              assertEquals(r.read(20), value & mask)
+              assertEquals(r.read(16) & 0xff0c, 0)
+              r.write(16, 0xff7c)
+              r.tick(2)
+              assertEquals(r.dut.io.interrupt.toInt, 0)
+              r.receive(value, seven = bits == 7, parity = parity, stops = stops)
+              assertEquals(r.read(16) & 0xff9f, 2)
+              assertEquals(r.read(20), value & mask)
+            }
+          }
+        }
+      }
+    }
+
+  test("SCIF all formats: contiguous RX frames and first-stop-only framing checks") {
+    run(4) { r =>
+      for ((bits, parity, stops) <- formats) {
+        val mode   = frameMode(bits, parity, stops)
+        val values = Seq(0x80, 0x01, 0xa6, 0xff)
+        r.configure(mode, control = 0x18)
+        for (value <- values)
+          r.receive(value, seven = bits == 7, parity = parity, stops = stops, idleBits = 0)
+        assertEquals(r.read(28) & 255, 4)
+        assertEquals(r.read(16) & 0xff9f, 2)
+        assertEquals(r.read(36), 0)
+        for (value <- values)
+          assertEquals(r.read(20), value & ((1 << bits) - 1))
+
+        r.configure(mode, control = 0x18)
+        r.receive(0x55, seven     = bits == 7, parity = parity, badStop = true, stops = stops)
+        assertEquals(r.read(16) & 0xff8c, 0x0188)
+        assertEquals(r.dut.io.interrupt.toInt, 1)
+        assertEquals(r.read(20), 0x55)
+
+        if (stops == 2) {
+          r.configure(mode, control = 0x18)
+          r.receive(0x55, seven     = bits == 7, parity = parity, stops = 2, badSecondStop = true)
+          assertEquals(r.read(16) & 0xff9f, 2)
+          assertEquals(r.read(20), 0x55)
+          assertEquals(r.dut.io.interrupt.toInt, 0)
+        }
       }
     }
   }

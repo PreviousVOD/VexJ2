@@ -9,11 +9,11 @@ ifndef J2_CLOCK_HZ
 J2_CLOCK_HZ := $(shell python3 $(ROOT)/tools/board_config.py $(BOARD) --get clockHz)
 endif
 J2_UART_BAUD ?= 19200
-J2_SCI_BASE := $(shell python3 $(ROOT)/tools/board_config.py $(BOARD) --get sciBase)
+J2_SCIF_BASE := $(shell python3 $(ROOT)/tools/board_config.py $(BOARD) --get scifBase)
 J2_CMT_BASE := $(shell python3 $(ROOT)/tools/board_config.py $(BOARD) --get cmtBase)
 J2_XIP_CACHE_CONTROL_BASE := $(shell python3 $(ROOT)/tools/board_config.py $(BOARD) --get xipCacheControlBase)
 CFLAGS := -m2 $(ENDIAN) -Os -Wall -ffreestanding -fno-builtin -nostdlib \
-	-I$(ROOT)/sw/include -I$(ROOT)/sw/bootrom -DJ2_CLOCK_HZ=$(J2_CLOCK_HZ) -DJ2_SCI_BASE=$(J2_SCI_BASE) -DJ2_CMT_BASE=$(J2_CMT_BASE) -DJ2_XIP_CACHE_CONTROL_BASE=$(J2_XIP_CACHE_CONTROL_BASE) -DJ2_UART_BAUD=$(J2_UART_BAUD) -DJ2_SRAM_BYTES=$(J2_SRAM_BYTES)
+	-I$(ROOT)/sw/include -I$(ROOT)/sw/bootrom -DJ2_CLOCK_HZ=$(J2_CLOCK_HZ) -DJ2_SCIF_BASE=$(J2_SCIF_BASE) -DJ2_CMT_BASE=$(J2_CMT_BASE) -DJ2_XIP_CACHE_CONTROL_BASE=$(J2_XIP_CACHE_CONTROL_BASE) -DJ2_UART_BAUD=$(J2_UART_BAUD) -DJ2_SRAM_BYTES=$(J2_SRAM_BYTES)
 LDFLAGS := -m2 $(ENDIAN) -nostdlib -Wl,--defsym=J2_SRAM_BYTES=$(J2_SRAM_BYTES) -T app.x -Wl,-Map,$(OUT)/main.map
 OBJS := $(addprefix $(OUT)/,entry.o main.o intc.o uart.o isa.o isa_asm.o)
 
@@ -59,7 +59,7 @@ clean:
 
 $(OBJS): $(ROOT)/fpga/$(BOARD)/board.properties $(ROOT)/tools/board_config.py
 
-$(OBJS): $(ROOT)/sw/include/cmt.h $(ROOT)/sw/include/sci.h
+$(OBJS): $(ROOT)/sw/include/cmt.h $(ROOT)/sw/include/scif.h
 
 $(OBJS): $(ROOT)/sw/include/intc.h $(ROOT)/sw/include/j2_intc_regs.h
 

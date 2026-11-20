@@ -9,10 +9,10 @@ with the [toolchain](development.md#toolchain) installed.
 
 ## Board integration
 
-`J2TangPrimerSoc` directly instantiates Tang's CPU, ROM/SRAM, buses, boot SCI,
-CMT, 32-bit GPIO and cached application SPI flash. SCI, CMT, SPI control and
-cache control addresses come from `sciBase`, `cmtBase`, `spiControlBase` and
-`xipCacheControlBase` in the board profile; `sciFifoDepth=4` selects four-byte
+`J2TangPrimerSoc` directly instantiates Tang's CPU, ROM/SRAM, buses, boot SCIF,
+CMT, 32-bit GPIO and cached application SPI flash. SCIF, CMT, SPI control and
+cache control addresses come from `scifBase`, `cmtBase`, `spiControlBase` and
+`xipCacheControlBase` in the board profile; `scifFifoDepth=4` selects four-byte
 TX/RX FIFOs. `J2TangPrimer` supplies pads, clocks/reset and SDRAM. Native simulation
 uses the same SoC composition as the FPGA top; see [SoC composition](soc.md#board-owned-composition).
 
@@ -37,7 +37,7 @@ flowchart LR
   BIU --> BRIDGE[AHB5 to APB4 bridge]
   BRIDGE --> PB[APB matrix]
   PB --> GPIO[32-bit GPIO<br/>0xff000000]
-  PB --> UART[J2SCI<br/>0xff001000]
+  PB --> UART[J2SCIF<br/>0xff001000]
   PB -->|flash control| CTRL[J2SpiFlash control<br/>0xff002000]
   PB --> TIMER[J2CMT<br/>0xff003000]
   PB -->|cache control| CACHE
@@ -145,5 +145,5 @@ logs are under `build/logs/td_verilog`.
 `make isa-sim` covers reset, cold startup and blank-flash UART upload, followed
 by the application's external-memory, cache, APB4, CMT, INTC and ISA checks.
 `make isa-hw` builds, checks timing, programs volatile FPGA SRAM and uploads
-the application. See [SCI/SCIF](sci.md) for the dedicated FIFO/error tests and
+the application. See [SCIF](scif.md) for the dedicated FIFO/error tests and
 recorded hardware runs at the current four-byte FIFO depth.

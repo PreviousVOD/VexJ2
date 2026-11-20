@@ -3,7 +3,7 @@
 [Project overview](../README.md) · [CPU architecture](cpu-architecture.md)
 
 `J2TangPrimerSoc` and `J2WukongSoc` are independent, complete SoC definitions.
-Each directly instantiates its CPU, ROM/SRAM, bus matrix, BIU, boot SCI, CMT
+Each directly instantiates its CPU, ROM/SRAM, bus matrix, BIU, boot SCIF, CMT
 and board peripherals. Physical wrappers supply clocks, reset, pads and
 external-memory controllers. Source paths and commands below are relative
 to the repository root.
@@ -13,8 +13,8 @@ to the repository root.
 | Layer | Responsibility |
 | --- | --- |
 | `j2.core` | Reusable processor, private PPB and INTC |
-| `j2.board.tang_primer.J2TangPrimerSoc` | Tang CPU, ROM/SRAM, AHB/APB topology, SCI/CMT, 32-bit GPIO and cached Winbond endpoint |
-| `j2.board.wukong_v1.J2WukongSoc` | Wukong CPU, ROM/SRAM, AHB/APB topology, SCI/CMT, 24 GPIO pads and cached SF3 endpoint |
+| `j2.board.tang_primer.J2TangPrimerSoc` | Tang CPU, ROM/SRAM, AHB/APB topology, SCIF/CMT, 32-bit GPIO and cached Winbond endpoint |
+| `j2.board.wukong_v1.J2WukongSoc` | Wukong CPU, ROM/SRAM, AHB/APB topology, SCIF/CMT, 24 GPIO pads and cached SF3 endpoint |
 | `J2TangPrimer` / `J2Wukong` | Physical pins, clocks/reset, pad primitives and SDRAM/DDR integration |
 | `j2.bus` / `j2.periph` | Reusable bus and peripheral IP instantiated by each board |
 
@@ -25,9 +25,9 @@ flowchart TB
     AHB --> RAM[Board ROM and SRAM instances]
     AHB --> BIU[Peripheral BIU and AHB-to-APB bridge]
     BIU --> APB[Board APB matrix]
-    APB --> SCI[Boot SCI at sciBase]
+    APB --> SCIF[Boot SCIF at scifBase]
     APB --> CMT[CMT at cmtBase]
-    SCI -. Board IRQ map .-> CPU
+    SCIF -. Board IRQ map .-> CPU
     CMT -. Board IRQ map .-> CPU
     APB --> GPIO[Board GPIO]
     APB --> CTRL[Flash and cache controls]
@@ -45,7 +45,7 @@ BIU domains, peripheral instances and interrupt wiring. Changes to one board's
 memory or peripheral architecture do not require changing another board's SoC.
 `J2SocConfig` is configuration data, not a hardware composition.
 
-The `sciBase`, `cmtBase`, `spiControlBase` and `xipCacheControlBase` entries in
+The `scifBase`, `cmtBase`, `spiControlBase` and `xipCacheControlBase` entries in
 each `board.properties` select the boot peripheral addresses. Both current
 profiles retain `0xff001000`, `0xff003000`, `0xff002000` and `0xff004000`,
 respectively.
@@ -54,7 +54,7 @@ mappings are rejected, and these control windows cannot overlap private PPB. Eac
 BIU window encloses its APB targets; unmapped addresses return bus errors.
 
 `BoardProfile` passes the addresses to RTL. The firmware property loader emits
-assembly-safe `J2_SCI_BASE`, `J2_CMT_BASE`, `J2_SPI_CONTROL_BASE` and
+assembly-safe `J2_SCIF_BASE`, `J2_CMT_BASE`, `J2_SPI_CONTROL_BASE` and
 `J2_XIP_CACHE_CONTROL_BASE` definitions for BootROM; application
 and CoreMark builds read the same properties. C and assembly drivers use these
 macros. Standalone architectural fixtures retain legacy default addresses when
@@ -66,7 +66,7 @@ order. Its SoC connects these names to its own peripheral request signals and
 sizes the CPU's private INTC accordingly. Elaboration rejects missing, duplicate
 or unknown connections. There is no shared SoC interrupt list.
 
-Both profiles currently use `CMT0,CMT1,SCI_ERI,SCI_RXI,SCI_TXI,SCI_BRI,PIO` (sources
+Both profiles currently use `CMT0,CMT1,SCIF_ERI,SCIF_RXI,SCIF_TXI,SCIF_BRI,PIO` (sources
 0–6, vectors 64–70), preserving their existing numbering. The firmware build
 generates `j2_board_irqs.h` from the selected profile for both C and assembly.
 BootROM, application and CoreMark vector tables use those definitions, while
@@ -90,7 +90,7 @@ arbiters are instantiated explicitly in each board SoC.
 
 A standalone **`J2Biu`**, outside the generic AMBA library, covers the peripheral
 domain covering its board's APB mappings (currently `0xff000000`–`0xff004fff`). It precedes `Ahb5ToApb4Bridge` and `Apb4Matrix`,
-which selects GPIO, SCI, SPI control, CMT or cache control. The BIU composes
+which selects GPIO, SCIF, SPI control, CMT or cache control. The BIU composes
 standard AHB arbitration and persistent lock ownership at that system boundary;
 programmable access-control policy is not implemented yet. Destination ownership
 uses the physical ingress port. HMASTER reaches the bridge unchanged; APB4 has
@@ -110,7 +110,7 @@ policy. See the [generic AHB5 library](ahb5.md) for protocol and identity rules.
 CPU and memory ports use native AHB5. ROM, SRAM and the XIP cache accept AHB
 through `J2AhbMemoryEndpoint`; Tang SDRAM feeds the SDRAM controller's BMB port
 directly, and Wukong DDR feeds the MIG request/response mailboxes directly.
-GPIO, SCI, CMT, SPI control and cache control expose native APB4 interfaces.
+GPIO, SCIF, CMT, SPI control and cache control expose native APB4 interfaces.
 There is no Wishbone interface or conversion anywhere in the production SoC.
 See [native AHB memory paths](ahb-memory.md) for phase timing and backend contracts.
 
@@ -123,7 +123,7 @@ registers occupy separate APB words; reading SCFRDR pops one received byte. SPI 
 require their complete payload lanes; see the [APB4 contract](apb.md).
 
 The peripheral base addresses and flash image format are unchanged, but the
-CMT and SCI register interfaces replace the previous timer and UART maps.
+CMT and SCIF register interfaces replace the previous timer and UART maps.
 Rebuild firmware for these interfaces; old application binaries are incompatible.
 
 ## Memory map
@@ -140,7 +140,7 @@ The two external-memory entries below are alternatives selected by the board.
 | Tang Primer SiP SDRAM, 8 MiB | `0x80000000`–`0x807fffff` |
 | Wukong DDR3, 256 MiB | `0x80000000`–`0x8fffffff` |
 | GPIO | `0xff000000` |
-| Boot SCI | `sciBase` (currently `0xff001000`) |
+| Boot SCIF | `scifBase` (currently `0xff001000`) |
 | SPI flash control | `spiControlBase` (currently `0xff002000`) |
 | CMT | `cmtBase` (currently `0xff003000`) |
 | XIP cache control | `xipCacheControlBase` (currently `0xff004000`) |
@@ -261,22 +261,22 @@ bits; both reset disabled. The validation application and CoreMark use priority
 
 ## Serial interface
 
-`J2SCI` at the board's `sciBase` (currently `0xff001000`) always uses the SH7265 SCIF register layout.
-`sciFifoDepth` selects per-direction buffering: zero keeps one holding register;
+`J2SCIF` at the board's `scifBase` (currently `0xff001000`) always uses the SH7265 SCIF register layout.
+`scifFifoDepth` selects per-direction buffering: zero keeps one holding register;
 positive values specify 1–255 FIFO entries. Both board defaults are four.
 It supports asynchronous 7/8-bit UART framing, parity, stop bits, errors and four
 registered interrupt sources. Unsupported mode bits are hard-wired. The shared
 application driver polls TDFE and the receive count; BootROM polls the hardware
 RX FIFO with errors latched until retry, without an RX ISR or software ring. ERI/RXI/TXI/BRI connect through the board interrupt map, currently sources
 2–5 (vectors 66–69), independently enabled and prioritized. See the
-[SCI register and timing reference](sci.md).
+[SCIF register and timing reference](scif.md).
 
 ## Board integration validation
 
 `BoardSocSpec` runs both actual SoCs with default profiles and configurations
-that relocate SCI/CMT/SPI/cache control, enlarge SRAM and reorder interrupt
+that relocate SCIF/CMT/SPI/cache control, enlarge SRAM and reorder interrupt
 sources. Firmware exercises UART reception, CMT0 and INTC priority/pending
 behavior over multiple reset seeds. BootROM polling and optional ISR receive
 paths also have dedicated simulations. The board boot tests run the shared
 XIP application, including external-memory, ISA and peripheral checks.
-See [SCI/SCIF](sci.md) for current boot/upload and physical-board evidence.
+See [SCIF](scif.md) for current boot/upload and physical-board evidence.

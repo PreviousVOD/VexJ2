@@ -3,7 +3,7 @@
 /* App */
 #include "intc.h"
 #include "irq_driver.h"
-#include "sci.h"
+#include "scif.h"
 #include "uart.h"
 
 /* Optional ISR regression driver; not linked into the production BootROM.
@@ -33,22 +33,22 @@ static void restore_interrupts(uint32_t sr) {
 /* ERI, RXI and BRI share one producer. Drain by count: RDF/DR are sticky,
  * and each FIFO head has its own parity/framing indication. */
 void __attribute__((interrupt_handler)) boot_uart_rx_isr(void) {
-    uint16_t status      = SCI_REG16(SCI_SCFSR);
-    uint16_t line        = SCI_REG16(SCI_SCLSR);
-    SCI_REG16(SCI_SCFSR) = (uint16_t)~(status & (SCI_FSR_ER | SCI_FSR_BRK));
-    SCI_REG16(SCI_SCLSR) = (uint16_t)~(line & SCI_LSR_ORER);
-    if (status & SCI_FSR_ERRORS) {
+    uint16_t status        = SCIF_REG16(SCIF_SCFSR);
+    uint16_t line          = SCIF_REG16(SCIF_SCLSR);
+    SCIF_REG16(SCIF_SCFSR) = (uint16_t)~(status & (SCIF_FSR_ER | SCIF_FSR_BRK));
+    SCIF_REG16(SCIF_SCLSR) = (uint16_t)~(line & SCIF_LSR_ORER);
+    if (status & SCIF_FSR_ERRORS) {
         rx_failed = 1;
     }
 
-    if (line & SCI_LSR_ORER) {
+    if (line & SCIF_LSR_ORER) {
         rx_failed = 1;
     }
 
-    while (SCI_REG16(SCI_SCFDR) & 255u) {
-        status       = SCI_REG16(SCI_SCFSR);
-        uint8_t data = SCI_REG8(SCI_SCFRDR);
-        if (status & (SCI_FSR_FER | SCI_FSR_PER)) {
+    while (SCIF_REG16(SCIF_SCFDR) & 255u) {
+        status       = SCIF_REG16(SCIF_SCFSR);
+        uint8_t data = SCIF_REG8(SCIF_SCFRDR);
+        if (status & (SCIF_FSR_FER | SCIF_FSR_PER)) {
             rx_failed = 1;
         }
 
@@ -66,21 +66,21 @@ void __attribute__((interrupt_handler)) boot_uart_rx_isr(void) {
         rx_data[head] = data;
         rx_head       = next;
     }
-    SCI_REG16(SCI_SCFSR) = (uint16_t)~(SCI_FSR_RDF | SCI_FSR_DR);
-    (void)SCI_REG16(SCI_SCFSR);
+    SCIF_REG16(SCIF_SCFSR) = (uint16_t)~(SCIF_FSR_RDF | SCIF_FSR_DR);
+    (void)SCIF_REG16(SCIF_SCFSR);
 }
 
 void uart_rx_irq_discard(void) {
-    uint32_t saved       = mask_interrupts();
-    rx_head              = 0;
-    rx_tail              = 0;
-    rx_failed            = 0;
-    uint16_t control     = SCI_REG16(SCI_SCFCR);
-    SCI_REG16(SCI_SCFCR) = control | SCI_FCR_RFRST;
-    SCI_REG16(SCI_SCFCR) = control & (uint16_t)~SCI_FCR_RFRST;
-    SCI_REG16(SCI_SCFSR) = (uint16_t)~(SCI_FSR_RDF | SCI_FSR_DR | SCI_FSR_ER | SCI_FSR_BRK);
-    SCI_REG16(SCI_SCLSR) = (uint16_t)~SCI_LSR_ORER;
-    (void)SCI_REG16(SCI_SCFSR);
+    uint32_t saved         = mask_interrupts();
+    rx_head                = 0;
+    rx_tail                = 0;
+    rx_failed              = 0;
+    uint16_t control       = SCIF_REG16(SCIF_SCFCR);
+    SCIF_REG16(SCIF_SCFCR) = control | SCIF_FCR_RFRST;
+    SCIF_REG16(SCIF_SCFCR) = control & (uint16_t)~SCIF_FCR_RFRST;
+    SCIF_REG16(SCIF_SCFSR) = (uint16_t)~(SCIF_FSR_RDF | SCIF_FSR_DR | SCIF_FSR_ER | SCIF_FSR_BRK);
+    SCIF_REG16(SCIF_SCLSR) = (uint16_t)~SCIF_LSR_ORER;
+    (void)SCIF_REG16(SCIF_SCFSR);
     restore_interrupts(saved);
 }
 
@@ -89,25 +89,25 @@ void uart_rx_irq_start(void) {
     intc_reset();
     uart_rx_irq_discard();
     /* Equal priorities keep the shared queue producer non-reentrant. */
-    intc_set_priority(J2_IRQ_SCI_ERI, 8);
-    intc_set_priority(J2_IRQ_SCI_RXI, 8);
-    intc_set_priority(J2_IRQ_SCI_BRI, 8);
-    intc_enable(J2_IRQ_SCI_ERI);
-    intc_enable(J2_IRQ_SCI_RXI);
-    intc_enable(J2_IRQ_SCI_BRI);
-    SCI_REG16(SCI_SCSCR) |= SCI_SCR_RIE;
+    intc_set_priority(J2_IRQ_SCIF_ERI, 8);
+    intc_set_priority(J2_IRQ_SCIF_RXI, 8);
+    intc_set_priority(J2_IRQ_SCIF_BRI, 8);
+    intc_enable(J2_IRQ_SCIF_ERI);
+    intc_enable(J2_IRQ_SCIF_RXI);
+    intc_enable(J2_IRQ_SCIF_BRI);
+    SCIF_REG16(SCIF_SCSCR) |= SCIF_SCR_RIE;
     restore_interrupts(saved & ~0xf0u);
 }
 
 void uart_rx_irq_stop(void) {
     (void)mask_interrupts();
-    SCI_REG16(SCI_SCSCR) &= (uint16_t)~(SCI_SCR_RIE | SCI_SCR_REIE);
-    intc_disable(J2_IRQ_SCI_ERI);
-    intc_disable(J2_IRQ_SCI_RXI);
-    intc_disable(J2_IRQ_SCI_BRI);
-    INTC_ICPR(J2_IRQ_SCI_ERI / 32u) = J2_INTC_IRQ_MASK(J2_IRQ_SCI_ERI);
-    INTC_ICPR(J2_IRQ_SCI_RXI / 32u) = J2_INTC_IRQ_MASK(J2_IRQ_SCI_RXI);
-    INTC_ICPR(J2_IRQ_SCI_BRI / 32u) = J2_INTC_IRQ_MASK(J2_IRQ_SCI_BRI);
+    SCIF_REG16(SCIF_SCSCR) &= (uint16_t)~(SCIF_SCR_RIE | SCIF_SCR_REIE);
+    intc_disable(J2_IRQ_SCIF_ERI);
+    intc_disable(J2_IRQ_SCIF_RXI);
+    intc_disable(J2_IRQ_SCIF_BRI);
+    INTC_ICPR(J2_IRQ_SCIF_ERI / 32u) = J2_INTC_IRQ_MASK(J2_IRQ_SCIF_ERI);
+    INTC_ICPR(J2_IRQ_SCIF_RXI / 32u) = J2_INTC_IRQ_MASK(J2_IRQ_SCIF_RXI);
+    INTC_ICPR(J2_IRQ_SCIF_BRI / 32u) = J2_INTC_IRQ_MASK(J2_IRQ_SCIF_BRI);
     uart_rx_irq_discard();
     /* Leave SR.I=15 while the application installs VBR, stack and .bss. */
 }

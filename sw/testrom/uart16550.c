@@ -1,4 +1,4 @@
-/* Historical test-ROM target name; the native SoC console is now SCI. */
+/* Historical test-ROM target name; the native SoC console is now SCIF. */
 /* App */
 #include "uart.h"
 

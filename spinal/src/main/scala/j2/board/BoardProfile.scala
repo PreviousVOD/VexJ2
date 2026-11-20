@@ -37,9 +37,9 @@ final case class BoardProfile(values: Map[String, String]) {
     memoryBytes         = number("memoryBytes"),
     uartBaud            = number("uartBaud").toInt,
     sramBytes           = number("sramBytes").toInt,
-    sciBase             = number("sciBase"),
+    scifBase            = number("scifBase"),
     cmtBase             = number("cmtBase"),
-    sciFifoDepth        = number("sciFifoDepth").toInt,
+    scifFifoDepth       = number("scifFifoDepth").toInt,
     spiControlBase      = number("spiControlBase"),
     xipCacheControlBase = number("xipCacheControlBase"),
     interruptSources =
@@ -47,7 +47,7 @@ final case class BoardProfile(values: Map[String, String]) {
       else text("interruptSources").split(",", -1).toSeq.map(_.trim)
   )
   // Apply the same address/range validation even when only clock settings are used.
-  require(number("sciFifoDepth").isValidInt)
+  require(number("scifFifoDepth").isValidInt)
   require(number("sramBytes").isValidInt)
   socConfig("")
 }

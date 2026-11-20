@@ -1,6 +1,6 @@
 /* Small upload fixture. Full ISA applications are used by the boot cases and
  * hardware tests. Padding exercises page boundaries and a partial final page. */
-#include "sci.h"
+#include "scif.h"
 
 .section .text.start
 .align 2
@@ -47,9 +47,9 @@ handoff_failed:
   bra handoff_failed
   nop
 .align 2
-control_address: .long (SCI_BASE + SCI_SCSCR)
+control_address: .long (SCIF_BASE + SCIF_SCSCR)
 enable_address: .long 0xffffe910
-status_address: .long (SCI_BASE + SCI_SCFSR)
-data_address: .long (SCI_BASE + SCI_SCFTDR)
+status_address: .long (SCIF_BASE + SCIF_SCFSR)
+data_address: .long (SCIF_BASE + SCIF_SCFTDR)
 message: .asciz "Wukong loader app passed\r\n"
 .space 513,0x5a

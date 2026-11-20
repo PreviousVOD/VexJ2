@@ -11,19 +11,19 @@ final case class J2SocConfig(
     memoryBytes: BigInt = 0x00800000L,
     uartBaud: Int = 19200,
     sramBytes: Int = 32768,
-    sciBase: BigInt = 0xff001000L,
+    scifBase: BigInt = 0xff001000L,
     cmtBase: BigInt = 0xff003000L,
     interruptSources: Seq[String] = Seq.empty,
-    sciFifoDepth: Int = 0,
+    scifFifoDepth: Int = 0,
     spiControlBase: BigInt = 0xff002000L,
     xipCacheControlBase: BigInt = 0xff004000L
 ) {
   require(interruptSources.size <= 192, "SH-2 INTC supports at most 192 sources")
   require(interruptSources.distinct.size == interruptSources.size, "duplicate interrupt source")
   require(interruptSources.forall(_.matches("[A-Z][A-Z0-9_]*")), "invalid interrupt source name")
-  require(sciFifoDepth >= 0 && sciFifoDepth <= 255, "SCI FIFO depth must be 0–255")
+  require(scifFifoDepth >= 0 && scifFifoDepth <= 255, "SCIF FIFO depth must be 0–255")
   require(clockHz > 0)
-  private val controlBases = Seq(sciBase, cmtBase, spiControlBase, xipCacheControlBase)
+  private val controlBases = Seq(scifBase, cmtBase, spiControlBase, xipCacheControlBase)
   for (base <- controlBases) {
     require(
       base >= 0 && base % 4096 == 0 && base + 4096 <= (BigInt(1) << 32),

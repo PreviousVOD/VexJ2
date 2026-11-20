@@ -6,7 +6,7 @@
 #include "intc.h"
 #include "irq_driver.h"
 #include "pio.h"
-#include "sci.h"
+#include "scif.h"
 #include "uart.h"
 
 #define RESULT PIO_DATA
@@ -90,19 +90,19 @@ static void __attribute__((interrupt_handler)) timer_isr(void) {
 
 extern int  intc_test(void);
 extern void xip_cmt1_isr(void);
-extern void xip_sci_eri_isr(void);
-extern void xip_sci_rxi_isr(void);
-extern void xip_sci_txi_isr(void);
-extern void xip_sci_bri_isr(void);
+extern void xip_scif_eri_isr(void);
+extern void xip_scif_rxi_isr(void);
+extern void xip_scif_txi_isr(void);
+extern void xip_scif_bri_isr(void);
 
 static const uintptr_t vectors[64 + J2_INTC_SOURCE_COUNT]
-    __attribute__((aligned(256))) = {[J2_VECTOR_CMT0]    = (uintptr_t)timer_isr,
-                                     [J2_VECTOR_CMT1]    = (uintptr_t)xip_cmt1_isr,
-                                     [J2_VECTOR_SCI_ERI] = (uintptr_t)xip_sci_eri_isr,
-                                     [J2_VECTOR_SCI_RXI] = (uintptr_t)xip_sci_rxi_isr,
-                                     [J2_VECTOR_SCI_TXI] = (uintptr_t)xip_sci_txi_isr,
-                                     [J2_VECTOR_SCI_BRI] = (uintptr_t)xip_sci_bri_isr,
-                                     [J2_VECTOR_PIO]     = (uintptr_t)pio_isr};
+    __attribute__((aligned(256))) = {[J2_VECTOR_CMT0]     = (uintptr_t)timer_isr,
+                                     [J2_VECTOR_CMT1]     = (uintptr_t)xip_cmt1_isr,
+                                     [J2_VECTOR_SCIF_ERI] = (uintptr_t)xip_scif_eri_isr,
+                                     [J2_VECTOR_SCIF_RXI] = (uintptr_t)xip_scif_rxi_isr,
+                                     [J2_VECTOR_SCIF_TXI] = (uintptr_t)xip_scif_txi_isr,
+                                     [J2_VECTOR_SCIF_BRI] = (uintptr_t)xip_scif_bri_isr,
+                                     [J2_VECTOR_PIO]      = (uintptr_t)pio_isr};
 
 /* Linked with the production ROM startup and UART driver. */
 void boot_main(void) {
@@ -147,7 +147,7 @@ void boot_main(void) {
     int interrupt_result = intc_test();
     int pio_result       = interrupt_result == 0 ? pio_test() : 1;
     uart_tx('R');
-    while (!(SCI_REG16(SCI_SCFSR) & SCI_FSR_TEND)) {
+    while (!(SCIF_REG16(SCIF_SCFSR) & SCIF_FSR_TEND)) {
     }
     RESULT = timer_count == 1 && interrupt_result == 0 && pio_result == 0 ? 0x77 : 0x55;
     for (;;) {
