@@ -46,7 +46,7 @@ flowchart LR
 ```
 
 ROM and SRAM describe native Spinal `Mem` with synchronous one-cycle reads.
-`Generate_TangPrimer` selects the generic `MemoryBackend.Eg4` policy: boot ROM and
+`Generate_TangPrimer` selects the vendor `Eg4MemoryBackend` policy: boot ROM and
 microcode map to `EG_LOGIC_BRAM` in the 32K pool, with MIF files generated from
 their initialized contents. SRAM retains TD inference into 9K BRAMs. Simulation
 uses native memories. See [memory backends](memory-inference.md).
@@ -74,7 +74,10 @@ recorded in [native AHB memory paths](ahb-memory.md).
 
 Winbond XIP uses quad-I/O fast-read opcode `0xeb`: a single-bit instruction,
 quad address, an 8-bit mode byte, four dummy clocks, and quad data. The BootROM
-sets Winbond's QE status bit before enabling XIP. The shared controller's
+sets Winbond's QE status bit at 8 MHz, then switches to 16 MHz for XIP
+(32 MHz SoC clock divided by two). Before booting, it compares five cached
+32-byte blocks against references read using single SPI at the slower rate.
+The shared controller's
 [data ordering and registered physical interface](soc.md#spi-xip-and-read-cache)
 also apply to this board.
 
@@ -82,12 +85,18 @@ The Winbond 25Q80 uses CS=D3, CLK=H4, IO0=B3, IO1=F4, IO2=F5, and IO3=B1.
 IO2/WP# and IO3/HOLD# use the flash chip's internal pull-ups outside quad
 transfers. The configuration flash on CSO/CCLK is never targeted.
 
+The 2026-11-21 build passes routed setup (+3.320 ns) and hold (+0.135 ns).
+Volatile JTAG validation passes the full ISA application at 32 MHz with
+16 MHz XIP, including flash qualification, cache and SDRAM tests. Logs and
+a copy of the bitstream and timing reports are under
+`build/xip-fast/tang-primer/`.
+
 ## GPIO pads
 
 The Tang Primer top instantiates 32 `EG_PHY_PAD` primitives with `MODE="BI"`,
 `TSMUX="TS"`, `DRIVE="12"`, and `IOTYPE="LVCMOS33"`. `ts` is the inverse of the
 native output-enable signal: zero drives the pad, one makes it high impedance.
-The simulation-only model is `verilog/verif/j2_gpio_pad_model.v`.
+The simulation-only model is `verilog/verif/vendor/anlogic/eg4_iobuf_model.v`.
 
 GPIO 0–2 retain the RGB LED locations R3/J14/P13. GPIO 3–31 use free
 display/camera header pins listed in `fpga/tang-primer/j2_tang_primer.adc`.

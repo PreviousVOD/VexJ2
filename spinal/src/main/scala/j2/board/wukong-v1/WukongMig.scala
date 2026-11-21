@@ -23,16 +23,3 @@ final class WukongMig extends BlackBox {
   val ddr3_dq                                                  = inout(Analog(Bits(16 bits)))
   val ddr3_dqs_n, ddr3_dqs_p                                   = inout(Analog(Bits(2 bits)))
 }
-
-/** 50 MHz -> 166.667 MHz MIG input + independent 200 MHz IDELAY reference. */
-final class WukongDdrMmcm extends BlackBox {
-  setDefinitionName("MMCME2_BASE")
-  val CLKIN1, CLKFBIN, RST, PWRDWN       = in Bool ()
-  val CLKFBOUT, CLKOUT0, CLKOUT1, LOCKED = out Bool ()
-  addGeneric("CLKIN1_PERIOD", 20.0)
-  addGeneric("DIVCLK_DIVIDE", 1)
-  addGeneric("CLKFBOUT_MULT_F", 20.0)
-  addGeneric("CLKOUT0_DIVIDE_F", 6.0)
-  addGeneric("CLKOUT1_DIVIDE", 5)
-  addGeneric("STARTUP_WAIT", "FALSE")
-}

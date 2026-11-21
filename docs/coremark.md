@@ -66,9 +66,37 @@ establish a pass: the runner checks expected CRCs, timer readings, iteration
 counts, upstream error output, and CMT ISR counts consistent with elapsed ticks.
 Firmware is built under `build/sw/coremark/<board>/<clock>/<seed>-<iterations>/`.
 
+## Faster XIP hardware validation (2026-11-21)
+
+Both boards pass the performance and validation seed sets with **1,000
+iterations per seed**. Tang uses a 32 MHz SoC clock and 16 MHz XIP SCK;
+This historical Wukong run used the shared MMCM at 70 MHz with 35 MHz XIP
+SCK; the current profile has returned to separate MMCMs at 72 MHz. All four runs
+exceed ten seconds, pass the expected CRCs, and service 110 CMT rollover
+interrupts, consistent with the measured elapsed time.
+
+| Board | Seed set | Time (s) | Iterations/s | CoreMark/MHz |
+| --- | --- | ---: | ---: | ---: |
+| Tang Primer | Performance | 115.537600 | 8.655191 | 0.270475 |
+| Tang Primer | Validation | 115.924960 | 8.626270 | 0.269571 |
+| Wukong | Performance | 52.816464 | 18.933490 | 0.270478 |
+| Wukong | Validation | 52.993565 | 18.870216 | 0.269575 |
+
+Firmware, UART logs, CRCs, timer counts, RTL and timing reports are archived in
+`build/coremark/tang-primer/xip16/hardware/` and
+`build/coremark/wukong-v1/clock70-xip35/hardware/`. The corresponding
+`restored/` directories record restoration and ISA validation of the normal
+test applications. FPGA programming is volatile; configuration flash is
+unchanged.
+
+These runs used `COREMARK_ITERATIONS=1000`. Reproducing the historical Wukong
+result requires its archived 70 MHz bitstream and matching board profile;
+the current 72 MHz profile produces a different workload timing. Restoration
+was a separate upload of each board's ISA test application.
+
 ## INTC validation on Wukong (2026-11-19)
 
-The 72 MHz FPGA passes both seed sets with 300 iterations, cached SPI XIP code
+The earlier 72 MHz FPGA passed both seed sets with 300 iterations, cached SPI XIP code
 and internal SRAM data/stack. Both exceed ten measured seconds and pass all
 expected CRCs; each services 33 CMT rollover interrupts.
 
@@ -81,7 +109,7 @@ Results, UART logs, firmware, RTL and routed timing reports are archived in
 `build/coremark/wukong-v1/intc-closeout/hardware/`. Per-seed `*-board/` directories
 contain volatile programming logs and SF3 backups. The validation application
 was restored and passed INTC/ISA checks; evidence is in the adjacent `restored/`
-directory. These runs use the existing timing-qualified 72 MHz bitstream.
+directory. These recorded runs used the earlier timing-qualified 72 MHz bitstream.
 
 The updated Tang workflow also passes both one-iteration native simulation
 seeds under `build/coremark/tang-primer/intc-closeout/simulation/`. These are

@@ -37,15 +37,21 @@ The Wukong flow uses Vivado through `tools/run_vivado.sh`; see its
 - `spinal/src/main/scala/j2/core/{fetch,decode,execute,regfile,schedule,misc}/`: subsystem plugins.
 - `spinal/src/main/scala/j2/core/isa/`: ISA definitions and microcode predecoder.
 - `spinal/src/main/scala/j2/core/microcode/`: ROM data, control decoding, sequencing.
-- `spinal/src/main/scala/j2/memory/`: generic generation-time memory backends and vendor mapping.
+- `spinal/src/main/scala/j2/memory/`: vendor-independent memory policy contract and inferred implementation.
+- `spinal/src/main/scala/j2/vendor/anlogic/`: EG4 ROM mapping, block-ROM and SDRAM PHY primitives, and pad connections.
+- `spinal/src/main/scala/j2/vendor/xilinx/`: Vivado block-memory inference policy and I/O buffers.
 - `spinal/src/main/scala/j2/bus/`: generic AHB5/APB IP, standalone system BIU, native AHB memory endpoints and cache.
 - `spinal/src/main/scala/j2/periph/`: ROM/SRAM, GPIO and SPI/XIP peripherals.
 - `spinal/src/main/scala/j2/soc/`: shared SoC configuration and reset utilities.
-- `spinal/src/main/scala/j2/board/tang-primer/`: Tang Primer top, EG4 PLL/pads, SDRAM controller and PHY.
-- `spinal/src/main/scala/j2/board/wukong-v1/`: Wukong top, Xilinx primitives, AHB DDR bridge, MIG backend and integration.
+- `spinal/src/main/scala/j2/board/tang-primer/`: Tang Primer top, clock wrappers, SDRAM controller and PHY integration.
+- `spinal/src/main/scala/j2/board/wukong-v1/`: Wukong top, clock/reset wrappers, AHB DDR bridge, MIG backend and integration.
 - `sw/bootrom/`: common boot ROM, profile-selected flash setup and UART loader for both boards.
 - `sw/xipapp/`: XIP application and SDRAM read/write/execute tests.
 - `tools/xip_image.py`: shared image packager and Tang Primer UART uploader.
+
+Each board keeps its clock primitives in `J2Clock.scala`. Wukong's
+`WukongMig.scala` contains only the MIG interface; its separate SoC and DDR-input
+MMCMs belong to the board clock file.
 - `tools/check_wukong_boot.py`: Wukong upload and boot validation.
 - `third_party/qspiflash/`: flash simulator sources only; upstream RTL is removed.
 - `fpga/tang-primer/`: Tang Primer board profile, constraints and Tang Dynasty project.
@@ -90,7 +96,8 @@ make isa-hw                 # build/timing/PLL + ISA app upload and fresh FPGA b
 it has no board dependencies and does not select FPGA primitives. The symmetric
 board entry points are `j2.Generate_TangPrimer` and `j2.Generate_Wukong`.
 Both reuse its settings/core generation and select their memory backend locally.
-`j2.Generate_WukongDdr` is the standalone DDR qualification top.
+`j2.Generate_Wukong` always generates the complete DDR3-backed SoC.
+DDR BIST logic lives in test sources for native-interface regression coverage.
 
 Both boards use `fpga/<board>/board.properties`, with the same keys and shared
 `j2.board.BoardProfile` / `tools/board_config.py` loaders. The profile defines the

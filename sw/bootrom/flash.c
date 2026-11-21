@@ -119,9 +119,9 @@ int flash_init_and_test(void) {
     SPI_REG(2) = 0x10; /* mode 0, quad half duplex */
     SPI_REG(3) = 0;
     SPI_REG(4) = 0;
-    /* Keep SCK at 4 MHz and CS setup/hold/disable at 125 ns. */
-    SPI_REG(8) = J2_CLOCK_HZ / 8000000u - 1u;
-    SPI_REG(9) = SPI_REG(10) = SPI_REG(11) = J2_CLOCK_HZ / 8000000u - 1u;
+    /* Keep SCK at or below 4 MHz and CS setup/hold/disable at least 125 ns. */
+    SPI_REG(8) = (J2_CLOCK_HZ + 7999999u) / 8000000u - 1u;
+    SPI_REG(9) = SPI_REG(10) = SPI_REG(11) = (J2_CLOCK_HZ + 7999999u) / 8000000u - 1u;
     SPI_REG(12)                            = 0;
     if (read_id(0xaf) == SF3_ID) {
         if (!read_reg(0x65, &evcr)) {
@@ -189,6 +189,9 @@ int flash_init_and_test(void) {
     /* dummyCount is byte-count minus one: four quad bytes = eight clocks. */
     SPI_REG(17) = 0x03ff01eb;
     SPI_REG(18) = 0x01010101;
+    /* Qualify quad XIP at up to 36 MHz against the slow single-SPI reference.
+     * Keep the conservative CS setup/hold/disable times above. */
+    SPI_REG(8) = (J2_CLOCK_HZ + 71999999u) / 72000000u - 1u;
 #else
     (void)evcr;
     (void)verify;
@@ -260,6 +263,8 @@ int flash_init_and_test(void) {
 
     SPI_REG(17) = 0x02ff01eb;
     SPI_REG(18) = 0x01010100;
+    /* Qualify Winbond quad XIP at up to 16 MHz after the slow QE setup. */
+    SPI_REG(8) = (J2_CLOCK_HZ + 31999999u) / 32000000u - 1u;
 #endif
     SPI_REG(16) = 1;
     for (unsigned i = 0; i < sizeof(offsets) / sizeof(offsets[0]); ++i) {

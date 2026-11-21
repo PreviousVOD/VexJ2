@@ -1,12 +1,21 @@
-package j2.memory
+package j2.vendor.anlogic
 
+import j2.memory.MemoryBackend
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Paths}
 import spinal.core._
 import spinal.core.internals._
 
+/** Initialized block ROMs use EG4's separate 32K pool; writable RAM retains TD inference. */
+case object Eg4MemoryBackend extends MemoryBackend {
+  override def configure(config: SpinalConfig): SpinalConfig = {
+    config.memBlackBoxers += new Eg4RomPhase
+    config
+  }
+}
+
 /** EG4 ROMs use the separate 32K pool; writable memories retain TD inference. */
-final private[memory] class Eg4RomPhase extends PhaseMemBlackboxing {
+final private[anlogic] class Eg4RomPhase extends PhaseMemBlackboxing {
   override def doBlackboxing(pc: PhaseContext, topo: MemTopology): Unit = {
     val mem = topo.mem
     if (mem.technology != ramBlock || topo.writes.nonEmpty || topo.readWriteSync.nonEmpty) return
@@ -58,7 +67,8 @@ final private[memory] class Eg4RomPhase extends PhaseMemBlackboxing {
 }
 
 /** Same single-port, unregistered-output macro configuration as the proven ROMs. */
-final private[memory] class Eg4BlockRom(width: Int, depth: Int, initFile: String) extends BlackBox {
+final private[anlogic] class Eg4BlockRom(width: Int, depth: Int, initFile: String)
+    extends BlackBox {
   val dia   = in Bits (width bits)
   val dib   = in Bits (width bits)
   val addra = in UInt (log2Up(depth) bits)

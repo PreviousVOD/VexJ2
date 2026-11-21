@@ -1,5 +1,6 @@
 # QMTECH Wukong v1 schematic, pages 2 and 4. DDR pins/IO standards are supplied by MIG.
 set_property PACKAGE_PIN M22 [get_ports clk50]
+# KEY0 is active low: shared external reset for the SoC, MMCMs and MIG.
 set_property PACKAGE_PIN H7 [get_ports reset_n]
 set_property PACKAGE_PIN F3 [get_ports uart_rx]
 set_property PACKAGE_PIN E3 [get_ports uart_tx]

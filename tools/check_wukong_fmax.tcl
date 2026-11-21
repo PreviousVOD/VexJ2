@@ -20,22 +20,31 @@ set out [file join $root build wukong-v1 fmax $label]
 file mkdir $out
 file delete -force [file join $out results.tsv]
 open_checkpoint $checkpoint
-set cell [get_cells pll]
+source [file join $root fpga wukong-v1 clock_paths.tcl]
+set output_pin [wukong_soc_clock_pin]
+set output_port [get_property REF_PIN_NAME $output_pin]
+set cell [get_cells -of_objects $output_pin]
 set primitive [get_property REF_NAME $cell]
 if {[string match MMCME2* $primitive]} {
     set multiplier [get_property CLKFBOUT_MULT_F $cell]
-    set divider_property CLKOUT0_DIVIDE_F
-    if {abs($divider * 8 - round($divider * 8)) > 0.000001} { error "MMCM divider must use 0.125 steps" }
+    if {$output_port eq "CLKOUT0"} {
+        set divider_property CLKOUT0_DIVIDE_F
+        if {abs($divider * 8 - round($divider * 8)) > 0.000001} { error "MMCM CLKOUT0 divider must use 0.125 steps" }
+    } else {
+        set divider_property ${output_port}_DIVIDE
+        if {$divider != int($divider)} { error "MMCM $output_port divider must be integral" }
+    }
 } elseif {[string match PLLE2* $primitive]} {
     set multiplier [get_property CLKFBOUT_MULT $cell]
-    set divider_property CLKOUT0_DIVIDE
+    set divider_property ${output_port}_DIVIDE
     if {$divider != int($divider)} { error "PLL divider must be integral" }
 } else { error "Unsupported SoC clock primitive: $primitive" }
 set input_period [get_property CLKIN1_PERIOD $cell]
 set expected_period [expr {$input_period * [get_property DIVCLK_DIVIDE $cell] * $divider / $multiplier}]
 set_property $divider_property $divider $cell
 update_timing
-set period [get_property PERIOD [get_clocks pll_CLKOUT0]]
+set soc_clock [wukong_soc_clock]
+set period [get_property PERIOD $soc_clock]
 if {abs($period - $expected_period) > 0.001} { error "SoC clock did not update" }
 if {abs([get_property PERIOD [get_clocks clk_pll_i]] - 12.0) > 0.001} {
     error "DDR UI frequency changed"
@@ -55,13 +64,13 @@ if {$seed eq ""} {
     route_design
 }
 report_timing_summary -delay_type min_max -report_unconstrained -check_timing_verbose -file [file join $out timing.rpt]
-report_timing -from [get_clocks pll_CLKOUT0] -to [get_clocks pll_CLKOUT0] -max_paths 20 -nworst 1 \
+report_timing -from $soc_clock -to $soc_clock -max_paths 20 -nworst 1 \
     -delay_type max -path_type full_clock_expanded -file [file join $out soc_paths.rpt]
 report_bus_skew -file [file join $out bus_skew.rpt]
 report_cdc -details -file [file join $out cdc.rpt]
 report_drc -file [file join $out drc.rpt]
 report_route_status -file [file join $out route.rpt]
-set soc [get_timing_paths -from [get_clocks pll_CLKOUT0] -to [get_clocks pll_CLKOUT0] -delay_type max -max_paths 1]
+set soc [get_timing_paths -from $soc_clock -to $soc_clock -delay_type max -max_paths 1]
 set worst [get_timing_paths -delay_type max -max_paths 1]
 set hold [get_timing_paths -delay_type min -max_paths 1]
 set drc [get_drc_violations -quiet -filter {SEVERITY == Error || SEVERITY == "Critical Warning"}]

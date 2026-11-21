@@ -60,7 +60,7 @@ Boards may define these procedures before calling `fpga_run`:
 
 Wukong owns its MIG/reset IP, clock checks, BRAM ownership checks and CDC/skew
 constraints in its board directory. These assumptions are not imposed on other
-Xilinx boards. The standalone DDR and reset qualification scripts also live
+Xilinx boards. The reset qualification scripts also live
 there. Tang owns its TD project, pin assignments and timing template.
 
 Generated Tcl exposes `root`, `out`, `board_dir`, `rtl`, `work`, `reports`, `top`

@@ -23,6 +23,17 @@ from isa_validation import validate as validate_isa
 
 
 class ScifSerial(Serial):
+    def wait_for_boot(self, board, timeout=90):
+        """Separate old firmware's UART traffic from the next programmed image."""
+        banner = f"{board} platform ROM\r\n".encode()
+        deadline = time.monotonic() + timeout
+        while banner not in self.buffer:
+            self.fill(deadline)
+        start = self.buffer.index(banner)
+        previous = bytes(self.buffer[:start])
+        del self.buffer[:start]
+        return previous
+
     def until(self, marker, timeout=120):
         self.text_mode = True
         try:
@@ -130,6 +141,7 @@ def main():
             proc = subprocess.Popen(["python3", str(ROOT / "tools/fpga.py"), "--board", args.board,
                                      "program", "--bitstream", str(bitstream),
                                      "--program-dir", str(out)], cwd=ROOT, stdout=log, stderr=subprocess.STDOUT)
+            (out / "pre-boot-uart.log").write_bytes(serial.wait_for_boot(args.board))
             serial.until(b"Send U to load\r\n", 90)
             if upload:
                 serial.send(b"U")

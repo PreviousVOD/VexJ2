@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Volatile Vivado JTAG download and platform-ROM or DDR diagnostic validation."""
+"""Volatile Vivado JTAG download and full DDR3 SoC platform-ROM validation."""
 import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
 import select
 import subprocess
 import struct
@@ -18,18 +17,15 @@ from board_config import ROOT, load
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device")
-    parser.add_argument("--ddr", action="store_true", help="validate the standalone DDR diagnostic")
     parser.add_argument("--timeout", type=float, default=120)
     args = parser.parse_args()
     profile = load("wukong-v1")
     device = args.device or profile["uartDevice"]
-    out = ROOT / ("build/wukong-v1/ddr/hardware" if args.ddr else "build/wukong-v1/hardware")
+    out = ROOT / "build/wukong-v1/hardware"
     out.mkdir(parents=True, exist_ok=True)
-    bitstream = ROOT / ("build/wukong-v1/ddr/j2_wukong_ddr_test.bit" if args.ddr else
-                        "build/wukong-v1/vivado/j2_wukong_v1.bit")
+    bitstream = ROOT / "build/wukong-v1/vivado/j2_wukong_v1.bit"
     if not (bitstream.parent / "implementation.pass").is_file():
-        raise ValueError("run make wukong-ddr-bitstream before hardware validation" if args.ddr else
-                         "run make wukong-bitstream before hardware validation")
+        raise ValueError("run make wukong-bitstream before hardware validation")
     digest = hashlib.sha256(bitstream.read_bytes()).hexdigest()
     for name in ("results.json", "program.pass"):
         (out / name).unlink(missing_ok=True)
@@ -37,9 +33,6 @@ def main():
               f'{int(profile["flashOffset"], 0):08x}'
               "\r\nFlash JEDEC ID: 20ba19\r\nFlash quad XIP: PASS\r\nSend U to load\r\n").encode()
     echo = b"Bad image range\r\n"
-    if args.ddr:
-        banner = b"Wukong DDR3: PASS\r\n"
-        echo = b""
     captured = bytearray()
     fd = os.open(device, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
     try:
@@ -61,34 +54,24 @@ def main():
                     ready, _, _ = select.select([fd], [], [], 0.1)
                     if ready:
                         captured.extend(os.read(fd, 4096))
-                    if args.ddr and (b"FAIL" in captured or b"TIMEOUT" in captured):
-                        raise RuntimeError("DDR diagnostic failed; see ddr/hardware/uart.log")
-                    if not args.ddr and (b"Flash quad XIP: FAIL" in captured):
+                    if b"Flash quad XIP: FAIL" in captured:
                         raise RuntimeError("Platform diagnostic failed; see hardware/uart.log")
                     code = proc.poll()
                     if code is not None and (code != 0 or not (out / "program.pass").is_file()):
                         raise RuntimeError("Vivado programming failed; see hardware/program.log")
                     if banner in captured and echo_start is None:
                         echo_start = len(captured)
-                        if not args.ddr:
-                            os.write(fd, b"U")
-                    if not args.ddr and b"J2 loader\r\n" in captured and not probe_sent:
+                        os.write(fd, b"U")
+                    if b"J2 loader\r\n" in captured and not probe_sent:
                         os.write(fd, b"J2RD" + struct.pack(">II", int(profile["xipBytes"], 0), 1))
                         probe_sent = True
                     if code == 0 and echo_start is not None and echo in captured[echo_start:]:
                         report = dict(complete=True, device=device, programming="volatile JTAG",
-                                      bitstream_sha256=digest, clock_hz=32000000 if args.ddr else int(profile["clockHz"]),
-                                      uart_baud=int(profile["uartBaud"]), banner=True, echo=False, loader_uart_probe=not args.ddr,
+                                      bitstream_sha256=digest, clock_hz=int(profile["clockHz"]),
+                                      uart_baud=int(profile["uartBaud"]), banner=True, echo=False, loader_uart_probe=True,
                                       flash_written=False, flash_volatile_config_written=True, sf3_quad_id="20ba19", sf3_quad_xip=True, ddr_cpu=True)
-                        if args.ddr:
-                            report.update(echo=False, flash_volatile_config_written=False,
-                                          ddr_calibrated=True, ddr_bist=True, ddr_ui_clock_hz=83333333,
-                                          ddr_memory_clock_hz=333333333,
-                                          ddr_write_bursts=2048, ddr_read_bursts=2048)
-                            del report["sf3_quad_id"], report["sf3_quad_xip"], report["ddr_cpu"]
                         (out / "results.json").write_text(json.dumps(report, indent=2) + "\n")
-                        print("WUKONG_DDR_HARDWARE_PASS: calibration, full/masked writes and readback" if args.ddr else
-                              "WUKONG_HARDWARE_PASS: volatile JTAG, ROM banner, SF3 quad ID/XIP, DDR CPU and loader UART")
+                        print("WUKONG_HARDWARE_PASS: volatile JTAG, ROM banner, SF3 quad ID/XIP, DDR CPU and loader UART")
                         return
                 raise TimeoutError("Wukong programming/UART timeout; see hardware logs")
             finally:

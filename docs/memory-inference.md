@@ -5,15 +5,17 @@ boot ROM, microcode ROM and SRAM banks with `setTechnology(ramBlock)`. Neither
 `J2CoreConfig` nor `J2SocConfig` contains a backend selector. The core has no
 dependency on `j2.memory` or board-specific primitives.
 
-`j2.memory.MemoryBackend` applies implementation policy to `SpinalConfig` at
-generation time. This preserves the FPGA implementations without coupling
-the processor to them:
+`j2.memory.MemoryBackend` defines the generation-time policy contract for
+`SpinalConfig`. Its inferred implementation is vendor-independent;
+`j2.vendor.anlogic.Eg4MemoryBackend` and
+`j2.vendor.xilinx.XilinxMemoryBackend` provide FPGA implementations without
+coupling the processor to them:
 
 | Backend | Initialized synchronous ROM | Writable block memory |
 |---|---|---|
 | `Inferred` (simulation/default) | Native `Mem` | Native `Mem` |
-| `Eg4` (Tang FPGA generator) | `EG_LOGIC_BRAM`, `IMPLEMENT="32K"` | Native `Mem`, TD inference |
-| `Xilinx` (Wukong generator) | Native `Mem`, `ram_style="block"` | Native `Mem`, `ram_style="block"` |
+| `Eg4MemoryBackend` (Tang FPGA generator) | `EG_LOGIC_BRAM`, `IMPLEMENT="32K"` | Native `Mem`, TD inference |
+| `XilinxMemoryBackend` (Wukong generator) | Native `Mem`, `ram_style="block"` | Native `Mem`, `ram_style="block"` |
 
 Only memories with `ramBlock` intent are affected. Register files and cache
 arrays retain their existing implementation choices. The backend operates
@@ -28,6 +30,24 @@ flowchart LR
   G --> T["Tang<br/>32K ROM macros + inferred SRAM"]
   G --> X["Wukong<br/>block RAM inference hints"]
 ```
+
+## Vendor pad and primitive ownership
+
+FPGA memory mappings and pad primitives live in `j2.vendor.anlogic` and
+`j2.vendor.xilinx`. Board generators import their memory policy directly;
+`j2.memory` does not import either vendor. Core and peripheral logic continues
+to use `Mem`, `ramBlock` and `TriStateArray` without vendor dependencies.
+
+`Eg4IoBuf.connect` and `XilinxIoBuf.connect` wire an existing primitive
+to one `TriStateArray` lane and its physical pin. They add no component
+hierarchy. Vendor helpers own tri-state polarity and unused primitive inputs;
+board tops own pin assignment and reset sequencing.
+
+The EG4 ROM phase and block-ROM primitive are private implementation classes
+in `Eg4MemoryBackend.scala`. The EG4 SDRAM PHY primitive is vendor-owned.
+SDRAM controllers and configured MIG integration remain in their board packages. The EG4 pad simulation model
+is `verilog/verif/vendor/anlogic/eg4_iobuf_model.v`; it is included only in
+simulation builds.
 
 ## Timing and initialization contract
 

@@ -2,10 +2,10 @@
 # Bound bundled-data paths to one receiving clock period, which is shorter than
 # the two-stage synchronized toggle latency; leave destination logic timed.
 source [file join [file dirname [info script]] bridge_paths.tcl]
+source [file join [file dirname [info script]] clock_paths.tcl]
 set bridge_root [wukong_bridge_root]
-foreach {channel clock_name} {requests clk_pll_i responses pll_CLKOUT0} {
-    set clock [get_clocks $clock_name]
-    if {[llength $clock] != 1} { error "Expected one receiving clock: $clock_name" }
+foreach {channel clock} [list requests [get_clocks clk_pll_i] responses [wukong_soc_clock]] {
+    if {[llength $clock] != 1} { error "Expected one receiving clock for $channel" }
     set period [get_property PERIOD $clock]
     set source_regs [get_cells -hier -filter "NAME =~ $bridge_root/$channel/pushArea_data*_reg*"]
     set target_regs [get_cells -hier -filter "NAME =~ $bridge_root/$channel/popArea_stream_rData*_reg*"]

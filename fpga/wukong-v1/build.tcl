@@ -1,5 +1,6 @@
 # Wukong owns its IP, clock assumptions and CDC/BRAM qualification.
 source [file join $::env(J2_FPGA_TOOLS) xilinx.tcl]
+source [file join [file dirname [info script]] clock_paths.tcl]
 
 proc board_prepare {} {
     global root out board_dir
@@ -39,12 +40,18 @@ proc board_post_synth {} {
 proc board_pre_impl {} {
     global board_soc_clock_period
     # Verify generated clock configuration against the shared board profile.
-    set soc_period [get_property PERIOD [get_clocks pll_CLKOUT0]]
+    set soc_period [get_property PERIOD [wukong_soc_clock]]
     if {abs($soc_period - $board_soc_clock_period) > 0.001} {
         error "SoC generated clock does not match board profile"
     }
     if {abs([get_property PERIOD [get_clocks clk_pll_i]] - 12.0) > 0.001} {
         error "Unexpected DDR UI clock period"
+    }
+    foreach {pin period} {ddrClocks/CLKOUT0 6.0 ddrClocks/CLKOUT1 5.0} {
+        set clock [get_clocks -of_objects [get_pins $pin]]
+        if {[llength $clock] != 1 || abs([get_property PERIOD $clock] - $period) > 0.001} {
+            error "Unexpected DDR MMCM clock at $pin"
+        }
     }
 }
 

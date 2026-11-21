@@ -2,6 +2,7 @@ package j2.board.wukong_v1
 
 import j2.soc.J2SocConfig
 import spinal.core._
+import j2.vendor.xilinx.XilinxIoBuf
 import spinal.lib._
 
 /** Wukong SoC with a serialized AHB5/CDC bridge to the native MIG interface. */
@@ -33,27 +34,20 @@ final class J2Wukong(config: J2SocConfig) extends Component {
   pll.CLKFBIN      := feedbackBuffer.O
   clockBuffer.I    := pll.CLKOUT0
 
-  val startup = new XilinxStartup
-  startup.CLK       := False
-  startup.GSR       := False
-  startup.GTS       := False
-  startup.KEYCLEARB := True
-  startup.PACK      := False
-  startup.USRDONEO  := True
-  startup.USRDONETS := True
-  // Configuration flash is never driven by the application SPI controller.
-  startup.USRCCLKTS := True
-  startup.USRCCLKO  := False
-
   val ddrClocks                            = new WukongDdrMmcm
   val ddrFeedback, ddrSystem, ddrReference = new XilinxBufg
-  ddrClocks.CLKIN1 := io.clk50; ddrClocks.RST := !io.reset_n; ddrClocks.PWRDWN := False
-  ddrFeedback.I := ddrClocks.CLKFBOUT; ddrClocks.CLKFBIN := ddrFeedback.O
-  ddrSystem.I   := ddrClocks.CLKOUT0; ddrReference.I     := ddrClocks.CLKOUT1
+  ddrClocks.CLKIN1  := io.clk50
+  ddrClocks.RST     := !io.reset_n
+  ddrClocks.PWRDWN  := False
+  ddrFeedback.I     := ddrClocks.CLKFBOUT
+  ddrClocks.CLKFBIN := ddrFeedback.O
+  ddrSystem.I       := ddrClocks.CLKOUT0
+  ddrReference.I    := ddrClocks.CLKOUT1
   val mig = new WukongMig
   mig.sys_clk_i := ddrSystem.O; mig.clk_ref_i := ddrReference.O
-  // Any reset of the CPU/mailboxes also restarts MIG and discards native traffic.
-  mig.sys_rst     := io.reset_n && pll.LOCKED && ddrClocks.LOCKED && startup.EOS
+  // KEY0 resets MIG and both clock generators. Clock loss also resets MIG;
+  // calibration readiness must never feed back into MIG's own reset.
+  mig.sys_rst     := io.reset_n && pll.LOCKED && ddrClocks.LOCKED
   mig.app_sr_req  := False; mig.app_ref_req         := False; mig.app_zq_req    := False
   io.ddr3_addr    := mig.ddr3_addr; io.ddr3_ba      := mig.ddr3_ba
   io.ddr3_cas_n   := mig.ddr3_cas_n; io.ddr3_ras_n  := mig.ddr3_ras_n
@@ -64,10 +58,9 @@ final class J2Wukong(config: J2SocConfig) extends Component {
   val resetController = new XilinxSystemReset
   resetController.slowest_sync_clk := clockBuffer.O
   resetController.ext_reset_in     := !io.reset_n
-  resetController.aux_reset_in     := False
   resetController.mb_debug_sys_rst := False
   // Calibration belongs to the UI clock domain. Assert immediately on loss,
-  // but release the CPU reset qualifier only after two SoC clock edges.
+  // but release the auxiliary reset request only after two SoC clock edges.
   // Register readiness in its source domain so the asynchronous reset input
   // cannot glitch when calibration and UI reset change at the same edge.
   val uiReadiness = new ClockingArea(ClockDomain(mig.ui_clk, mig.ui_clk_sync_rst)) {
@@ -80,7 +73,8 @@ final class J2Wukong(config: J2SocConfig) extends Component {
       ClockDomain(clockBuffer.O)
     )
     .setName("ddrReadyReset")
-  resetController.dcm_locked := pll.LOCKED && ddrClocks.LOCKED && startup.EOS && !ddrReadyReset
+  resetController.aux_reset_in := ddrReadyReset
+  resetController.dcm_locked   := pll.LOCKED && ddrClocks.LOCKED
   val domain = ClockDomain(
     clockBuffer.O,
     resetController.peripheral_reset(0),
@@ -111,20 +105,14 @@ final class J2Wukong(config: J2SocConfig) extends Component {
   bridge.io.native.readEnd  := mig.app_rd_data_end
 
   for (bit <- 0 until 24) {
-    val pad = new XilinxIoBuffer
-    pad.I                 := soc.io.gpio.write(bit)
-    pad.T                 := !soc.io.gpio.writeEnable(bit)
-    soc.io.gpio.read(bit) := pad.O
-    pad.IO <> io.gpio(bit)
+    val pad = new XilinxIoBuf
+    XilinxIoBuf.connect(pad, soc.io.gpio, bit, io.gpio(bit))
   }
-  io.flash_clk  := startup.EOS && soc.io.spiClk
-  io.flash_cs_n := !startup.EOS || soc.io.spiCs
+  io.flash_clk  := soc.io.spiClk
+  io.flash_cs_n := soc.io.spiCs
   for (bit <- 0 until 4) {
-    val pad = new XilinxIoBuffer
-    pad.I                    := soc.io.spiData.write(bit)
-    pad.T                    := !startup.EOS || !soc.io.spiData.writeEnable(bit)
-    soc.io.spiData.read(bit) := pad.O
-    pad.IO <> io.flash_dq(bit)
+    val pad = new XilinxIoBuf
+    XilinxIoBuf.connect(pad, soc.io.spiData, bit, io.flash_dq(bit))
   }
   val status = new ClockingArea(domain) {
     val heartbeat = Reg(UInt(25 bits)) init 0

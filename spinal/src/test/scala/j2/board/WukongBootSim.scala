@@ -36,11 +36,15 @@ object WukongBootSim extends App {
       flash.preload(initial)
       dut.io.uartRx #= true; dut.io.spiData.read #= 15
       dut.io.clock  #= false; dut.io.memoryClock #= false; dut.io.reset #= true
-      // 250 / 216 ticks preserve the exact 72 MHz CPU / 83 1/3 MHz MIG ratio.
-      val busPeriod = 250L
-      require(config.clockHz == 72000000)
+      // Integer simulation ticks preserve the exact SoC / (250 MHz / 3) UI ratio.
+      val clockGcd         = BigInt(config.clockHz.toLong * 3).gcd(BigInt(250000000)).toLong
+      val busPeriod        = 500000000L / clockGcd
+      val memoryHalfPeriod = config.clockHz.toLong * 3 / clockGcd
       fork {
-        sleep(1); while (true) { sleep(108); dut.io.memoryClock #= !dut.io.memoryClock.toBoolean }
+        sleep(1);
+        while (true) {
+          sleep(memoryHalfPeriod); dut.io.memoryClock #= !dut.io.memoryClock.toBoolean
+        }
       }
       val memory = new MigModel(dut.io.native, dut.memoryDomain, seed = 134 + index)
       memory.start()
@@ -51,8 +55,11 @@ object WukongBootSim extends App {
           dut.io.clock #= false
         }
       }
-      val received  = new StringBuilder
-      val bitPeriod = (config.clockHz / (config.uartBaud * 32)).toLong * 32 * busPeriod
+      val received = new StringBuilder
+      // Match uart.c's nearest-integer SCIF baud divider, including non-exact rates.
+      val baudDivider = (config.clockHz.toLong + config.uartBaud.toLong * 16) /
+        (config.uartBaud.toLong * 32)
+      val bitPeriod = baudDivider * 32 * busPeriod
       fork {
         waitUntil(!dut.io.reset.toBoolean); dut.busDomain.waitSampling(2)
         while (true) {

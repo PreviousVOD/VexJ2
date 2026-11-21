@@ -19,7 +19,7 @@ example used for the pin audit are in `../Wukong/`.
 |---|---|
 | FPGA | `xc7a100tfgg676-2` |
 | Oscillator | 50 MHz, M22 |
-| SoC clock | 72 MHz, MMCM VCO 900 MHz / 12.5 |
+| SoC clock | 72 MHz, dedicated MMCM VCO 900 MHz / 12.5 |
 | UART | `/dev/ttyUSB0`, 19,200 baud, 8N1; FPGA RX F3, TX E3 |
 | Reset button | KEY0, H7, active low |
 | LEDs | J6: DDR calibration; H6: system-clock heartbeat; active low |
@@ -32,15 +32,22 @@ The oscillator uses the **N side** of a clock-capable pair. Vivado reports
 PLCK-12/PLIO-9 without the input routing exception also present in the QMTECH
 example. `clock_route.xdc` applies `CLOCK_DEDICATED_ROUTE FALSE` only to
 `clk50_IBUF`, after synthesis creates that net. MMCM feedback and output use
-BUFGs. The SoC MMCM multiplies 50 MHz by 18 and divides by 12.5.
-Routed timing is checked at 72 MHz. The independent DDR clocks are unchanged.
+BUFGs. `J2Clock.scala` owns separate SoC and DDR-input MMCMs. The SoC
+MMCM uses 50 MHz × 18 / 12.5 for exactly 72 MHz. The DDR-input MMCM uses
+50 MHz × 20 for a 1 GHz VCO, divided by 6 for MIG's 166.667 MHz system
+input and by 5 for the 200 MHz IDELAY reference. DDR remains at 333.333 MHz
+and the UI at 83.333 MHz. Routed timing is checked at 72 MHz.
+
+The separate generators preserve 72 MHz without the frequency compromise of
+the earlier shared-MMCM experiment. Its settings and results remain in the
+[timing study](#timing-studies).
 
 ## Separate configuration and application flash
 
 The SF3 on J11 is the application flash. It supersedes the original shared-flash
 plan: the application starts at **physical offset zero**, rather than 8 MiB.
 The onboard configuration flash is not connected to the SoC SPI controller.
-The user top does not expose its CS pin; STARTUPE2 leaves CCLK undriven by user logic.
+The user top exposes neither its CS pin nor a user connection to CCLK.
 
 | Device / physical bytes | Use |
 |---|---|
@@ -96,7 +103,7 @@ this same composition; see [SoC composition](soc.md#board-owned-composition).
 
 ```mermaid
 flowchart LR
-  P["Board MMCM + reset + I/O"] --> S["J2WukongSoc"]
+  P["Board MMCMs + reset + I/O"] --> S["J2WukongSoc"]
   S --> R["Boot ROM / SRAM / microcode<br/>Xilinx block RAM inference"]
   S --> BIU["Standalone system BIU"]
   BIU --> APB["AHB5-to-APB4 bridge / APB matrix"]
@@ -111,7 +118,7 @@ flowchart LR
 ```
 
 ROM, SRAM and microcode describe native Spinal `Mem` with synchronous reads
-and generic `ramBlock` intent. `Generate_Wukong` selects `MemoryBackend.Xilinx`,
+and generic `ramBlock` intent. `Generate_Wukong` selects `XilinxMemoryBackend`,
 which adds `ram_style=block` during generation. Core and SoC configurations do
 not select backends. Microcode keeps its rising-edge, enabled read and
 response-address tag; boot ROM retains its full 32 KiB storage and address
@@ -133,14 +140,19 @@ constraints and the Fmax tool use that shared resolver. Missing or ambiguous
 mailboxes still fail the build; payload max-delay, bus-skew and toggle/reset
 synchronizer checks remain in force.
 
-The board uses Vivado's `proc_sys_reset` v5.0 IP. Its clock is the 72 MHz MMCM
-output, its external reset is KEY0, and its lock input requires both clock
-generator locks, configuration EOS and synchronized MIG readiness. The CPU
-stays in reset until DDR calibration completes. Readiness is registered in the
-UI domain before crossing to the reset controller. The SoC uses `peripheral_reset`. IP parameters are
+The board uses Vivado's `proc_sys_reset` v5.0 IP. Its clock is the 72 MHz SoC
+MMCM output, its external reset is KEY0 (H7, active low), and its lock input
+requires both MMCMs to lock. KEY0 resets both generators and MIG; MIG remains
+in reset until both MMCMs lock. The active-high auxiliary reset
+holds the CPU until DDR calibration completes. Readiness is registered in the
+UI domain before asynchronous assertion and two-cycle synchronous release into
+the SoC domain. The auxiliary filter accepts a single sampled cycle so that it
+cannot discard the minimum two-cycle readiness-loss request. Calibration does
+not feed back into MIG reset. The SoC uses `peripheral_reset`. IP parameters are
 versioned in `fpga/wukong-v1/reset_ip.tcl`; generated products stay under `build/`.
 
-`sw/bootrom` initializes the SF3 for **4-4-4 quad protocol** at 4 MHz:
+`sw/bootrom` initializes the SF3 for **4-4-4 quad protocol** at 4 MHz
+(the divider rounds up to keep SCK at or below 4 MHz):
 command, address and payload all use DQ0..3. It first recovers single SPI if a
 previous FPGA image left the flash in quad mode, selects three-byte addressing
 and bank zero, then records single-SPI reference data from five 32-byte blocks.
@@ -148,12 +160,17 @@ It writes volatile VCR `0x8b` (eight dummy clocks, sequential reads, no
 commandless flash-XIP), clears EVCR bit 7 to enable quad protocol, and verifies
 quad `0xaf` JEDEC ID `20ba19`. No Winbond QE writes are used.
 
+After initialization, the ROM switches SCK to **36 MHz** (72 MHz SoC clock
+divided by two), retaining eight dummy clocks and the conservative CS
+setup/hold/disable times of at least 125 ns.
+
 The cache backend uses quad `0xeb` commands on every burst, three quad address
 bytes, four quad dummy bytes (eight clocks) and quad payload. The controller's
 `dummyCount` is bytes minus one, hence `3`; mode selection is `0x01010101`.
-The ROM compares cached reads at offsets 0, 32, `0x100`, `0x800`, and the last
-cache line of the XIP window with the single-SPI reference, then allows application boot or UART loading. External-memory tests run in the
-application, not in the ROM.
+The ROM compares cached reads at 36 MHz at offsets 0, 32, `0x100`, `0x800`,
+and the last cache line of the XIP window with the slower single-SPI reference,
+then allows application boot or UART loading. External-memory tests run in
+the application, not in the ROM.
 The fixed quad ID exercises all four input lanes even when array contents are
 erased. This initialization changes only volatile protocol settings; application
 array updates use the separate bounded loader described below. See
@@ -221,8 +238,9 @@ quad lane direction, burst length, allowed commands and all five refill addresse
 A native MIG model adds independent command/write-data backpressure and delayed
 reads on a separate UI clock. External-memory tests run only in the application;
 ROM boot and upload assert that no MIG commands were issued. One clock/reset driver per domain avoids competing reset stimulus. The vendor reset simulation
-checks cold startup, clock-lock loss and button reset, including synchronous
-release with the documented UNISIM primitive propagation delays.
+checks cold startup, calibration hold, brief readiness loss, clock-lock loss and
+button reset, including synchronous release with the documented UNISIM
+primitive propagation delays.
 
 `make wukong-sim` uses isolated 1.125 Mbaud firmware and checks XIP, warm-XIP,
 UART-upload and bad-checksum recovery scenarios. Production UART stays at
@@ -247,15 +265,15 @@ boot from the installed image after volatile FPGA programming.
 
 ## DDR qualification
 
-The standalone DDR diagnostic is separate from the SoC boot ROM. It uses its
-own top and constraints, holds SF3 CS high, and has no configuration-flash CS
-port. Its UART uses a 32 MHz diagnostic clock; the production SoC uses 72 MHz.
+`Generate_Wukong` is the single Wukong generator and always emits the full
+CPU SoC with DDR3. The board build generates MIG from `mig.prj`. Native DDR
+BIST logic is a simulation fixture; hardware validation uses the full SoC.
 
 ```sh
-make wukong-mig            # regenerate MIG from board-owned settings
 make wukong-ddr-sim        # native interface, backpressure and corruption tests
-make wukong-ddr-bitstream  # standalone diagnostic implementation
-make wukong-ddr-uart       # volatile JTAG download and UART capture
+make wukong-bridge-sim     # AHB/native DDR bridge tests
+make BOARD=wukong-v1 fpga  # full DDR3 SoC implementation
+make wukong-uart           # volatile JTAG download and loader UART validation
 ```
 
 `J2AhbDdrBridge` serializes each accepted AHB beat into a 16-byte MIG burst.
@@ -268,9 +286,65 @@ for the protocol and regression coverage.
 
 ## Timing studies
 
+The restored separate-MMCM build on 2026-11-21 passes at 72 MHz with
++0.352 ns setup slack and +0.016 ns hold slack, plus pulse-width, mailbox skew,
+CDC and DRC checks. It uses three of six MMCMs: separate SoC and DDR-input
+generators plus MIG's internal MMCM. The reset-IP and full ISA boot simulations
+pass at 72 MHz with 36 MHz XIP. Volatile JTAG validation and upload of the
+rebuilt application also pass the full ISA suite, including DDR, cache, CMT
+and INTC tests. Reports, firmware and UART logs are archived under
+`build/separate-clock-72/`; configuration flash was not written.
+
 The operating profile is 72 MHz. `tools/check_wukong_fmax.sh` reroutes a supplied
-checkpoint for candidate clocks; it uses the same board-owned mailbox-path
-resolver as implementation constraints. A result applies to that checkpoint,
+checkpoint for candidate clocks; it uses the same board-owned mailbox and
+clock resolvers as implementation constraints. It resolves the output driving
+the SoC BUFG, so changing the SoC divider never changes MIG's input divider.
+The SoC MMCM uses fractional CLKOUT0 divisors (12.5 gives 72 MHz); historical
+shared-MMCM checkpoints using integer CLKOUT2 divisors remain supported. A result applies to that checkpoint,
 not automatically to later CPU/peripheral revisions. Rebuild and check timing
 for the actual profile before programming. External SPI/GPIO qualification is
 separate from internal synchronous timing closure.
+
+The 2026-11-20 shared-MMCM study found **70 MHz** to be the nearest integer
+frequency to 72 MHz that can share an MMCM with an exact 200 MHz reference.
+Enumerating both possible assignments of the fractional output divider gives
+no solutions for 71, 72 or 73 MHz within the -2 device's VCO limits.
+
+The tested clock configuration uses a 50 MHz input, `DIVCLK_DIVIDE=1` and
+`CLKFBOUT_MULT_F=28`, giving a 1.4 GHz VCO:
+
+| MMCM output | Divider | Frequency | Use |
+|---|---:|---:|---|
+| CLKOUT0 | 5.25 | 266.667 MHz | MIG system input |
+| CLKOUT1 | 7 | 200 MHz | IDELAY reference |
+| CLKOUT2 | 20 | 70 MHz | SoC |
+
+MIG accepts the 3750 ps input period and selects PLL multiplier 5, input
+divider 1. DDR remains at 333.333 MHz and the UI at 83.333 MHz. The isolated
+build passed routed setup (+0.412 ns), hold (+0.045 ns), pulse-width, mailbox
+skew, CDC and DRC checks. All routable nets were routed without errors.
+Total MMCM use fell from three to two: one shared board MMCM plus MIG's own
+MMCM. The worst setup path runs from the execute-stage operand register to
+the fetch next-address register's clock enable.
+
+The experiment and reports are under `build/wukong-v1/integer-clock-study/`;
+`prepare.py` captures the RTL changes and input hashes, `run.tcl` performs
+synthesis/routing, and `study.json` and `results.tsv` record the settings and
+results. It retained the then-current 72 MHz firmware image and was a timing study only:
+the study itself did not generate or program a bitstream. A subsequent
+70 MHz hardware build was validated before returning the production profile
+to separate MMCMs at 72 MHz.
+
+The 2026-11-21 shared-MMCM build passed routed setup (+0.412 ns) and hold
+(+0.045 ns), plus pulse-width, mailbox skew, CDC and DRC checks. Volatile JTAG
+validation passed the full ISA application at 70 MHz with 35 MHz SF3 XIP,
+including DDR, cache, CMT and INTC tests. A second FPGA-only restart also
+passed with the flash left in quad mode. Reports and UART logs are under
+`build/shared-clock-70/`; the final bitstream and reports are copied to
+`build/xip-fast/wukong-v1/artifacts/`.
+
+AMD's [UG586 input-clock guidelines](https://docs.amd.com/r/en-US/ug586_7Series_MIS/Input-Clock-Guidelines?contentId=S~2xf7GROEYKuLCPG~tYJg)
+state that MIG's system input must not be generated internally. Both the
+existing board design and this experiment use an internally generated clock;
+passing implementation checks does not establish compliance with that guideline
+or hardware reliability for the changed clock path.

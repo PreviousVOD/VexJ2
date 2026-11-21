@@ -95,11 +95,9 @@ CoreMark use CMT0 at priority 14. Production BootROM polls the SCIF FIFO and
 does not enable UART RX interrupts. The optional RX ISR driver and its vector
 startup live under `sw/bootrom/test/` for interrupt regressions.
 
-Standalone generation, from `spinal/`:
-
-```sh
-../tools/local/bin/sbt -batch 'runMain j2.Generate_Intc 6 ../build/intc CMT0 CMT1 SCIF_ERI SCIF_RXI SCIF_TXI SCIF_BRI'
-```
+The INTC is generated as part of each core. Board profiles select the ordered
+interrupt sources, and `tools/board_config.py` emits the corresponding firmware
+source/vector definitions.
 
 ## Validation
 

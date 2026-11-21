@@ -2,6 +2,7 @@ package j2.board.tang_primer
 
 import j2.soc.{J2ResetController, J2SocConfig}
 import spinal.core._
+import j2.vendor.anlogic.{Eg4IoBuf, Eg4SdramPhy}
 
 final class J2TangPrimer(
     socConfig: J2SocConfig,
@@ -84,38 +85,18 @@ final class J2TangPrimer(
   sdram.io.bus <> soc.io.memory
   soc.io.uartRx := io.uartRx
   io.uartTx     := soc.io.uartTx
-  private val gpioPads = Seq.fill(32)(new Eg4GpioPad)
+  private val gpioPads = Seq.fill(32)(new Eg4IoBuf)
   for (bit <- 0 until 32) {
     val pad = gpioPads(bit)
-    pad.ipad   := False
-    pad.rst    := False
-    pad.ce     := True
-    pad.isclk  := False
-    pad.ipclk  := False
-    pad.osclk  := False
-    pad.opclk  := False
-    pad.ts     := !soc.io.gpio.writeEnable(bit)
-    pad.doData := soc.io.gpio.write(bit).asBits.resize(4)
-    pad.bpad <> io.gpio(bit)
-    soc.io.gpio.read(bit) := pad.di
+    Eg4IoBuf.connect(pad, soc.io.gpio, bit, io.gpio(bit))
   }
   io.spiClk                      := soc.io.spiClk
   io.spiCs                       := soc.io.spiCs
   if (!forFpga) io.spiDataEnable := soc.io.spiData.writeEnable
-  private val spiPads = Seq.fill(4)(new Eg4GpioPad)
+  private val spiPads = Seq.fill(4)(new Eg4IoBuf)
   for (bit <- 0 until 4) {
     val pad = spiPads(bit)
-    pad.ipad   := False
-    pad.rst    := False
-    pad.ce     := True
-    pad.isclk  := False
-    pad.ipclk  := False
-    pad.osclk  := False
-    pad.opclk  := False
-    pad.ts     := !soc.io.spiData.writeEnable(bit)
-    pad.doData := soc.io.spiData.write(bit).asBits.resize(4)
-    pad.bpad <> io.spiData(bit)
-    soc.io.spiData.read(bit) := pad.di
+    Eg4IoBuf.connect(pad, soc.io.spiData, bit, io.spiData(bit))
   }
 
   private val sdramPhy = new Eg4SdramPhy

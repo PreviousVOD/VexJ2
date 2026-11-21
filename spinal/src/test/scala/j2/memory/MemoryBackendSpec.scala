@@ -1,5 +1,7 @@
 package j2.memory
 
+import j2.vendor.anlogic.Eg4MemoryBackend
+import j2.vendor.xilinx.XilinxMemoryBackend
 import java.nio.file.Files
 import scala.jdk.CollectionConverters._
 import spinal.core._
@@ -28,7 +30,7 @@ class MemoryBackendSpec extends munit.FunSuite {
 
   test("generation policy preserves ROM contents and keeps writable RAM inferred") {
     // Inferred is deliberately last: backend policy must not leak into later elaborations.
-    for (backend <- Seq(MemoryBackend.Eg4, MemoryBackend.Xilinx, MemoryBackend.Inferred)) {
+    for (backend <- Seq(Eg4MemoryBackend, XilinxMemoryBackend, MemoryBackend.Inferred)) {
       val directory = Files.createTempDirectory("memory-backend-")
       backend
         .configure(SpinalConfig(targetDirectory = directory.toString))
@@ -39,7 +41,7 @@ class MemoryBackendSpec extends munit.FunSuite {
         try files.iterator().asScala.filter(_.toString.endsWith(".mif")).toVector
         finally files.close()
       backend match {
-        case MemoryBackend.Eg4 =>
+        case Eg4MemoryBackend =>
           assert(rtl.contains("EG_LOGIC_BRAM"))
           assert(rtl.replaceAll("\\s", "").contains(".DATA_WIDTH_A(72)"))
           assert(rtl.replaceAll("\\s", "").contains(".DATA_DEPTH_A(256)"))
@@ -55,13 +57,14 @@ class MemoryBackendSpec extends munit.FunSuite {
             .toVector
           assertEquals(image, words.zipWithIndex.map { case (word, index) => index -> word })
           assert(rtl.contains(mifs.head.getFileName.toString))
-        case MemoryBackend.Xilinx =>
+        case XilinxMemoryBackend =>
           assertEquals("ram_style = \"block\"".r.findAllIn(rtl).length, 2)
           assert(!rtl.contains("EG_LOGIC_BRAM"))
           assert(mifs.isEmpty)
         case MemoryBackend.Inferred =>
           assert(!rtl.contains("ram_style") && !rtl.contains("EG_LOGIC_BRAM"))
           assert(mifs.isEmpty)
+        case other => fail(s"Unexpected backend: $other")
       }
     }
   }
@@ -69,7 +72,7 @@ class MemoryBackendSpec extends munit.FunSuite {
   test("EG4 backend rejects an asynchronous block ROM instead of changing its latency") {
     val directory = Files.createTempDirectory("memory-backend-invalid-")
     val error = intercept[Exception] {
-      MemoryBackend.Eg4
+      Eg4MemoryBackend
         .configure(SpinalConfig(targetDirectory = directory.toString))
         .generateVerilog(new Probe(async = true))
     }
